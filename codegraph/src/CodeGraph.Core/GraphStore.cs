@@ -496,6 +496,52 @@ public sealed class GraphStore : IDisposable
     }
 
     /// <summary>
+    /// BFS shortest paths from <paramref name="fromId"/> to <paramref name="toId"/> via the given edge kinds.
+    /// Returns up to <paramref name="maxPaths"/> paths, each ordered source-to-target.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<GraphNode>> PathBetween(
+        string fromId, string toId, string[] edgeKinds, int maxDepth = 10, int maxPaths = 3)
+    {
+        var kindList = string.Join(", ", edgeKinds.Select((_, i) => $"$k{i}"));
+
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             WITH RECURSIVE bfs(id, path, depth) AS (
+                 SELECT $from, $from, 0
+                 UNION ALL
+                 SELECT e.to_id, b.path || '§' || e.to_id, b.depth + 1
+                 FROM edges e
+                 JOIN bfs b ON e.from_id = b.id
+                 WHERE e.kind IN ({kindList})
+                   AND strpos('§' || b.path || '§', '§' || e.to_id || '§') = 0
+                   AND b.depth < $max
+             )
+             SELECT path, depth FROM bfs
+             WHERE id = $to
+             ORDER BY depth, path
+             LIMIT $limit;
+             """;
+        command.Parameters.Add(P("from", fromId));
+        command.Parameters.Add(P("to", toId));
+        command.Parameters.Add(P("max", maxDepth));
+        command.Parameters.Add(P("limit", maxPaths));
+        for (var i = 0; i < edgeKinds.Length; i++)
+            command.Parameters.Add(P($"k{i}", edgeKinds[i]));
+
+        var results = new List<IReadOnlyList<GraphNode>>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var ids = reader.GetString(0).Split('§');
+            var nodes = ids.Select(id => GetNode(id)).OfType<GraphNode>().ToList();
+            if (nodes.Count == ids.Length)
+                results.Add(nodes);
+        }
+        return results;
+    }
+
+    /// <summary>
     /// Neighbourhood subgraph: the starting node, everything reachable from it in both directions up to
     /// <paramref name="maxDepth"/> hops, plus all edges between those nodes. Capped at 150 nodes.
     /// </summary>

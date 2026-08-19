@@ -181,6 +181,47 @@ public sealed class CodeGraphTools(GraphStore store)
         return sb.ToString();
     }
 
+    [McpServerTool(Name = "path_between", ReadOnly = true, Idempotent = true)]
+    [Description("Shortest call path(s) between two methods — answers 'how does A end up calling B?'. Returns each node in order with its full name.")]
+    public string PathBetween(
+        [Description("Source node id from find_symbol")] string from,
+        [Description("Target node id from find_symbol")] string to,
+        [Description("Edge kinds to follow, comma-separated, default Calls")] string edgeKinds = "Calls",
+        [Description("Max hops per path, 1-20, default 10")] int maxDepth = 10,
+        [Description("Max paths to return, 1-5, default 3")] int maxPaths = 3)
+    {
+        var fromNode = store.GetNode(from);
+        var toNode   = store.GetNode(to);
+        if (fromNode is null) return NotFound(from);
+        if (toNode is null)   return NotFound(to);
+
+        var kinds = edgeKinds
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(k => Enum.TryParse<EdgeKind>(k, ignoreCase: true, out _))
+            .ToArray();
+        if (kinds.Length == 0) kinds = [nameof(EdgeKind.Calls)];
+
+        var paths = store.PathBetween(from, to, kinds, Math.Clamp(maxDepth, 1, 20), Math.Clamp(maxPaths, 1, 5));
+        if (paths.Count == 0)
+            return $"no path from {fromNode.FullName} to {toNode.FullName} within {maxDepth} hops via {string.Join(", ", kinds)}";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"{paths.Count} path(s) from {fromNode.FullName} to {toNode.FullName}:");
+        for (var i = 0; i < paths.Count; i++)
+        {
+            var path = paths[i];
+            sb.AppendLine($"\nPath {i + 1} ({path.Count - 1} hop{(path.Count == 2 ? "" : "s")}):");
+            for (var j = 0; j < path.Count; j++)
+            {
+                var n = path[j];
+                sb.Append($"  {j + 1}. {n.Kind.ToString().ToLowerInvariant()}  {n.FullName}");
+                if (j < path.Count - 1) sb.AppendLine("  →");
+                else sb.AppendLine();
+            }
+        }
+        return sb.ToString();
+    }
+
     [McpServerTool(Name = "tests_for", ReadOnly = true, Idempotent = true)]
     [Description("Test methods that call this member directly.")]
     public string TestsFor([Description("Node id from find_symbol")] string id)

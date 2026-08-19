@@ -66,6 +66,16 @@
     #detail .actions button { font-size: 11px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
     #detail .actions button:hover { border-color: var(--teal); color: var(--teal); }
 
+    /* path section */
+    #path-section { padding: 10px 12px; border-top: 1px solid var(--border); }
+    #path-section h4 { font-size: 11px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .5px; }
+    .path-slot { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 11px; }
+    .path-slot-label { color: var(--muted); width: 32px; flex-shrink: 0; }
+    .path-slot-name { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #path-find { width: 100%; padding: 5px; border-radius: 4px; border: 1px solid var(--teal); background: transparent; color: var(--teal); font-size: 11px; cursor: pointer; }
+    #path-find:disabled { opacity: .35; cursor: default; }
+    #path-result { margin-top: 8px; font-size: 11px; color: var(--muted); }
+
     /* ── Main canvas ──────────────────────────────────────── */
     #cy-wrap { flex: 1; position: relative; }
     #cy { width: 100%; height: 100%; }
@@ -110,7 +120,20 @@
   </div>
 
   <div id="detail"></div>
-</div>
+
+  <div id="path-section">
+    <h4>Find path</h4>
+    <div class="path-slot">
+      <span class="path-slot-label">From</span>
+      <span class="path-slot-name" id="path-from-name">(click a node, then Set as From)</span>
+    </div>
+    <div class="path-slot">
+      <span class="path-slot-label">To</span>
+      <span class="path-slot-name" id="path-to-name">—</span>
+    </div>
+    <button id="path-find" disabled onclick="findPath()">Find shortest path</button>
+    <div id="path-result"></div>
+  </div>
 
 <div id="cy-wrap">
   <div id="cy"></div>
@@ -226,15 +249,23 @@ cy.on('add', () => {
 
 // ── State ────────────────────────────────────────────────────
 let currentLayout = 'breadthfirst';
+let currentNode = null;  // { id, label } of the last loaded node
 
 // ── Depth slider ─────────────────────────────────────────────
+let depthTimer;
 document.getElementById('depth').addEventListener('input', e => {
   document.getElementById('depth-val').textContent = e.target.value;
+  if (!currentNode) return;
+  clearTimeout(depthTimer);
+  depthTimer = setTimeout(() => loadNode(currentNode.id, currentNode.label), 300);
 });
 
 // ── Edge toggles ─────────────────────────────────────────────
 document.querySelectorAll('.toggle').forEach(t =>
-  t.addEventListener('click', () => t.classList.toggle('off')));
+  t.addEventListener('click', () => {
+    t.classList.toggle('off');
+    if (currentNode) loadNode(currentNode.id, currentNode.label);
+  }));
 
 function activeEdgeKinds() {
   return [...document.querySelectorAll('.toggle:not(.off)')].map(t => t.dataset.kind);
@@ -302,6 +333,7 @@ async function loadNode(id, label) {
 
   const chosen = cy.getElementById(id);
   if (chosen.length) { chosen.select(); showDetail(chosen.data()); }
+  currentNode = { id, label: label ?? id };
 }
 
 // ── Node click ───────────────────────────────────────────────
@@ -319,6 +351,43 @@ cy.on('tap', evt => {
 });
 
 // ── Node detail panel ────────────────────────────────────────
+// ── Path state ───────────────────────────────────────────────
+let pathFrom = null, pathTo = null;
+
+function setPathEndpoint(which, id, label) {
+  if (which === 'from') { pathFrom = { id, label }; document.getElementById('path-from-name').textContent = label; }
+  else                  { pathTo   = { id, label }; document.getElementById('path-to-name').textContent   = label; }
+  document.getElementById('path-find').disabled = !(pathFrom && pathTo);
+}
+
+async function findPath() {
+  if (!pathFrom || !pathTo) return;
+  setLoading(true);
+  document.getElementById('path-result').textContent = '';
+  const data = await get(`/api/path?from=${encodeURIComponent(pathFrom.id)}&to=${encodeURIComponent(pathTo.id)}&edges=Calls&maxDepth=15&maxPaths=3`);
+  setLoading(false);
+
+  if (!data?.length) {
+    document.getElementById('path-result').textContent = 'No path found.';
+    return;
+  }
+  document.getElementById('path-result').textContent = `${data.length} path(s) found.`;
+
+  // Render the first (shortest) path in the canvas
+  const path = data[0];
+  cy.elements().remove();
+  cy.add(path.nodes);
+  cy.add(path.edges);
+  cy.layout({ name: 'breadthfirst', directed: true, padding: 40 }).run();
+  cy.fit(undefined, 40);
+
+  // Highlight path nodes in gold
+  path.nodes.forEach(n => {
+    const node = cy.getElementById(n.data.id);
+    if (node.length) node.style({ 'border-color': '#FFD166', 'border-width': 4, 'border-opacity': 1 });
+  });
+}
+
 function showDetail(data) {
   const color = nodeColor(data);
   const flags = [
@@ -342,6 +411,8 @@ function showDetail(data) {
     </table>
     <div class="actions">
       <button onclick="loadNode('${esc(data.id)}','${esc(data.label)}')">Expand here</button>
+      <button onclick="setPathEndpoint('from','${esc(data.id)}','${esc(data.label)}')">Set as From</button>
+      <button onclick="setPathEndpoint('to','${esc(data.id)}','${esc(data.label)}')">Set as To</button>
     </div>`;
 }
 

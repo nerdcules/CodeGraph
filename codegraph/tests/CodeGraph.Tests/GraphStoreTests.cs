@@ -238,6 +238,44 @@ public sealed class GraphStoreTests
     }
 
     [Fact]
+    public void PathBetween_finds_the_shortest_call_path()
+    {
+        using var db = new TempDb();
+        db.Store.Seeded();
+
+        // Top → Handle → Save (two-hop path)
+        var paths = db.Store.PathBetween(Graph.Top, Graph.Save, [nameof(EdgeKind.Calls)]);
+
+        Assert.Single(paths);
+        Assert.Equal([Graph.Top, Graph.Handle, Graph.Save], paths[0].Select(n => n.Id).ToArray());
+    }
+
+    [Fact]
+    public void PathBetween_returns_empty_when_no_path_exists()
+    {
+        using var db = new TempDb();
+        db.Store.Seeded();
+
+        var paths = db.Store.PathBetween(Graph.Save, Graph.Top, [nameof(EdgeKind.Calls)]);
+
+        Assert.Empty(paths);
+    }
+
+    [Fact]
+    public void PathBetween_returns_direct_path_of_length_one()
+    {
+        using var db = new TempDb();
+        db.Store.Seeded();
+
+        var paths = db.Store.PathBetween(Graph.Handle, Graph.Save, [nameof(EdgeKind.Calls)]);
+
+        Assert.Single(paths);
+        Assert.Equal(2, paths[0].Count);
+        Assert.Equal(Graph.Handle, paths[0][0].Id);
+        Assert.Equal(Graph.Save,   paths[0][1].Id);
+    }
+
+    [Fact]
     public void Callers_at_depth_1_returns_only_direct_callers()
     {
         using var db = new TempDb();

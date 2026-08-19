@@ -88,6 +88,29 @@ app.MapGet("/api/subgraph", (string id, string? edges, int depth = 2, GraphStore
     };
 });
 
+app.MapGet("/api/path", (string from, string to, string? edges, int maxDepth = 10, int maxPaths = 3, GraphStore store = null!) =>
+{
+    var edgeKinds = (edges ?? "Calls")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(e => Enum.TryParse<EdgeKind>(e, ignoreCase: true, out _))
+        .ToArray();
+    if (edgeKinds.Length == 0) edgeKinds = [nameof(EdgeKind.Calls)];
+
+    var paths = store.PathBetween(from, to, edgeKinds, Math.Clamp(maxDepth, 1, 20), Math.Clamp(maxPaths, 1, 5));
+    return paths.Select((path, pi) => new
+    {
+        nodes = path.Select(n => new
+        {
+            data = new { id = n.Id, label = n.Name, kind = n.Kind.ToString(), typeKind = n.TypeKind.ToString(),
+                         fullName = n.FullName, file = n.FilePath, line = n.StartLine }
+        }),
+        edges = path.Zip(path.Skip(1), (a, b) => new
+        {
+            data = new { id = $"p{pi}e{a.Id}", source = a.Id, target = b.Id, kind = edgeKinds[0] }
+        }),
+    });
+});
+
 app.MapGet("/api/stats", (GraphStore store) =>
 {
     var (nodes, edges) = store.Count();
