@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/CodeGraph.Core/CodeGraph.Core.csproj" />
+    <ProjectReference Include="../../src/CodeGraph.Indexer/CodeGraph.Indexer.csproj" />
+  </ItemGroup>
+</Project>

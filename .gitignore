@@ -1,0 +1,31 @@
+# Build output
+bin/
+obj/
+out/
+
+# Test results and coverage
+TestResults/
+*.cobertura.xml
+CoverageReport/
+
+# Generated graph databases (re-create with codegraph-index)
+.codegraph/
+
+# Indexer output log
+indexing.log
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# Rider / VS / VS Code
+.idea/
+.vs/
+*.user
+*.suo
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

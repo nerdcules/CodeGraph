@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CodeGraph.Core/CodeGraph.Core.csproj" />
+    <Project Path="src/CodeGraph.Indexer/CodeGraph.Indexer.csproj" />
+    <Project Path="src/CodeGraph.Mcp/CodeGraph.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CodeGraph.Tests/CodeGraph.Tests.csproj" />
+  </Folder>
+</Solution>

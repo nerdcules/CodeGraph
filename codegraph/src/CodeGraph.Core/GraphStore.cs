@@ -1,0 +1,637 @@
+using DuckDB.NET.Data;
+
+namespace CodeGraph.Core;
+
+/// <summary>
+/// DuckDB persistence for the code graph. Two tables and recursive CTEs.
+/// DuckDB's columnar engine makes it easy to export the data for graph visualisation tools.
+/// </summary>
+public sealed class GraphStore : IDisposable
+{
+    public static readonly string[] AllEdgeKinds =
+    [
+        nameof(EdgeKind.Calls),
+        nameof(EdgeKind.Overrides),
+        nameof(EdgeKind.Implements),
+        nameof(EdgeKind.Inherits),
+        nameof(EdgeKind.Contains),
+        nameof(EdgeKind.DependsOn),
+        nameof(EdgeKind.TestedBy),
+    ];
+
+    private static readonly string[] ImpactEdgeKinds =
+    [
+        nameof(EdgeKind.Calls),
+        nameof(EdgeKind.Overrides),
+        nameof(EdgeKind.Implements),
+        nameof(EdgeKind.Inherits),
+    ];
+
+    private readonly DuckDBConnection _connection;
+
+    public GraphStore(string dbPath)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(dbPath));
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        _connection = new DuckDBConnection($"Data Source={dbPath}");
+        _connection.Open();
+        EnsureSchema();
+    }
+
+    public void Dispose() => _connection.Dispose();
+
+    /// <summary>Drops all graph data. Called before a full re-index.</summary>
+    public void Clear()
+    {
+        Execute("DELETE FROM edges;");
+        Execute("DELETE FROM nodes;");
+    }
+
+    public void Write(IEnumerable<GraphNode> nodes, IEnumerable<GraphEdge> edges)
+    {
+        using var transaction = _connection.BeginTransaction();
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                INSERT INTO nodes
+                    (id, kind, name, full_name, signature, file_path, start_line, end_line, is_test,
+                     type_kind, accessibility, is_static, is_abstract, is_virtual, is_sealed, is_async, is_override, member_kind)
+                VALUES
+                    ($id, $kind, $name, $full_name, $signature, $file_path, $start_line, $end_line, $is_test,
+                     $type_kind, $accessibility, $is_static, $is_abstract, $is_virtual, $is_sealed, $is_async, $is_override, $member_kind)
+                ON CONFLICT (id) DO UPDATE SET
+                    kind = excluded.kind, name = excluded.name, full_name = excluded.full_name,
+                    signature = excluded.signature, file_path = excluded.file_path,
+                    start_line = excluded.start_line, end_line = excluded.end_line,
+                    is_test = excluded.is_test, type_kind = excluded.type_kind,
+                    accessibility = excluded.accessibility, is_static = excluded.is_static,
+                    is_abstract = excluded.is_abstract, is_virtual = excluded.is_virtual,
+                    is_sealed = excluded.is_sealed, is_async = excluded.is_async,
+                    is_override = excluded.is_override, member_kind = excluded.member_kind;
+                """;
+
+            foreach (var node in nodes)
+            {
+                command.Parameters.Clear();
+                command.Parameters.Add(P("id", node.Id));
+                command.Parameters.Add(P("kind", node.Kind.ToString()));
+                command.Parameters.Add(P("name", node.Name));
+                command.Parameters.Add(P("full_name", node.FullName));
+                command.Parameters.Add(P("signature", node.Signature));
+                command.Parameters.Add(P("file_path", node.FilePath));
+                command.Parameters.Add(P("start_line", node.StartLine));
+                command.Parameters.Add(P("end_line", node.EndLine));
+                command.Parameters.Add(P("is_test", node.IsTest));
+                command.Parameters.Add(P("type_kind", node.TypeKind.ToString()));
+                command.Parameters.Add(P("accessibility", node.Accessibility.ToString()));
+                command.Parameters.Add(P("is_static", node.IsStatic));
+                command.Parameters.Add(P("is_abstract", node.IsAbstract));
+                command.Parameters.Add(P("is_virtual", node.IsVirtual));
+                command.Parameters.Add(P("is_sealed", node.IsSealed));
+                command.Parameters.Add(P("is_async", node.IsAsync));
+                command.Parameters.Add(P("is_override", node.IsOverride));
+                command.Parameters.Add(P("member_kind", node.MemberKind.ToString()));
+                command.ExecuteNonQuery();
+            }
+        }
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                "INSERT INTO edges (from_id, to_id, kind) VALUES ($from, $to, $kind) ON CONFLICT DO NOTHING;";
+
+            foreach (var edge in edges)
+            {
+                command.Parameters.Clear();
+                command.Parameters.Add(P("from", edge.FromId));
+                command.Parameters.Add(P("to", edge.ToId));
+                command.Parameters.Add(P("kind", edge.Kind.ToString()));
+                command.ExecuteNonQuery();
+            }
+        }
+
+        transaction.Commit();
+    }
+
+    public (int Nodes, int Edges) Count()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT (SELECT COUNT(*) FROM nodes), (SELECT COUNT(*) FROM edges);";
+        using var reader = command.ExecuteReader();
+        reader.Read();
+        return (reader.GetInt32(0), reader.GetInt32(1));
+    }
+
+    public GraphNode? GetNode(string id)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = $"SELECT {NodeColumns} FROM nodes WHERE id = $id;";
+        command.Parameters.Add(P("id", id));
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadNode(reader) : null;
+    }
+
+    /// <summary>
+    /// Case-insensitive name match on name or full name. Exact name matches sort first,
+    /// then shorter names, so <c>FindSymbol("Save")</c> returns <c>Save</c> before <c>SaveAllAsync</c>.
+    /// </summary>
+    public IReadOnlyList<GraphNode> FindSymbol(
+        string query,
+        NodeKind? kind = null,
+        int limit = 20,
+        TypeKind? typeKind = null,
+        Accessibility? accessibility = null,
+        bool? isStatic = null,
+        bool? isAbstract = null,
+        bool? isVirtual = null,
+        bool? isAsync = null,
+        bool? isOverride = null,
+        MemberKind? memberKind = null,
+        string nameMatch = "Contains",
+        int offset = 0)
+    {
+        var pattern = nameMatch.ToLowerInvariant() switch
+        {
+            "startswith" => $"{query}%",
+            "endswith"   => $"%{query}",
+            "exact"      => query,
+            _            => $"%{query}%",  // contains
+        };
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT {NodeColumns} FROM nodes
+             WHERE (name ILIKE $pattern OR full_name ILIKE $pattern)
+               AND ($kind IS NULL OR kind = $kind)
+               AND ($type_kind IS NULL OR type_kind = $type_kind)
+               AND ($accessibility IS NULL OR accessibility = $accessibility)
+               AND ($is_static IS NULL OR is_static = $is_static)
+               AND ($is_abstract IS NULL OR is_abstract = $is_abstract)
+               AND ($is_virtual IS NULL OR is_virtual = $is_virtual)
+               AND ($is_async IS NULL OR is_async = $is_async)
+               AND ($is_override IS NULL OR is_override = $is_override)
+               AND ($member_kind IS NULL OR member_kind = $member_kind)
+             ORDER BY
+               CASE WHEN LOWER(name) = LOWER($exact) THEN 0 ELSE 1 END,
+               LENGTH(name),
+               full_name
+             LIMIT $limit OFFSET $offset;
+             """;
+        command.Parameters.Add(P("pattern", pattern));
+        command.Parameters.Add(P("exact", query));
+        command.Parameters.Add(P("offset", Math.Max(0, offset)));
+        command.Parameters.Add(P("kind", kind?.ToString()));
+        command.Parameters.Add(P("limit", limit));
+        command.Parameters.Add(P("type_kind", typeKind?.ToString()));
+        command.Parameters.Add(P("accessibility", accessibility?.ToString()));
+        command.Parameters.Add(P("is_static", isStatic.HasValue ? (object?)isStatic.Value : null));
+        command.Parameters.Add(P("is_abstract", isAbstract.HasValue ? (object?)isAbstract.Value : null));
+        command.Parameters.Add(P("is_virtual", isVirtual.HasValue ? (object?)isVirtual.Value : null));
+        command.Parameters.Add(P("is_async", isAsync.HasValue ? (object?)isAsync.Value : null));
+        command.Parameters.Add(P("is_override", isOverride.HasValue ? (object?)isOverride.Value : null));
+        command.Parameters.Add(P("member_kind", memberKind?.ToString()));
+        return ReadNodes(command);
+    }
+
+    /// <summary>Direct children via Contains edges (project to files, file to types, type to members).</summary>
+    public IReadOnlyList<GraphNode> Children(string id)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT {QualifiedNodeColumns} FROM nodes n
+             JOIN edges e ON e.to_id = n.id
+             WHERE e.from_id = $id AND e.kind = 'Contains'
+             ORDER BY n.start_line, n.name;
+             """;
+        command.Parameters.Add(P("id", id));
+        return ReadNodes(command);
+    }
+
+    /// <summary>Direct members of a type, optionally filtered by kind, accessibility and modifier flags.</summary>
+    public IReadOnlyList<GraphNode> MembersOf(
+        string typeId,
+        NodeKind? kind = null,
+        Accessibility? accessibility = null,
+        bool? isStatic = null,
+        bool? isAbstract = null,
+        bool? isAsync = null,
+        bool? isVirtual = null,
+        bool? isOverride = null,
+        int limit = 500,
+        int offset = 0)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT {QualifiedNodeColumns} FROM nodes n
+             JOIN edges e ON e.to_id = n.id
+             WHERE e.from_id = $id AND e.kind = 'Contains'
+               AND n.kind != 'Type'
+               AND ($kind IS NULL OR n.kind = $kind)
+               AND ($accessibility IS NULL OR n.accessibility = $accessibility)
+               AND ($is_static IS NULL OR n.is_static = $is_static)
+               AND ($is_abstract IS NULL OR n.is_abstract = $is_abstract)
+               AND ($is_async IS NULL OR n.is_async = $is_async)
+               AND ($is_virtual IS NULL OR n.is_virtual = $is_virtual)
+               AND ($is_override IS NULL OR n.is_override = $is_override)
+             ORDER BY n.start_line, n.name
+             LIMIT $limit OFFSET $offset;
+             """;
+        command.Parameters.Add(P("id", typeId));
+        command.Parameters.Add(P("kind", kind?.ToString()));
+        command.Parameters.Add(P("accessibility", accessibility?.ToString()));
+        command.Parameters.Add(P("is_static", isStatic.HasValue ? (object?)isStatic.Value : null));
+        command.Parameters.Add(P("is_abstract", isAbstract.HasValue ? (object?)isAbstract.Value : null));
+        command.Parameters.Add(P("is_async", isAsync.HasValue ? (object?)isAsync.Value : null));
+        command.Parameters.Add(P("is_virtual", isVirtual.HasValue ? (object?)isVirtual.Value : null));
+        command.Parameters.Add(P("is_override", isOverride.HasValue ? (object?)isOverride.Value : null));
+        command.Parameters.Add(P("limit", Math.Max(1, limit)));
+        command.Parameters.Add(P("offset", Math.Max(0, offset)));
+        return ReadNodes(command);
+    }
+
+    /// <summary>Nodes that call <paramref name="id"/>, transitively up to <paramref name="maxDepth"/>.</summary>
+    public IReadOnlyList<GraphHit> Callers(string id, int maxDepth = 1) =>
+        Walk(id, maxDepth, inbound: true, [nameof(EdgeKind.Calls)]);
+
+    /// <summary>Nodes that <paramref name="id"/> calls, transitively up to <paramref name="maxDepth"/>.</summary>
+    public IReadOnlyList<GraphHit> Callees(string id, int maxDepth = 1) =>
+        Walk(id, maxDepth, inbound: false, [nameof(EdgeKind.Calls)]);
+
+    /// <summary>
+    /// Everything that could be affected by changing <paramref name="id"/>: transitive callers,
+    /// overriders, implementers and subclasses. Test methods in the result are the ones that guard it.
+    /// </summary>
+    public IReadOnlyList<GraphHit> Impact(string id, int maxDepth = 5) =>
+        Walk(id, maxDepth, inbound: true, ImpactEdgeKinds);
+
+    /// <summary>All nodes, optionally filtered to one kind. Use sparingly - may return thousands of rows.</summary>
+    public IReadOnlyList<GraphNode> AllNodes(NodeKind? kind = null)
+    {
+        using var command = _connection.CreateCommand();
+        if (kind is null)
+        {
+            command.CommandText = $"SELECT {NodeColumns} FROM nodes ORDER BY kind, full_name;";
+        }
+        else
+        {
+            command.CommandText = $"SELECT {NodeColumns} FROM nodes WHERE kind = $kind ORDER BY full_name;";
+            command.Parameters.Add(P("kind", kind.ToString()));
+        }
+        return ReadNodes(command);
+    }
+
+    /// <summary>All edges leaving <paramref name="id"/>, with the target node resolved.</summary>
+    public IReadOnlyList<(EdgeKind Kind, GraphNode Target)> EdgesFrom(string id)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT e.kind, {QualifiedNodeColumns} FROM edges e
+             JOIN nodes n ON n.id = e.to_id
+             WHERE e.from_id = $id
+             ORDER BY e.kind, n.full_name;
+             """;
+        command.Parameters.Add(P("id", id));
+        return ReadEdgeNodes(command);
+    }
+
+    /// <summary>All edges arriving at <paramref name="id"/>, with the source node resolved.</summary>
+    public IReadOnlyList<(EdgeKind Kind, GraphNode Source)> EdgesTo(string id)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT e.kind, {QualifiedNodeColumns} FROM edges e
+             JOIN nodes n ON n.id = e.from_id
+             WHERE e.to_id = $id
+             ORDER BY e.kind, n.full_name;
+             """;
+        command.Parameters.Add(P("id", id));
+        return ReadEdgeNodes(command);
+    }
+
+    /// <summary>Generic walk over any combination of edge kinds, in either direction.</summary>
+    public IReadOnlyList<GraphHit> Walk(string id, string[] edgeKinds, bool inbound, int maxDepth) =>
+        Walk(id, maxDepth, inbound, edgeKinds);
+
+    /// <summary>Test methods that call <paramref name="id"/> directly.</summary>
+    public IReadOnlyList<GraphNode> DirectTests(string id)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT {QualifiedNodeColumns} FROM nodes n
+             JOIN edges e ON e.to_id = n.id
+             WHERE e.from_id = $id AND e.kind = 'TestedBy'
+             ORDER BY n.full_name;
+             """;
+        command.Parameters.Add(P("id", id));
+        return ReadNodes(command);
+    }
+
+    /// <summary>
+    /// Static reachability coverage: production methods reachable from tests via Calls edges.
+    /// Returns (total production methods, covered by at least one test path, test method count).
+    /// </summary>
+    public (int Total, int Covered, int TestMethods) CoverageStats()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            """
+            WITH RECURSIVE reach(id) AS (
+                SELECT id FROM nodes WHERE is_test = true AND kind = 'Method'
+                UNION
+                SELECT e.to_id FROM edges e
+                JOIN reach r ON e.from_id = r.id
+                WHERE e.kind = 'Calls'
+            )
+            SELECT
+                (SELECT COUNT(*) FROM nodes WHERE kind = 'Method' AND is_test = false) AS total,
+                (SELECT COUNT(*) FROM nodes n JOIN reach r ON n.id = r.id WHERE n.kind = 'Method' AND n.is_test = false) AS covered,
+                (SELECT COUNT(*) FROM nodes WHERE kind = 'Method' AND is_test = true) AS test_methods;
+            """;
+        using var reader = command.ExecuteReader();
+        reader.Read();
+        return (reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2));
+    }
+
+    /// <summary>All methods ranked by direct caller count, paged.</summary>
+    public IReadOnlyList<(GraphNode Method, int CallerCount)> MostCalled(int limit, int minCallers, int offset)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT {NodeColumns}, COUNT(e.from_id) AS caller_count
+             FROM nodes
+             LEFT JOIN edges e ON e.to_id = id AND e.kind = 'Calls'
+             WHERE kind = 'Method'
+             GROUP BY {NodeColumns}
+             HAVING COUNT(e.from_id) >= $min_callers
+             ORDER BY caller_count DESC
+             LIMIT $limit OFFSET $offset;
+             """;
+        command.Parameters.Add(P("min_callers", minCallers));
+        command.Parameters.Add(P("limit", Math.Clamp(limit, 1, 100)));
+        command.Parameters.Add(P("offset", Math.Max(0, offset)));
+        var results = new List<(GraphNode, int)>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            results.Add((ReadNode(reader), reader.GetInt32(reader.FieldCount - 1)));
+        return results;
+    }
+
+    /// <summary>
+    /// Production methods not reachable from any test via Calls edges.
+    /// Optionally scoped to a file path substring.
+    /// </summary>
+    public IReadOnlyList<GraphNode> UncoveredMethods(string? filePattern = null, int limit = 200, int offset = 0)
+    {
+        using var command = _connection.CreateCommand();
+        var fileFilter = filePattern is not null ? "AND file_path ILIKE $file" : "";
+        command.CommandText =
+            $"""
+             WITH RECURSIVE reach(id) AS (
+                 SELECT id FROM nodes WHERE is_test = true AND kind = 'Method'
+                 UNION
+                 SELECT e.to_id FROM edges e
+                 JOIN reach r ON e.from_id = r.id
+                 WHERE e.kind = 'Calls'
+             )
+             SELECT {NodeColumns} FROM nodes
+             WHERE kind = 'Method' AND is_test = false
+             AND id NOT IN (SELECT id FROM reach)
+             {fileFilter}
+             ORDER BY full_name
+             LIMIT $limit OFFSET $offset;
+             """;
+        command.Parameters.Add(P("limit", limit));
+        command.Parameters.Add(P("offset", Math.Max(0, offset)));
+        if (filePattern is not null)
+            command.Parameters.Add(P("file", $"%{filePattern}%"));
+        return ReadNodes(command);
+    }
+
+    /// <summary>Test methods that transitively reach <paramref name="id"/> via Calls edges.</summary>
+    public IReadOnlyList<GraphHit> TransitiveTests(string id, int maxDepth = 10)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             WITH RECURSIVE walk(id, depth) AS (
+                 SELECT $id, 0
+                 UNION
+                 SELECT e.from_id, w.depth + 1
+                 FROM edges e
+                 JOIN walk w ON e.to_id = w.id
+                 WHERE e.kind = 'Calls' AND w.depth < $max
+             )
+             SELECT {QualifiedNodeColumns}, MIN(w.depth) AS depth
+             FROM walk w
+             JOIN nodes n ON n.id = w.id
+             WHERE w.depth > 0 AND n.is_test = true
+             GROUP BY {GroupByNodeColumns}
+             ORDER BY depth, n.full_name;
+             """;
+        command.Parameters.Add(P("id", id));
+        command.Parameters.Add(P("max", maxDepth));
+        var hits = new List<GraphHit>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            hits.Add(new GraphHit(ReadNode(reader), reader.GetInt32(reader.FieldCount - 1)));
+        return hits;
+    }
+
+    private IReadOnlyList<GraphHit> Walk(string id, int maxDepth, bool inbound, string[] edgeKinds)
+    {
+        var (nextColumn, matchColumn) = inbound ? ("from_id", "to_id") : ("to_id", "from_id");
+        var kindList = string.Join(", ", edgeKinds.Select((_, i) => $"$k{i}"));
+
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             WITH RECURSIVE walk(id, depth) AS (
+                 SELECT $id, 0
+                 UNION
+                 SELECT e.{nextColumn}, w.depth + 1
+                 FROM edges e
+                 JOIN walk w ON e.{matchColumn} = w.id
+                 WHERE e.kind IN ({kindList}) AND w.depth < $max
+             )
+             SELECT {QualifiedNodeColumns}, MIN(w.depth) AS depth
+             FROM walk w
+             JOIN nodes n ON n.id = w.id
+             WHERE w.depth > 0
+             GROUP BY {GroupByNodeColumns}
+             ORDER BY depth, n.full_name;
+             """;
+        command.Parameters.Add(P("id", id));
+        command.Parameters.Add(P("max", maxDepth));
+        for (var i = 0; i < edgeKinds.Length; i++)
+        {
+            command.Parameters.Add(P($"k{i}", edgeKinds[i]));
+        }
+
+        var hits = new List<GraphHit>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            hits.Add(new GraphHit(ReadNode(reader), reader.GetInt32(reader.FieldCount - 1)));
+        }
+
+        return hits;
+    }
+
+    // Column list for SELECT without table alias.
+    private const string NodeColumns =
+        "id, kind, name, full_name, signature, file_path, start_line, end_line, is_test, " +
+        "type_kind, accessibility, is_static, is_abstract, is_virtual, is_sealed, is_async, is_override, member_kind";
+
+    // Column list for JOIN queries where the nodes table is aliased 'n'.
+    private const string QualifiedNodeColumns =
+        "n.id, n.kind, n.name, n.full_name, n.signature, n.file_path, n.start_line, n.end_line, n.is_test, " +
+        "n.type_kind, n.accessibility, n.is_static, n.is_abstract, n.is_virtual, n.is_sealed, n.is_async, n.is_override, n.member_kind";
+
+    // DuckDB requires every non-aggregated SELECT column to appear in GROUP BY (no PK shortcut).
+    private const string GroupByNodeColumns =
+        "n.id, n.kind, n.name, n.full_name, n.signature, n.file_path, n.start_line, n.end_line, n.is_test, " +
+        "n.type_kind, n.accessibility, n.is_static, n.is_abstract, n.is_virtual, n.is_sealed, n.is_async, n.is_override, n.member_kind";
+
+    private static IReadOnlyList<GraphNode> ReadNodes(DuckDBCommand command)
+    {
+        var nodes = new List<GraphNode>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            nodes.Add(ReadNode(reader));
+        }
+
+        return nodes;
+    }
+
+    private static IReadOnlyList<(EdgeKind Kind, GraphNode Node)> ReadEdgeNodes(DuckDBCommand command)
+    {
+        var results = new List<(EdgeKind, GraphNode)>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var kind = Enum.Parse<EdgeKind>(reader.GetString(0));
+            // columns 1..18 are the node columns (offset by 1 for the edge kind column)
+            var node = new GraphNode(
+                Id: reader.GetString(1),
+                Kind: Enum.Parse<NodeKind>(reader.GetString(2)),
+                Name: reader.GetString(3),
+                FullName: reader.GetString(4),
+                Signature: reader.IsDBNull(5) ? null : reader.GetString(5),
+                FilePath: reader.IsDBNull(6) ? null : reader.GetString(6),
+                StartLine: reader.GetInt32(7),
+                EndLine: reader.GetInt32(8),
+                IsTest: reader.GetBoolean(9),
+                TypeKind: Enum.Parse<TypeKind>(reader.GetString(10)),
+                Accessibility: Enum.Parse<Accessibility>(reader.GetString(11)),
+                IsStatic: reader.GetBoolean(12),
+                IsAbstract: reader.GetBoolean(13),
+                IsVirtual: reader.GetBoolean(14),
+                IsSealed: reader.GetBoolean(15),
+                IsAsync: reader.GetBoolean(16),
+                IsOverride: reader.GetBoolean(17),
+                MemberKind: Enum.Parse<MemberKind>(reader.GetString(18)));
+            results.Add((kind, node));
+        }
+        return results;
+    }
+
+    private static GraphNode ReadNode(System.Data.Common.DbDataReader reader) => new(
+        Id: reader.GetString(0),
+        Kind: Enum.Parse<NodeKind>(reader.GetString(1)),
+        Name: reader.GetString(2),
+        FullName: reader.GetString(3),
+        Signature: reader.IsDBNull(4) ? null : reader.GetString(4),
+        FilePath: reader.IsDBNull(5) ? null : reader.GetString(5),
+        StartLine: reader.GetInt32(6),
+        EndLine: reader.GetInt32(7),
+        IsTest: reader.GetBoolean(8),
+        TypeKind: Enum.Parse<TypeKind>(reader.GetString(9)),
+        Accessibility: Enum.Parse<Accessibility>(reader.GetString(10)),
+        IsStatic: reader.GetBoolean(11),
+        IsAbstract: reader.GetBoolean(12),
+        IsVirtual: reader.GetBoolean(13),
+        IsSealed: reader.GetBoolean(14),
+        IsAsync: reader.GetBoolean(15),
+        IsOverride: reader.GetBoolean(16),
+        MemberKind: Enum.Parse<MemberKind>(reader.GetString(17)));
+
+    private void EnsureSchema()
+    {
+        Execute(
+            """
+            CREATE TABLE IF NOT EXISTS nodes (
+                id            VARCHAR PRIMARY KEY,
+                kind          VARCHAR NOT NULL,
+                name          VARCHAR NOT NULL,
+                full_name     VARCHAR NOT NULL,
+                signature     VARCHAR,
+                file_path     VARCHAR,
+                start_line    INTEGER NOT NULL,
+                end_line      INTEGER NOT NULL,
+                is_test       BOOLEAN NOT NULL DEFAULT false,
+                type_kind     VARCHAR NOT NULL DEFAULT 'None',
+                accessibility VARCHAR NOT NULL DEFAULT 'None',
+                is_static     BOOLEAN NOT NULL DEFAULT false,
+                is_abstract   BOOLEAN NOT NULL DEFAULT false,
+                is_virtual    BOOLEAN NOT NULL DEFAULT false,
+                is_sealed     BOOLEAN NOT NULL DEFAULT false,
+                is_async      BOOLEAN NOT NULL DEFAULT false,
+                is_override   BOOLEAN NOT NULL DEFAULT false,
+                member_kind   VARCHAR NOT NULL DEFAULT 'Ordinary'
+            )
+            """);
+        Execute("CREATE INDEX IF NOT EXISTS ix_nodes_name ON nodes (name)");
+        Execute("CREATE INDEX IF NOT EXISTS ix_nodes_file ON nodes (file_path)");
+        Execute(
+            """
+            CREATE TABLE IF NOT EXISTS edges (
+                from_id VARCHAR NOT NULL,
+                to_id   VARCHAR NOT NULL,
+                kind    VARCHAR NOT NULL,
+                PRIMARY KEY (from_id, to_id, kind)
+            )
+            """);
+        Execute("CREATE INDEX IF NOT EXISTS ix_edges_to ON edges (to_id, kind)");
+
+        // Idempotent column additions for databases created before this schema version.
+        EnsureColumn("nodes", "type_kind",    "VARCHAR DEFAULT 'None'");
+        EnsureColumn("nodes", "accessibility", "VARCHAR DEFAULT 'None'");
+        EnsureColumn("nodes", "is_static",    "BOOLEAN DEFAULT false");
+        EnsureColumn("nodes", "is_abstract",  "BOOLEAN DEFAULT false");
+        EnsureColumn("nodes", "is_virtual",   "BOOLEAN DEFAULT false");
+        EnsureColumn("nodes", "is_sealed",    "BOOLEAN DEFAULT false");
+        EnsureColumn("nodes", "is_async",     "BOOLEAN DEFAULT false");
+        EnsureColumn("nodes", "is_override",  "BOOLEAN DEFAULT false");
+        EnsureColumn("nodes", "member_kind",  "VARCHAR DEFAULT 'Ordinary'");
+    }
+
+    private void EnsureColumn(string table, string column, string definition)
+    {
+        Execute($"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition};");
+    }
+
+    private void Execute(string sql)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
+    }
+
+    private static DuckDBParameter P(string name, object? value) =>
+        new() { ParameterName = name, Value = value };
+}
