@@ -29,7 +29,7 @@ public sealed class GraphStore : IDisposable
 
     private readonly DuckDBConnection _connection;
 
-    public GraphStore(string dbPath)
+    public GraphStore(string dbPath, bool readOnly = false)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(dbPath));
         if (!string.IsNullOrEmpty(directory))
@@ -37,9 +37,13 @@ public sealed class GraphStore : IDisposable
             Directory.CreateDirectory(directory);
         }
 
-        _connection = new DuckDBConnection($"Data Source={dbPath}");
+        var connStr = readOnly
+            ? $"Data Source={dbPath};ACCESS_MODE=READ_ONLY"
+            : $"Data Source={dbPath}";
+        _connection = new DuckDBConnection(connStr);
         _connection.Open();
-        EnsureSchema();
+        if (!readOnly)
+            EnsureSchema();
     }
 
     public void Dispose() => _connection.Dispose();
@@ -489,6 +493,57 @@ public sealed class GraphStore : IDisposable
         }
 
         return hits;
+    }
+
+    /// <summary>
+    /// Neighbourhood subgraph: the starting node, everything reachable from it in both directions up to
+    /// <paramref name="maxDepth"/> hops, plus all edges between those nodes. Capped at 150 nodes.
+    /// </summary>
+    public SubGraphResult SubGraph(string id, string[] edgeKinds, int maxDepth)
+    {
+        var outHits = Walk(id, Math.Clamp(maxDepth, 1, 5), inbound: false, edgeKinds);
+        var inHits  = Walk(id, Math.Clamp(maxDepth, 1, 5), inbound: true,  edgeKinds);
+        var center  = GetNode(id);
+
+        var allNodes = outHits.Select(h => h.Node)
+            .Concat(inHits.Select(h => h.Node))
+            .Append(center)
+            .OfType<GraphNode>()
+            .DistinctBy(n => n.Id)
+            .Take(150)
+            .ToList();
+
+        var edges = GetEdgesBetween(allNodes.Select(n => n.Id).ToList(), edgeKinds);
+        return new SubGraphResult(allNodes, edges);
+    }
+
+    private IReadOnlyList<SubGraphEdge> GetEdgesBetween(IReadOnlyList<string> nodeIds, string[] edgeKinds)
+    {
+        if (nodeIds.Count == 0) return [];
+
+        // Named parameters: DuckDB reuses the same value wherever the same $name appears.
+        var nodeParams = string.Join(", ", nodeIds.Select((_, i) => $"$n{i}"));
+        var kindParams = string.Join(", ", edgeKinds.Select((_, i) => $"$ek{i}"));
+
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT from_id, to_id, kind FROM edges
+             WHERE from_id IN ({nodeParams})
+               AND to_id   IN ({nodeParams})
+               AND kind    IN ({kindParams});
+             """;
+
+        for (var i = 0; i < nodeIds.Count; i++)
+            command.Parameters.Add(P($"n{i}", nodeIds[i]));
+        for (var i = 0; i < edgeKinds.Length; i++)
+            command.Parameters.Add(P($"ek{i}", edgeKinds[i]));
+
+        var edges = new List<SubGraphEdge>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            edges.Add(new SubGraphEdge(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+        return edges;
     }
 
     // Column list for SELECT without table alias.

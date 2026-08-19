@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CodeGraph</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+  <style>
+    :root {
+      --navy:  #0D1B2A;
+      --panel: #111f30;
+      --border:#1e3048;
+      --teal:  #00C9B1;
+      --gold:  #FFD166;
+      --red:   #FF6B6B;
+      --text:  #e8edf2;
+      --muted: #7a8fa6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--navy); color: var(--text); font: 13px/1.4 system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+
+    /* ── Left sidebar ─────────────────────────────────────── */
+    #sidebar {
+      width: 280px; min-width: 280px; background: var(--panel);
+      border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden;
+    }
+    #sidebar h1 { padding: 14px 16px; font-size: 16px; font-weight: 700; color: var(--teal); border-bottom: 1px solid var(--border); letter-spacing: .5px; }
+    #sidebar h1 span { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+
+    /* search */
+    #search-wrap { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    #search { width: 100%; padding: 7px 10px; background: var(--navy); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px; outline: none; }
+    #search:focus { border-color: var(--teal); }
+    #search::placeholder { color: var(--muted); }
+    #results { max-height: 240px; overflow-y: auto; margin-top: 4px; }
+    .result-item { padding: 6px 8px; cursor: pointer; border-radius: 4px; display: flex; align-items: baseline; gap: 6px; }
+    .result-item:hover { background: var(--border); }
+    .result-item .kind-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+    .result-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .result-item .ns { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* controls */
+    #controls { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    #controls label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; }
+    #depth-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    #depth-row input[type=range] { flex: 1; accent-color: var(--teal); }
+    #depth-val { font-size: 12px; color: var(--teal); width: 12px; text-align: center; }
+    .toggle-group { display: flex; flex-wrap: wrap; gap: 4px; }
+    .toggle { font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid; cursor: pointer; user-select: none; transition: opacity .15s; }
+    .toggle.off { opacity: .35; }
+
+    /* layout selector */
+    #layout-row { display: flex; gap: 4px; margin-top: 8px; }
+    .layout-btn { font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
+    .layout-btn.active { border-color: var(--teal); color: var(--teal); }
+
+    /* node detail */
+    #detail { flex: 1; overflow-y: auto; padding: 10px 12px; }
+    #detail h3 { font-size: 13px; color: var(--teal); margin-bottom: 6px; }
+    #detail table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    #detail td { padding: 3px 0; vertical-align: top; }
+    #detail td:first-child { color: var(--muted); width: 88px; }
+    #detail .fqn { font-size: 11px; color: var(--muted); word-break: break-all; margin-bottom: 8px; }
+    #detail .sig { font-family: monospace; font-size: 11px; color: var(--gold); margin-bottom: 8px; word-break: break-all; }
+    #detail .actions { display: flex; gap: 6px; margin-top: 8px; }
+    #detail .actions button { font-size: 11px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
+    #detail .actions button:hover { border-color: var(--teal); color: var(--teal); }
+
+    /* ── Main canvas ──────────────────────────────────────── */
+    #cy-wrap { flex: 1; position: relative; }
+    #cy { width: 100%; height: 100%; }
+    #empty-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; color: var(--muted); pointer-events: none; }
+    #empty-hint p { margin-top: 8px; font-size: 13px; }
+    #loading { position: absolute; top: 12px; right: 16px; color: var(--teal); font-size: 12px; display: none; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>CodeGraph <span id="stats"></span></h1>
+
+  <div id="search-wrap">
+    <input id="search" type="search" placeholder="Search symbols… (name or FQN)" autocomplete="off">
+    <div id="results"></div>
+  </div>
+
+  <div id="controls">
+    <label>Depth</label>
+    <div id="depth-row">
+      <input id="depth" type="range" min="1" max="5" value="2">
+      <span id="depth-val">2</span>
+    </div>
+
+    <label>Edge kinds</label>
+    <div class="toggle-group" id="edge-toggles">
+      <span class="toggle on" data-kind="Calls"      style="color:#FF6B6B;border-color:#FF6B6B">Calls</span>
+      <span class="toggle on" data-kind="Inherits"   style="color:#4A90D9;border-color:#4A90D9">Inherits</span>
+      <span class="toggle on" data-kind="Implements" style="color:#00C9B1;border-color:#00C9B1">Implements</span>
+      <span class="toggle on" data-kind="Overrides"  style="color:#9B59B6;border-color:#9B59B6">Overrides</span>
+      <span class="toggle off" data-kind="Contains"  style="color:#555;border-color:#555">Contains</span>
+      <span class="toggle off" data-kind="DependsOn" style="color:#888;border-color:#888">DependsOn</span>
+    </div>
+
+    <div id="layout-row">
+      <button class="layout-btn active" data-layout="breadthfirst">Tree</button>
+      <button class="layout-btn"        data-layout="concentric">Radial</button>
+      <button class="layout-btn"        data-layout="circle">Circle</button>
+      <button class="layout-btn"        data-layout="grid">Grid</button>
+    </div>
+  </div>
+
+  <div id="detail"></div>
+</div>
+
+<div id="cy-wrap">
+  <div id="cy"></div>
+  <div id="empty-hint">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#1e3048" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <p>Search for a symbol to visualise its graph</p>
+  </div>
+  <div id="loading">Loading…</div>
+</div>
+
+<script>
+// ── Colour maps ──────────────────────────────────────────────
+const NODE_COLORS = {
+  Method:   '#FFD166',
+  Property: '#95E06C',
+  Field:    '#778899',
+  Event:    '#FF9F7F',
+  // Type colours by typeKind
+  Class:       '#4A90D9',
+  Struct:      '#3A7BD5',
+  Record:      '#5B8DD9',
+  RecordStruct:'#4A80D0',
+  Interface:   '#00C9B1',
+  Enum:        '#E67E22',
+  Delegate:    '#8E44AD',
+  None:        '#4A90D9',  // fallback for Type
+  Project: '#555',
+  File:    '#444',
+};
+const EDGE_COLORS = {
+  Calls:      '#FF6B6B',
+  Inherits:   '#4A90D9',
+  Implements: '#00C9B1',
+  Overrides:  '#9B59B6',
+  Contains:   '#333355',
+  DependsOn:  '#666',
+  TestedBy:   '#95E06C',
+};
+const NODE_SHAPES = {
+  Method: 'ellipse',
+  Property: 'diamond',
+  Field: 'diamond',
+  Event: 'diamond',
+  Type: 'roundrectangle',
+  Project: 'cut-rectangle',
+  File: 'rectangle',
+};
+
+function nodeColor(data) {
+  if (data.kind === 'Type') return NODE_COLORS[data.typeKind] ?? NODE_COLORS.None;
+  return NODE_COLORS[data.kind] ?? '#888';
+}
+
+// ── Cytoscape init ───────────────────────────────────────────
+const cy = cytoscape({
+  container: document.getElementById('cy'),
+  style: [
+    {
+      selector: 'node',
+      style: {
+        'background-color': ele => nodeColor(ele.data()),
+        'label': 'data(label)',
+        'color': '#fff',
+        'font-size': '11px',
+        'text-valign': 'center',
+        'text-halign': 'center',
+        'width': ele => ele.data('kind') === 'Type' ? 100 : 80,
+        'height': ele => ele.data('kind') === 'Type' ? 36 : 30,
+        'shape': ele => NODE_SHAPES[ele.data('kind')] ?? 'ellipse',
+        'border-width': 2,
+        'border-color': ele => nodeColor(ele.data()),
+        'border-opacity': 0.6,
+        'text-wrap': 'ellipsis',
+        'text-max-width': ele => (ele.data('kind') === 'Type' ? 96 : 76) + 'px',
+      }
+    },
+    {
+      selector: 'node:selected',
+      style: {
+        'border-width': 3,
+        'border-color': '#fff',
+        'border-opacity': 1,
+      }
+    },
+    {
+      selector: 'node.faded',
+      style: { 'opacity': 0.25 }
+    },
+    {
+      selector: 'edge',
+      style: {
+        'line-color': ele => EDGE_COLORS[ele.data('kind')] ?? '#555',
+        'target-arrow-color': ele => EDGE_COLORS[ele.data('kind')] ?? '#555',
+        'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier',
+        'width': 1.5,
+        'arrow-scale': 0.8,
+        'line-style': ele => ele.data('kind') === 'Contains' ? 'dashed' : 'solid',
+        'opacity': 0.75,
+      }
+    },
+    {
+      selector: 'edge.faded',
+      style: { 'opacity': 0.08 }
+    },
+  ],
+});
+
+// hide hint when graph has nodes
+cy.on('add', () => {
+  document.getElementById('empty-hint').style.display = cy.nodes().length ? 'none' : '';
+});
+
+// ── State ────────────────────────────────────────────────────
+let currentLayout = 'breadthfirst';
+
+// ── Depth slider ─────────────────────────────────────────────
+document.getElementById('depth').addEventListener('input', e => {
+  document.getElementById('depth-val').textContent = e.target.value;
+});
+
+// ── Edge toggles ─────────────────────────────────────────────
+document.querySelectorAll('.toggle').forEach(t =>
+  t.addEventListener('click', () => t.classList.toggle('off')));
+
+function activeEdgeKinds() {
+  return [...document.querySelectorAll('.toggle:not(.off)')].map(t => t.dataset.kind);
+}
+
+// ── Layout buttons ───────────────────────────────────────────
+document.querySelectorAll('.layout-btn').forEach(btn =>
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.layout-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentLayout = btn.dataset.layout;
+    if (cy.nodes().length) runLayout();
+  }));
+
+function runLayout() {
+  const opts = currentLayout === 'breadthfirst'
+    ? { name: 'breadthfirst', directed: true, padding: 30, spacingFactor: 1.4 }
+    : { name: currentLayout, padding: 30, animate: false };
+  cy.layout(opts).run();
+}
+
+// ── Search ───────────────────────────────────────────────────
+let searchTimer;
+document.getElementById('search').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  if (q.length < 2) { document.getElementById('results').innerHTML = ''; return; }
+  searchTimer = setTimeout(() => fetchSearch(q), 220);
+});
+
+async function fetchSearch(q) {
+  const data = await get(`/api/search?q=${encodeURIComponent(q)}&limit=30`);
+  const box = document.getElementById('results');
+  if (!data?.length) { box.innerHTML = '<div style="padding:6px 8px;color:var(--muted);font-size:12px">No results</div>'; return; }
+  box.innerHTML = data.map(n => {
+    const color = nodeColor(n);
+    const ns = n.fullName.includes('.') ? n.fullName.substring(0, n.fullName.lastIndexOf('.')) : '';
+    return `<div class="result-item" onclick="loadNode('${esc(n.id)}','${esc(n.label)}')">
+      <span class="kind-badge" style="background:${color}22;color:${color}">${n.kind === 'Type' && n.typeKind !== 'None' ? n.typeKind : n.kind}</span>
+      <span>
+        <span class="name">${esc(n.label)}</span>
+        ${ns ? `<br><span class="ns">${esc(ns)}</span>` : ''}
+      </span>
+    </div>`;
+  }).join('');
+}
+
+// ── Load subgraph ────────────────────────────────────────────
+async function loadNode(id, label) {
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('search').value = label ?? id;
+  const depth = document.getElementById('depth').value;
+  const edges = activeEdgeKinds().join(',') || 'Calls';
+
+  setLoading(true);
+  const data = await get(`/api/subgraph?id=${encodeURIComponent(id)}&depth=${depth}&edges=${encodeURIComponent(edges)}`);
+  setLoading(false);
+  if (!data) return;
+
+  cy.elements().remove();
+  cy.add(data.nodes);
+  cy.add(data.edges.filter(e => cy.getElementById(e.data.source).length && cy.getElementById(e.data.target).length));
+  runLayout();
+  cy.fit(undefined, 40);
+
+  const chosen = cy.getElementById(id);
+  if (chosen.length) { chosen.select(); showDetail(chosen.data()); }
+}
+
+// ── Node click ───────────────────────────────────────────────
+cy.on('tap', 'node', evt => {
+  const data = evt.target.data();
+  showDetail(data);
+  // fade everything except connected nodes
+  cy.elements().addClass('faded');
+  evt.target.removeClass('faded');
+  evt.target.neighborhood().removeClass('faded');
+});
+
+cy.on('tap', evt => {
+  if (evt.target === cy) cy.elements().removeClass('faded');
+});
+
+// ── Node detail panel ────────────────────────────────────────
+function showDetail(data) {
+  const color = nodeColor(data);
+  const flags = [
+    data.isStatic   && 'static',
+    data.isAbstract && 'abstract',
+    data.isVirtual  && 'virtual',
+    data.isAsync    && 'async',
+    data.isSealed   && 'sealed',
+    data.isOverride && 'override',
+  ].filter(Boolean);
+
+  document.getElementById('detail').innerHTML = `
+    <h3 style="color:${color}">${esc(data.label)}</h3>
+    <div class="fqn">${esc(data.fullName)}</div>
+    ${data.signature ? `<div class="sig">${esc(data.signature)}</div>` : ''}
+    <table>
+      <tr><td>Kind</td><td>${esc(data.kind)}${data.typeKind && data.typeKind !== 'None' ? ' / ' + esc(data.typeKind) : ''}</td></tr>
+      <tr><td>Access</td><td>${esc(data.accessibility)}</td></tr>
+      ${flags.length ? `<tr><td>Modifiers</td><td>${flags.map(f => `<code style="font-size:10px;background:#1e3048;padding:1px 4px;border-radius:3px">${f}</code>`).join(' ')}</td></tr>` : ''}
+      ${data.file ? `<tr><td>File</td><td style="font-size:10px;word-break:break-all;color:var(--muted)">${esc(basename(data.file))}:${data.line ?? ''}</td></tr>` : ''}
+    </table>
+    <div class="actions">
+      <button onclick="loadNode('${esc(data.id)}','${esc(data.label)}')">Expand here</button>
+    </div>`;
+}
+
+// ── Stats ────────────────────────────────────────────────────
+get('/api/stats').then(s => {
+  if (s) document.getElementById('stats').textContent = `${s.nodes.toLocaleString()} nodes · ${s.edges.toLocaleString()} edges`;
+});
+
+// ── Helpers ──────────────────────────────────────────────────
+async function get(url) {
+  try { return await (await fetch(url)).json(); }
+  catch { return null; }
+}
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function basename(p) { return p?.split(/[\\/]/).pop() ?? p; }
+function setLoading(v) { document.getElementById('loading').style.display = v ? '' : 'none'; }
+</script>
+</body>
+</html>

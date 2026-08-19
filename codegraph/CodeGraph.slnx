@@ -3,6 +3,7 @@
     <Project Path="src/CodeGraph.Core/CodeGraph.Core.csproj" />
     <Project Path="src/CodeGraph.Indexer/CodeGraph.Indexer.csproj" />
     <Project Path="src/CodeGraph.Mcp/CodeGraph.Mcp.csproj" />
+    <Project Path="src/CodeGraph.Web/CodeGraph.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CodeGraph.Tests/CodeGraph.Tests.csproj" />

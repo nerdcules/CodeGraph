@@ -66,3 +66,6 @@ public sealed record GraphEdge(string FromId, string ToId, EdgeKind Kind);
 
 /// <summary>A node returned from a traversal, tagged with its distance from the origin.</summary>
 public sealed record GraphHit(GraphNode Node, int Depth);
+
+public sealed record SubGraphEdge(string FromId, string ToId, string Kind);
+public sealed record SubGraphResult(IReadOnlyList<GraphNode> Nodes, IReadOnlyList<SubGraphEdge> Edges);
