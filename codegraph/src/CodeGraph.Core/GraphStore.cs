@@ -17,6 +17,7 @@ public sealed class GraphStore : IDisposable
         nameof(EdgeKind.Contains),
         nameof(EdgeKind.DependsOn),
         nameof(EdgeKind.TestedBy),
+        nameof(EdgeKind.InvokedByFramework),
     ];
 
     private static readonly string[] ImpactEdgeKinds =
@@ -453,6 +454,223 @@ public sealed class GraphStore : IDisposable
         while (reader.Read())
             hits.Add(new GraphHit(ReadNode(reader), reader.GetInt32(reader.FieldCount - 1)));
         return hits;
+    }
+
+    /// <summary>
+    /// Methods that appear never called in source, adjusted for interface dispatch and framework entrypoints.
+    /// </summary>
+    public (DeadCodeSummary Summary, IReadOnlyList<DeadCodeCandidate> Candidates) DeadCodeReport(
+        bool includePublicApi = false,
+        int limit = 100,
+        int offset = 0)
+    {
+        var accessibilityFilter = includePublicApi
+            ? string.Empty
+            : "AND n.accessibility IN ('Private', 'Internal')";
+
+        var baseCte =
+            $"""
+             WITH methods AS (
+               SELECT n.id, n.name, n.full_name, n.file_path, n.start_line, n.end_line, n.accessibility,
+                      n.kind, n.is_test, n.member_kind, n.type_kind, n.is_static, n.is_abstract,
+                      n.is_virtual, n.is_sealed, n.is_async, n.is_override
+               FROM nodes n
+               WHERE n.kind = 'Method'
+                 AND n.member_kind = 'Ordinary'
+                 AND n.is_test = false
+                 AND n.name NOT LIKE '<%'
+                 {accessibilityFilter}
+             ),
+             callers AS (
+               SELECT to_id AS id, COUNT(*) AS direct_callers
+               FROM edges
+               WHERE kind = 'Calls'
+               GROUP BY to_id
+             ),
+             framework_invoked AS (
+               SELECT DISTINCT to_id AS id
+               FROM edges
+               WHERE kind = 'InvokedByFramework'
+             ),
+             impl_pairs AS (
+               SELECT e.from_id AS class_id, e.to_id AS iface_id
+               FROM edges e
+               JOIN nodes c ON c.id = e.from_id AND c.kind = 'Type' AND c.type_kind = 'Class'
+               JOIN nodes i ON i.id = e.to_id AND i.kind = 'Type' AND i.type_kind = 'Interface'
+               WHERE e.kind = 'Implements'
+             ),
+             class_methods AS (
+               SELECT p.class_id, p.iface_id, m.id AS class_method_id, m.name AS method_name
+               FROM impl_pairs p
+               JOIN edges ce ON ce.kind = 'Contains' AND ce.from_id = p.class_id
+               JOIN nodes m ON m.id = ce.to_id AND m.kind = 'Method' AND m.member_kind = 'Ordinary'
+             ),
+             interface_methods AS (
+               SELECT p.iface_id, im.id AS interface_method_id, im.name AS method_name
+               FROM impl_pairs p
+               JOIN edges ce ON ce.kind = 'Contains' AND ce.from_id = p.iface_id
+               JOIN nodes im ON im.id = ce.to_id AND im.kind = 'Method' AND im.member_kind = 'Ordinary'
+             ),
+             di_dispatch_used AS (
+               SELECT DISTINCT cm.class_method_id AS id
+               FROM class_methods cm
+               JOIN interface_methods im
+                 ON im.iface_id = cm.iface_id
+                AND im.method_name = cm.method_name
+               JOIN callers c ON c.id = im.interface_method_id
+             )
+             """;
+
+        using var summaryCommand = _connection.CreateCommand();
+        summaryCommand.CommandText =
+            $"""
+             {baseCte}
+             SELECT
+               COUNT(*) AS total_methods,
+               SUM(CASE WHEN COALESCE(c.direct_callers, 0) = 0 THEN 1 ELSE 0 END) AS directly_uncalled,
+               SUM(CASE WHEN COALESCE(c.direct_callers, 0) = 0 AND d.id IS NOT NULL THEN 1 ELSE 0 END) AS di_likely_used,
+               SUM(CASE WHEN COALESCE(c.direct_callers, 0) = 0 AND f.id IS NOT NULL THEN 1 ELSE 0 END) AS framework_entrypoints,
+               SUM(CASE WHEN COALESCE(c.direct_callers, 0) = 0 AND d.id IS NULL AND f.id IS NULL THEN 1 ELSE 0 END) AS likely_dead
+             FROM methods m
+             LEFT JOIN callers c ON c.id = m.id
+             LEFT JOIN di_dispatch_used d ON d.id = m.id
+             LEFT JOIN framework_invoked f ON f.id = m.id;
+             """;
+
+        DeadCodeSummary summary;
+        using (var reader = summaryCommand.ExecuteReader())
+        {
+            reader.Read();
+            summary = new DeadCodeSummary(
+                TotalMethods: reader.IsDBNull(0) ? 0 : reader.GetInt32(0),
+                DirectlyUncalled: reader.IsDBNull(1) ? 0 : reader.GetInt32(1),
+                DiLikelyUsed: reader.IsDBNull(2) ? 0 : reader.GetInt32(2),
+                FrameworkEntrypoints: reader.IsDBNull(3) ? 0 : reader.GetInt32(3),
+                LikelyDead: reader.IsDBNull(4) ? 0 : reader.GetInt32(4));
+        }
+
+        using var candidatesCommand = _connection.CreateCommand();
+        candidatesCommand.CommandText =
+            $"""
+             {baseCte}
+             SELECT {QualifiedNodeColumns}
+             FROM methods m
+             LEFT JOIN callers c ON c.id = m.id
+             LEFT JOIN di_dispatch_used d ON d.id = m.id
+             LEFT JOIN framework_invoked f ON f.id = m.id
+             JOIN nodes n ON n.id = m.id
+             WHERE COALESCE(c.direct_callers, 0) = 0
+               AND d.id IS NULL
+               AND f.id IS NULL
+             ORDER BY n.accessibility, n.file_path, n.start_line
+             LIMIT $limit OFFSET $offset;
+             """;
+        candidatesCommand.Parameters.Add(P("limit", Math.Clamp(limit, 1, 500)));
+        candidatesCommand.Parameters.Add(P("offset", Math.Max(0, offset)));
+
+        var candidates = new List<DeadCodeCandidate>();
+        using (var reader = candidatesCommand.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                var method = ReadNode(reader);
+                var confidence = method.Accessibility is Accessibility.Private or Accessibility.Internal ? "high" : "medium";
+                candidates.Add(new DeadCodeCandidate(
+                    Method: method,
+                    Confidence: confidence,
+                    Reason: "no direct callers, no interface-dispatch evidence, and no framework-entrypoint edge"));
+            }
+        }
+
+        return (summary, candidates);
+    }
+
+    /// <summary>Methods flagged as framework/runtime entrypoints (for example, function triggers).</summary>
+    public IReadOnlyList<GraphNode> RuntimeRoots(int limit = 200)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT {QualifiedNodeColumns} FROM nodes n
+             JOIN edges e ON e.to_id = n.id
+             WHERE e.kind = 'InvokedByFramework'
+             ORDER BY n.full_name
+             LIMIT $limit;
+             """;
+        command.Parameters.Add(P("limit", Math.Clamp(limit, 1, 500)));
+        return ReadNodes(command);
+    }
+
+    /// <summary>
+    /// Human-readable explanation of why a method is likely reachable, or why it is a dead-code candidate.
+    /// </summary>
+    public string ExplainReachability(string id)
+    {
+        var node = GetNode(id);
+        if (node is null)
+            return $"no node with id '{id}'";
+
+        var directCallers = CountInboundEdges(id, nameof(EdgeKind.Calls));
+        if (directCallers > 0)
+            return $"reachable: {directCallers} direct caller(s) in indexed source";
+
+        if (HasInboundEdge(id, nameof(EdgeKind.InvokedByFramework)))
+            return "reachable: marked as framework/runtime entrypoint";
+
+        if (IsLikelyInterfaceDispatchTarget(id))
+            return "likely reachable via interface dispatch (interface method has callers)";
+
+        var overrides = CountInboundEdges(id, nameof(EdgeKind.Overrides));
+        if (overrides > 0)
+            return $"possibly reachable via polymorphism: {overrides} override(s) in source";
+
+        return "no direct callers and no DI/framework reachability evidence found";
+    }
+
+    private int CountInboundEdges(string id, string kind)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM edges WHERE to_id = $id AND kind = $kind;";
+        command.Parameters.Add(P("id", id));
+        command.Parameters.Add(P("kind", kind));
+        var value = command.ExecuteScalar();
+        return value is null or DBNull ? 0 : Convert.ToInt32(value);
+    }
+
+    private bool HasInboundEdge(string id, string kind) => CountInboundEdges(id, kind) > 0;
+
+    private bool IsLikelyInterfaceDispatchTarget(string methodId)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            """
+            WITH containing_type AS (
+                SELECT e.from_id AS class_id, m.name AS method_name
+                FROM edges e
+                JOIN nodes m ON m.id = e.to_id
+                WHERE e.kind = 'Contains'
+                  AND e.to_id = $id
+                  AND m.kind = 'Method'
+            ),
+            class_ifaces AS (
+                SELECT c.class_id, e.to_id AS iface_id, c.method_name
+                FROM containing_type c
+                JOIN edges e ON e.kind = 'Implements' AND e.from_id = c.class_id
+            ),
+            iface_methods AS (
+                SELECT ci.class_id, im.id AS iface_method_id
+                FROM class_ifaces ci
+                JOIN edges ce ON ce.kind = 'Contains' AND ce.from_id = ci.iface_id
+                JOIN nodes im ON im.id = ce.to_id
+                WHERE im.kind = 'Method' AND im.name = ci.method_name
+            )
+            SELECT COUNT(*)
+            FROM iface_methods im
+            JOIN edges calls ON calls.kind = 'Calls' AND calls.to_id = im.iface_method_id;
+            """;
+        command.Parameters.Add(P("id", methodId));
+        var value = command.ExecuteScalar();
+        return value is not null and not DBNull && Convert.ToInt32(value) > 0;
     }
 
     private IReadOnlyList<GraphHit> Walk(string id, int maxDepth, bool inbound, string[] edgeKinds)

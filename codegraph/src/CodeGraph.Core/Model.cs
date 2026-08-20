@@ -36,6 +36,8 @@ public enum EdgeKind
     DependsOn,
     /// <summary>Subject → test method that exercises it (direct call from a test).</summary>
     TestedBy,
+    /// <summary>Framework/runtime invokes a member entrypoint (e.g. Azure Functions trigger method).</summary>
+    InvokedByFramework,
 }
 
 /// <summary>
@@ -69,3 +71,15 @@ public sealed record GraphHit(GraphNode Node, int Depth);
 
 public sealed record SubGraphEdge(string FromId, string ToId, string Kind);
 public sealed record SubGraphResult(IReadOnlyList<GraphNode> Nodes, IReadOnlyList<SubGraphEdge> Edges);
+
+public sealed record DeadCodeSummary(
+    int TotalMethods,
+    int DirectlyUncalled,
+    int DiLikelyUsed,
+    int FrameworkEntrypoints,
+    int LikelyDead);
+
+public sealed record DeadCodeCandidate(
+    GraphNode Method,
+    string Confidence,
+    string Reason);

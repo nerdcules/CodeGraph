@@ -278,6 +278,77 @@ public sealed class CodeGraphTools(GraphStore store)
         return $"{nodes} nodes, {edges} edges";
     }
 
+    [McpServerTool(Name = "dead_code_report", ReadOnly = true, Idempotent = true)]
+    [Description("DI-aware and framework-aware dead-code candidates. Adjusts 'never called' with interface dispatch and framework entrypoint roots.")]
+    public string DeadCodeReport(
+        [Description("Include public/protected API methods in analysis. Default false (focus on private/internal).")]
+        bool includePublicApi = false,
+        [Description("Max candidate rows to return, default 100, max 500")] int limit = 100,
+        [Description("Skip this many candidates for paging, default 0")] int offset = 0)
+    {
+        var (summary, candidates) = store.DeadCodeReport(includePublicApi, Math.Clamp(limit, 1, 500), Math.Max(0, offset));
+
+        var sb = new StringBuilder();
+        sb.AppendLine("dead code report (DI + framework aware)");
+        sb.AppendLine();
+        sb.AppendLine($"total methods considered     : {summary.TotalMethods}");
+        sb.AppendLine($"directly uncalled            : {summary.DirectlyUncalled}");
+        sb.AppendLine($"DI dispatch likely reachable : {summary.DiLikelyUsed}");
+        sb.AppendLine($"framework entrypoints        : {summary.FrameworkEntrypoints}");
+        sb.AppendLine($"likely dead                  : {summary.LikelyDead}");
+        sb.AppendLine();
+
+        if (candidates.Count == 0)
+        {
+            sb.Append("no dead-code candidates in this page");
+            return sb.ToString();
+        }
+
+        sb.AppendLine($"candidates (showing {candidates.Count}, offset {offset}):");
+        foreach (var candidate in candidates)
+        {
+            var method = candidate.Method;
+            sb.Append("method  ").Append(method.FullName);
+            sb.Append("  confidence=").Append(candidate.Confidence);
+            sb.Append("  reason=").Append(candidate.Reason);
+            if (method.FilePath is not null)
+            {
+                sb.Append("  ").Append(method.FilePath).Append(':').Append(method.StartLine);
+            }
+
+            sb.Append("  [").Append(method.Id).Append(']');
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    [McpServerTool(Name = "list_roots", ReadOnly = true, Idempotent = true)]
+    [Description("List framework/runtime roots used for reachability analysis (for example Azure Functions trigger methods).")]
+    public string ListRoots([Description("Max roots to return, default 100, max 500")] int limit = 100)
+    {
+        var roots = store.RuntimeRoots(Math.Clamp(limit, 1, 500));
+        if (roots.Count == 0)
+            return "no framework/runtime roots indexed";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"{roots.Count} runtime root(s):");
+        sb.Append(Format(roots.Select(r => (r, (string?)"framework entrypoint"))));
+        return sb.ToString();
+    }
+
+    [McpServerTool(Name = "explain_reachability", ReadOnly = true, Idempotent = true)]
+    [Description("Explain why a symbol appears reachable or dead-candidate (direct calls, framework roots, DI/interface dispatch heuristics).")]
+    public string ExplainReachability([Description("Node id from find_symbol")] string id)
+    {
+        var node = store.GetNode(id);
+        if (node is null)
+            return NotFound(id);
+
+        var explanation = store.ExplainReachability(id);
+        return $"{node.FullName}\n{explanation}";
+    }
+
     [McpServerTool(Name = "most_called", ReadOnly = true, Idempotent = true)]
     [Description("The most called methods in the codebase, ranked by direct caller count.")]
     public string MostCalled(

@@ -23,6 +23,12 @@ public sealed class RoslynIndexer
         "TestMethod", "TestMethodAttribute",
     };
 
+    private static readonly HashSet<string> FrameworkEntrypointAttributeNames = new(StringComparer.Ordinal)
+    {
+        "Function", "FunctionAttribute",
+        "FunctionName", "FunctionNameAttribute",
+    };
+
     private static readonly SymbolDisplayFormat SignatureFormat = new(
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameOnly,
         genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
@@ -90,6 +96,12 @@ public sealed class RoslynIndexer
             }
         }
 
+        // A synthetic root node for framework-triggered entrypoints in this project.
+        var frameworkRootId = $"R:{project.Name}:framework";
+        AddNode(new GraphNode(frameworkRootId, NodeKind.Project, "framework", $"{project.Name}.framework",
+            Signature: null, FilePath: project.FilePath, StartLine: 0, EndLine: 0, IsTest: false));
+        _edges.Add(new GraphEdge(projectId, frameworkRootId, EdgeKind.Contains));
+
         var compilation = await project.GetCompilationAsync(cancellationToken);
         if (compilation is null)
         {
@@ -113,11 +125,11 @@ public sealed class RoslynIndexer
 
             var model = compilation.GetSemanticModel(tree);
             var root = await tree.GetRootAsync(cancellationToken);
-            IndexDocument(root, model, fileId, cancellationToken);
+            IndexDocument(root, model, fileId, frameworkRootId, cancellationToken);
         }
     }
 
-    private void IndexDocument(SyntaxNode root, SemanticModel model, string fileId, CancellationToken cancellationToken)
+    private void IndexDocument(SyntaxNode root, SemanticModel model, string fileId, string frameworkRootId, CancellationToken cancellationToken)
     {
         foreach (var typeDeclaration in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
         {
@@ -156,13 +168,13 @@ public sealed class RoslynIndexer
             {
                 foreach (var member in members)
                 {
-                    IndexMember(member, model, typeId, cancellationToken);
+                    IndexMember(member, model, typeId, frameworkRootId, cancellationToken);
                 }
             }
         }
     }
 
-    private void IndexMember(MemberDeclarationSyntax member, SemanticModel model, string typeId, CancellationToken cancellationToken)
+    private void IndexMember(MemberDeclarationSyntax member, SemanticModel model, string typeId, string frameworkRootId, CancellationToken cancellationToken)
     {
         // Fields and events declare several symbols per syntax node; everything else declares one.
         IEnumerable<ISymbol?> symbols = member switch
@@ -185,6 +197,11 @@ public sealed class RoslynIndexer
             var isTest = symbol is IMethodSymbol && HasTestAttribute(symbol);
             AddNode(NodeFor(symbol, memberId, kind, member, isTest));
             _edges.Add(new GraphEdge(typeId, memberId, EdgeKind.Contains));
+
+            if (symbol is IMethodSymbol method && HasFrameworkEntrypointAttribute(method))
+            {
+                _edges.Add(new GraphEdge(frameworkRootId, memberId, EdgeKind.InvokedByFramework));
+            }
 
             var overridden = symbol switch
             {
@@ -324,4 +341,8 @@ public sealed class RoslynIndexer
     private static bool HasTestAttribute(ISymbol symbol) =>
         symbol.GetAttributes().Any(a =>
             a.AttributeClass is { } attributeClass && TestAttributeNames.Contains(attributeClass.Name));
+
+    private static bool HasFrameworkEntrypointAttribute(ISymbol symbol) =>
+        symbol.GetAttributes().Any(a =>
+            a.AttributeClass is { } attributeClass && FrameworkEntrypointAttributeNames.Contains(attributeClass.Name));
 }
