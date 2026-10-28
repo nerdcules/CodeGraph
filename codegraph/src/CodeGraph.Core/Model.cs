@@ -38,6 +38,8 @@ public enum EdgeKind
     TestedBy,
     /// <summary>Framework/runtime invokes a member entrypoint (e.g. Azure Functions trigger method).</summary>
     InvokedByFramework,
+    /// <summary>Member (or type) mentions a type: signatures, fields, locals, generic arguments, casts, attributes.</summary>
+    References,
 }
 
 /// <summary>
@@ -66,6 +68,27 @@ public sealed record GraphNode(
 
 public sealed record GraphEdge(string FromId, string ToId, EdgeKind Kind);
 
+/// <summary>
+/// The file whose walk produced an edge. Incremental re-indexing removes a file's contribution by its origins,
+/// so an edge emitted by two partial declarations survives until both are gone.
+/// </summary>
+public sealed record EdgeOrigin(GraphEdge Edge, string FilePath);
+
+/// <summary>What a source file looked like when it was indexed. Size and mtime are a cheap pre-check before hashing.</summary>
+public sealed record FileStamp(string Path, string Hash, long Size, long MtimeTicks)
+{
+    public static FileStamp Of(string path)
+    {
+        var info = new FileInfo(path);
+        return new FileStamp(path, HashOf(path), info.Length, info.LastWriteTimeUtc.Ticks);
+    }
+
+    public static string HashOf(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(stream));
+    }
+}
 /// <summary>A node returned from a traversal, tagged with its distance from the origin.</summary>
 public sealed record GraphHit(GraphNode Node, int Depth);
 

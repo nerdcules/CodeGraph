@@ -8,9 +8,10 @@ namespace CodeGraph.Mcp;
 /// <summary>
 /// The tools Claude sees. Every result is a compact, line-oriented text block: one node per line as
 /// <c>kind  full name  file:start-end  [id]</c>. Ids are Roslyn doc-comment ids and are passed back verbatim.
+/// Rows whose file was edited since indexing end in <c>STALE</c>; the call-tool filter in Program adds the summary line.
 /// </summary>
 [McpServerToolType]
-public sealed class CodeGraphTools(GraphStore store)
+public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness)
 {
     [McpServerTool(Name = "find_symbol", ReadOnly = true, Idempotent = true)]
     [Description("Find types and members by name (case-insensitive). Returns id, kind, signature and location. Use the id with the other tools.")]
@@ -145,7 +146,7 @@ public sealed class CodeGraphTools(GraphStore store)
         Traversal(id, store.Callees(id, Math.Clamp(depth, 1, 5)), "callees");
 
     [McpServerTool(Name = "impact_of", ReadOnly = true, Idempotent = true)]
-    [Description("Everything that could break if this changes: transitive callers, overriders, implementers, subclasses — and which tests guard it. Call this before editing a shared member.")]
+    [Description("Everything that could break if this changes: transitive callers, overriders, implementers, subclasses, and for a type every member that references it — and which tests guard it. Call this before editing a shared member or type.")]
     public string ImpactOf(
         [Description("Node id from find_symbol")] string id,
         [Description("Max hops, 1-10, default 5")] int depth = 5)
@@ -278,6 +279,35 @@ public sealed class CodeGraphTools(GraphStore store)
         return $"{nodes} nodes, {edges} edges";
     }
 
+    [McpServerTool(Name = "index_status", ReadOnly = true, Idempotent = true)]
+    [Description("Which graph this server reads, when and at which commit it was built, and which indexed files have been edited or deleted since. Check this when an answer looks wrong.")]
+    public string IndexStatus()
+    {
+        var report = freshness.Check();
+        var meta = report.Meta;
+        var (nodes, edges) = store.Count();
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"graph     : {freshness.DbPath}");
+        sb.AppendLine($"solution  : {meta.GetValueOrDefault(MetaKeys.Solution, "(unknown — built before metadata existed)")}");
+        sb.AppendLine($"built     : {meta.GetValueOrDefault(MetaKeys.IndexedAt, "?")} ({meta.GetValueOrDefault(MetaKeys.Mode, "?")})");
+        sb.AppendLine($"commit    : {report.IndexedCommit ?? "?"}");
+        sb.AppendLine($"HEAD now  : {report.Head ?? "?"}{(report.HeadMoved ? "  (moved since indexing)" : "")}");
+        sb.AppendLine($"size      : {nodes} nodes, {edges} edges");
+        sb.AppendLine($"status    : {(report.IsStale ? "STALE" : "up to date with the working tree")}");
+        foreach (var path in report.ChangedFiles.Order(StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine($"  edited  {path}");
+        }
+
+        foreach (var path in report.MissingFiles.Order(StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine($"  deleted {path}");
+        }
+
+        return sb.ToString();
+    }
+
     [McpServerTool(Name = "dead_code_report", ReadOnly = true, Idempotent = true)]
     [Description("DI-aware and framework-aware dead-code candidates. Adjusts 'never called' with interface dispatch and framework entrypoint roots.")]
     public string DeadCodeReport(
@@ -381,11 +411,34 @@ public sealed class CodeGraphTools(GraphStore store)
         Traversal(id, store.Walk(id, [nameof(EdgeKind.Inherits)], inbound: true, Math.Clamp(depth, 1, 10)), "inheritors");
 
     [McpServerTool(Name = "implementors_of", ReadOnly = true, Idempotent = true)]
-    [Description("Types that implement this interface, directly or transitively.")]
+    [Description("Types that implement this interface: direct implementors, interfaces extending it, and subclasses of implementors (which implement it by inheritance).")]
     public string ImplementorsOf(
         [Description("Node id from find_symbol")] string id,
         [Description("Max hops, 1-10, default 3")] int depth = 3) =>
-        Traversal(id, store.Walk(id, [nameof(EdgeKind.Implements)], inbound: true, Math.Clamp(depth, 1, 10)), "implementors");
+        Traversal(id, store.Walk(id, [nameof(EdgeKind.Implements), nameof(EdgeKind.Inherits)], inbound: true, Math.Clamp(depth, 1, 10)), "implementors");
+
+    [McpServerTool(Name = "references_to", ReadOnly = true, Idempotent = true)]
+    [Description("Where a type is used: members whose signature, fields, locals, generic arguments, casts, attributes or static calls mention it, and types whose attributes, record parameters or base-list generic arguments do. Not inheritance — use implementors_of / inheritors_of for that.")]
+    public string ReferencesTo(
+        [Description("Type node id from find_symbol, e.g. T:Namespace.Type")] string id,
+        [Description("Max results, default 200")] int limit = 200)
+    {
+        var node = store.GetNode(id);
+        if (node is null) return NotFound(id);
+
+        var referrers = store.EdgesTo(id)
+            .Where(e => e.Kind == EdgeKind.References)
+            .Select(e => e.Source)
+            .ToList();
+        if (referrers.Count == 0)
+            return $"{node.FullName}: no references in the indexed source";
+
+        var shown = referrers.Take(Math.Clamp(limit, 1, 1000)).ToList();
+        var sb = new StringBuilder();
+        sb.AppendLine($"{referrers.Count} reference(s) to {node.FullName}{(shown.Count < referrers.Count ? $", showing {shown.Count}" : "")}:");
+        sb.Append(Format(shown.Select(n => (n, n.Signature))));
+        return sb.ToString();
+    }
 
     [McpServerTool(Name = "overrides_of", ReadOnly = true, Idempotent = true)]
     [Description("Methods that override this member, directly or transitively.")]
@@ -443,10 +496,10 @@ public sealed class CodeGraphTools(GraphStore store)
     }
 
     [McpServerTool(Name = "traverse", ReadOnly = true, Idempotent = true)]
-    [Description("Generic graph walk: pick any edge kind and direction. Use when the named tools don't cover what you need. Edge kinds: Calls, Inherits, Implements, Overrides, Contains, DependsOn, TestedBy.")]
+    [Description("Generic graph walk: pick any edge kind and direction. Use when the named tools don't cover what you need. Edge kinds: Calls, Inherits, Implements, Overrides, Contains, DependsOn, TestedBy, InvokedByFramework, References.")]
     public string Traverse(
         [Description("Node id from find_symbol")] string id,
-        [Description("Edge kind to follow: Calls, Inherits, Implements, Overrides, Contains, DependsOn, TestedBy")] string edgeKind,
+        [Description("Edge kind to follow: Calls, Inherits, Implements, Overrides, Contains, DependsOn, TestedBy, InvokedByFramework, References")] string edgeKind,
         [Description("Direction: 'inbound' (who points at this node) or 'outbound' (where this node points)")] string direction = "outbound",
         [Description("Max hops, 1-10, default 1")] int depth = 1)
     {
@@ -534,8 +587,9 @@ public sealed class CodeGraphTools(GraphStore store)
     private static string NotFound(string id) =>
         $"no node with id '{id}'. Use find_symbol to look it up; ids look like M:Namespace.Type.Method(System.String)";
 
-    private static string Format(IEnumerable<(GraphNode Node, string? Extra)> rows)
+    private string Format(IEnumerable<(GraphNode Node, string? Extra)> rows)
     {
+        var report = freshness.Check();
         var sb = new StringBuilder();
         foreach (var (node, extra) in rows)
         {
@@ -552,6 +606,11 @@ public sealed class CodeGraphTools(GraphStore store)
             }
 
             sb.Append("  [").Append(node.Id).Append(']');
+            if (report.IsDirty(node.FilePath))
+            {
+                sb.Append("  STALE");
+            }
+
             sb.AppendLine();
         }
 

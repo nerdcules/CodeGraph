@@ -11,6 +11,8 @@ namespace CodeGraph.Indexer;
 /// <summary>
 /// Walks every C# project in a solution and emits <see cref="GraphNode"/>s and <see cref="GraphEdge"/>s.
 /// Uses the semantic model, so calls are resolved symbols rather than text matches.
+/// Every edge also records the file whose walk produced it (<see cref="Origins"/>), so an incremental run
+/// can drop and redo one file's contribution.
 /// </summary>
 public sealed class RoslynIndexer
 {
@@ -44,7 +46,14 @@ public sealed class RoslynIndexer
 
     private readonly Dictionary<string, GraphNode> _nodes = new(StringComparer.Ordinal);
     private readonly HashSet<GraphEdge> _edges = [];
+    private readonly HashSet<EdgeOrigin> _origins = [];
+    private readonly HashSet<string> _documentPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Action<string> _log;
+
+    // Names of every type declared in the solution (plus "Foo" for "FooAttribute"). Binding every identifier in
+    // every body is the expensive part of finding type references; most identifiers are locals and members, so
+    // only names that could be a source type are handed to the semantic model.
+    private HashSet<string>? _sourceTypeNames;
 
     public RoslynIndexer(Action<string> log)
     {
@@ -55,7 +64,22 @@ public sealed class RoslynIndexer
 
     public IReadOnlyCollection<GraphEdge> Edges => _edges;
 
-    public async Task IndexAsync(string solutionOrProjectPath, CancellationToken cancellationToken)
+    public IReadOnlyCollection<EdgeOrigin> Origins => _origins;
+
+    /// <summary>Every C# source file in the solution, walked or not.</summary>
+    public IReadOnlyCollection<string> DocumentPaths => _documentPaths;
+
+    public Task IndexAsync(string solutionOrProjectPath, CancellationToken cancellationToken) =>
+        IndexAsync(solutionOrProjectPath, selectFiles: null, cancellationToken);
+
+    /// <summary>
+    /// Opens the solution and walks it. Once it is loaded, <paramref name="selectFiles"/> gets every C# source path
+    /// and returns the subset to walk, or null for all of them. Project-level nodes and edges are always emitted.
+    /// </summary>
+    public async Task IndexAsync(
+        string solutionOrProjectPath,
+        Func<IReadOnlyCollection<string>, IReadOnlySet<string>?>? selectFiles,
+        CancellationToken cancellationToken)
     {
         using var workspace = MSBuildWorkspace.Create();
         using var workspaceFailures = workspace.RegisterWorkspaceFailedHandler(e =>
@@ -71,19 +95,30 @@ public sealed class RoslynIndexer
             ? await workspace.OpenSolutionAsync(solutionOrProjectPath, cancellationToken: cancellationToken)
             : (await workspace.OpenProjectAsync(solutionOrProjectPath, cancellationToken: cancellationToken)).Solution;
 
-        foreach (var project in solution.Projects.Where(p => p.Language == LanguageNames.CSharp))
+        var projects = solution.Projects.Where(p => p.Language == LanguageNames.CSharp).ToList();
+        foreach (var path in projects.SelectMany(p => p.Documents).Select(d => d.FilePath).OfType<string>())
+        {
+            _documentPaths.Add(path);
+        }
+
+        var files = selectFiles?.Invoke(_documentPaths);
+        foreach (var project in projects)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await IndexProjectAsync(project, solution, cancellationToken);
+            await IndexProjectAsync(project, solution, cancellationToken, files);
         }
     }
 
-    /// <summary>Indexes one already-open Roslyn project. Internal so tests can drive it without MSBuild.</summary>
-    internal async Task IndexProjectAsync(Project project, Solution solution, CancellationToken cancellationToken)
+    /// <summary>
+    /// Indexes one already-open Roslyn project, optionally only the documents in <paramref name="files"/>.
+    /// Internal so tests can drive it without MSBuild.
+    /// </summary>
+    internal async Task IndexProjectAsync(Project project, Solution solution, CancellationToken cancellationToken, IReadOnlySet<string>? files = null)
     {
         _log($"project: {project.Name}");
 
         var projectId = $"P:{project.Name}";
+        var projectOrigin = project.FilePath ?? projectId;
         AddNode(new GraphNode(projectId, NodeKind.Project, project.Name, project.Name,
             Signature: null, FilePath: project.FilePath, StartLine: 0, EndLine: 0, IsTest: false));
 
@@ -92,7 +127,7 @@ public sealed class RoslynIndexer
             var target = solution.GetProject(reference.ProjectId);
             if (target is not null)
             {
-                _edges.Add(new GraphEdge(projectId, $"P:{target.Name}", EdgeKind.DependsOn));
+                AddEdge(new GraphEdge(projectId, $"P:{target.Name}", EdgeKind.DependsOn), projectOrigin);
             }
         }
 
@@ -100,7 +135,15 @@ public sealed class RoslynIndexer
         var frameworkRootId = $"R:{project.Name}:framework";
         AddNode(new GraphNode(frameworkRootId, NodeKind.Project, "framework", $"{project.Name}.framework",
             Signature: null, FilePath: project.FilePath, StartLine: 0, EndLine: 0, IsTest: false));
-        _edges.Add(new GraphEdge(projectId, frameworkRootId, EdgeKind.Contains));
+        AddEdge(new GraphEdge(projectId, frameworkRootId, EdgeKind.Contains), projectOrigin);
+
+        var documents = project.Documents
+            .Where(d => d.FilePath is not null && (files is null || files.Contains(d.FilePath)))
+            .ToList();
+        if (documents.Count == 0)
+        {
+            return; // nothing changed here; skip the compilation, which is most of the cost
+        }
 
         var compilation = await project.GetCompilationAsync(cancellationToken);
         if (compilation is null)
@@ -109,7 +152,9 @@ public sealed class RoslynIndexer
             return;
         }
 
-        foreach (var document in project.Documents.Where(d => d.FilePath is not null))
+        _sourceTypeNames ??= await SourceTypeNamesAsync(solution, cancellationToken);
+
+        foreach (var document in documents)
         {
             var tree = await document.GetSyntaxTreeAsync(cancellationToken);
             if (tree is null)
@@ -117,19 +162,20 @@ public sealed class RoslynIndexer
                 continue;
             }
 
-            var fileId = $"F:{document.FilePath}";
-            AddNode(new GraphNode(fileId, NodeKind.File, Path.GetFileName(document.FilePath!), document.FilePath!,
-                Signature: null, FilePath: document.FilePath, StartLine: 1,
+            var path = document.FilePath!;
+            var fileId = $"F:{path}";
+            AddNode(new GraphNode(fileId, NodeKind.File, Path.GetFileName(path), path,
+                Signature: null, FilePath: path, StartLine: 1,
                 EndLine: tree.GetText(cancellationToken).Lines.Count, IsTest: false));
-            _edges.Add(new GraphEdge(projectId, fileId, EdgeKind.Contains));
+            AddEdge(new GraphEdge(projectId, fileId, EdgeKind.Contains), path);
 
             var model = compilation.GetSemanticModel(tree);
             var root = await tree.GetRootAsync(cancellationToken);
-            IndexDocument(root, model, fileId, frameworkRootId, cancellationToken);
+            IndexDocument(root, model, fileId, path, frameworkRootId, cancellationToken);
         }
     }
 
-    private void IndexDocument(SyntaxNode root, SemanticModel model, string fileId, string frameworkRootId, CancellationToken cancellationToken)
+    private void IndexDocument(SyntaxNode root, SemanticModel model, string fileId, string origin, string frameworkRootId, CancellationToken cancellationToken)
     {
         foreach (var typeDeclaration in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
         {
@@ -146,35 +192,48 @@ public sealed class RoslynIndexer
                 continue;
             }
 
-            AddNode(NodeFor(type, typeId, NodeKind.Type, typeDeclaration, isTest: false));
-            _edges.Add(new GraphEdge(fileId, typeId, EdgeKind.Contains));
+            // Partial types: always locate the node at the primary declaration, whichever part is being walked,
+            // so re-walking one part in an incremental run cannot move it.
+            var primary = type.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax(cancellationToken) ?? typeDeclaration;
+            AddNode(NodeFor(type, typeId, NodeKind.Type, primary, isTest: false));
+            AddEdge(new GraphEdge(fileId, typeId, EdgeKind.Contains), origin);
 
             // also wire parent type → nested type so outline(outer) shows nested types
             if (type.ContainingType is { } parentType && IsInSource(parentType)
                 && IdOf(parentType) is { } parentTypeId)
-                _edges.Add(new GraphEdge(parentTypeId, typeId, EdgeKind.Contains));
+                AddEdge(new GraphEdge(parentTypeId, typeId, EdgeKind.Contains), origin);
 
+            var supertypes = new HashSet<string>(StringComparer.Ordinal) { typeId };
             if (type.BaseType is { SpecialType: SpecialType.None } baseType && IsInSource(baseType))
             {
-                AddEdgeTo(typeId, baseType, EdgeKind.Inherits);
+                AddEdgeTo(typeId, baseType, EdgeKind.Inherits, origin, supertypes);
             }
 
             foreach (var iface in type.Interfaces.Where(IsInSource))
             {
-                AddEdgeTo(typeId, iface, EdgeKind.Implements);
+                AddEdgeTo(typeId, iface, EdgeKind.Implements, origin, supertypes);
             }
 
-            if (typeDeclaration is TypeDeclarationSyntax { Members: var members })
+            // Type-level mentions outside any member: attributes, primary-constructor / record parameters,
+            // generic arguments in the base list (IHandler<Foo>) and constraints. The supertypes themselves
+            // are already Inherits/Implements edges.
+            if (typeDeclaration is TypeDeclarationSyntax declaration)
             {
-                foreach (var member in members)
+                SyntaxNode?[] headers = [.. declaration.AttributeLists, declaration.ParameterList, declaration.BaseList, .. declaration.ConstraintClauses];
+                foreach (var header in headers.OfType<SyntaxNode>())
                 {
-                    IndexMember(member, model, typeId, frameworkRootId, cancellationToken);
+                    IndexTypeReferences(header, model, typeId, origin, supertypes, cancellationToken);
+                }
+
+                foreach (var member in declaration.Members)
+                {
+                    IndexMember(member, model, typeId, origin, frameworkRootId, cancellationToken);
                 }
             }
         }
     }
 
-    private void IndexMember(MemberDeclarationSyntax member, SemanticModel model, string typeId, string frameworkRootId, CancellationToken cancellationToken)
+    private void IndexMember(MemberDeclarationSyntax member, SemanticModel model, string typeId, string origin, string frameworkRootId, CancellationToken cancellationToken)
     {
         // Fields and events declare several symbols per syntax node; everything else declares one.
         IEnumerable<ISymbol?> symbols = member switch
@@ -196,11 +255,11 @@ public sealed class RoslynIndexer
 
             var isTest = symbol is IMethodSymbol && HasTestAttribute(symbol);
             AddNode(NodeFor(symbol, memberId, kind, member, isTest));
-            _edges.Add(new GraphEdge(typeId, memberId, EdgeKind.Contains));
+            AddEdge(new GraphEdge(typeId, memberId, EdgeKind.Contains), origin);
 
             if (symbol is IMethodSymbol method && HasFrameworkEntrypointAttribute(method))
             {
-                _edges.Add(new GraphEdge(frameworkRootId, memberId, EdgeKind.InvokedByFramework));
+                AddEdge(new GraphEdge(frameworkRootId, memberId, EdgeKind.InvokedByFramework), origin);
             }
 
             var overridden = symbol switch
@@ -211,17 +270,24 @@ public sealed class RoslynIndexer
             };
             if (overridden is not null && IsInSource(overridden))
             {
-                AddEdgeTo(memberId, overridden, EdgeKind.Overrides);
+                AddEdgeTo(memberId, overridden, EdgeKind.Overrides, origin);
             }
 
-            IndexCalls(member, model, memberId, isTest, cancellationToken);
+            IndexBody(member, model, memberId, isTest, origin, cancellationToken);
         }
     }
 
-    private void IndexCalls(SyntaxNode body, SemanticModel model, string callerId, bool callerIsTest, CancellationToken cancellationToken)
+    /// <summary>Calls and type references from one member's declaration, signature and body, in one pass.</summary>
+    private void IndexBody(SyntaxNode body, SemanticModel model, string callerId, bool callerIsTest, string origin, CancellationToken cancellationToken)
     {
         foreach (var node in body.DescendantNodes())
         {
+            if (node is SimpleNameSyntax name)
+            {
+                IndexTypeReference(name, model, callerId, origin, skip: null, cancellationToken);
+                continue;
+            }
+
             if (node is not (InvocationExpressionSyntax or ObjectCreationExpressionSyntax
                 or ImplicitObjectCreationExpressionSyntax))
             {
@@ -248,21 +314,85 @@ public sealed class RoslynIndexer
                 continue;
             }
 
-            _edges.Add(new GraphEdge(callerId, targetId, EdgeKind.Calls));
+            AddEdge(new GraphEdge(callerId, targetId, EdgeKind.Calls), origin);
             if (callerIsTest)
             {
-                _edges.Add(new GraphEdge(targetId, callerId, EdgeKind.TestedBy));
+                AddEdge(new GraphEdge(targetId, callerId, EdgeKind.TestedBy), origin);
             }
         }
     }
 
-    private void AddEdgeTo(string fromId, ISymbol target, EdgeKind kind)
+    private void IndexTypeReferences(SyntaxNode scope, SemanticModel model, string fromId, string origin, IReadOnlySet<string> skip, CancellationToken cancellationToken)
+    {
+        foreach (var name in scope.DescendantNodesAndSelf().OfType<SimpleNameSyntax>())
+        {
+            IndexTypeReference(name, model, fromId, origin, skip, cancellationToken);
+        }
+    }
+
+    private void IndexTypeReference(SimpleNameSyntax name, SemanticModel model, string fromId, string origin, IReadOnlySet<string>? skip, CancellationToken cancellationToken)
+    {
+        if (_sourceTypeNames?.Contains(name.Identifier.ValueText) != true)
+        {
+            return;
+        }
+
+        var info = model.GetSymbolInfo(name, cancellationToken);
+        var symbol = info.Symbol ?? info.CandidateSymbols.FirstOrDefault();
+
+        // [Foo] binds to the attribute constructor; the reference is to its type.
+        if (symbol is IMethodSymbol { MethodKind: MethodKind.Constructor } ctor && name.Parent is AttributeSyntax or QualifiedNameSyntax { Parent: AttributeSyntax })
+        {
+            symbol = ctor.ContainingType;
+        }
+
+        if (symbol is not INamedTypeSymbol type || !IsInSource(type) || IdOf(type.OriginalDefinition) is not { } typeId
+            || skip?.Contains(typeId) == true)
+        {
+            return;
+        }
+
+        AddEdge(new GraphEdge(fromId, typeId, EdgeKind.References), origin);
+    }
+
+    private static async Task<HashSet<string>> SourceTypeNamesAsync(Solution solution, CancellationToken cancellationToken)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var document in solution.Projects.Where(p => p.Language == LanguageNames.CSharp).SelectMany(p => p.Documents))
+        {
+            if (await document.GetSyntaxRootAsync(cancellationToken) is not { } root)
+            {
+                continue;
+            }
+
+            foreach (var declaration in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
+            {
+                var name = declaration.Identifier.ValueText;
+                names.Add(name);
+                if (name.EndsWith("Attribute", StringComparison.Ordinal) && name.Length > "Attribute".Length)
+                {
+                    names.Add(name[..^"Attribute".Length]);
+                }
+            }
+        }
+
+        return names;
+    }
+
+    private void AddEdgeTo(string fromId, ISymbol target, EdgeKind kind, string origin, HashSet<string>? collect = null)
     {
         var targetId = IdOf(target.OriginalDefinition);
         if (targetId is not null)
         {
-            _edges.Add(new GraphEdge(fromId, targetId, kind));
+            AddEdge(new GraphEdge(fromId, targetId, kind), origin);
+            collect?.Add(targetId);
         }
+    }
+
+    private void AddEdge(GraphEdge edge, string origin)
+    {
+        _edges.Add(edge);
+        _origins.Add(new EdgeOrigin(edge, origin));
     }
 
     private void AddNode(GraphNode node)
@@ -270,6 +400,7 @@ public sealed class RoslynIndexer
         // Partial types and multi-target projects produce the same id more than once; first one wins.
         _nodes.TryAdd(node.Id, node);
     }
+
 
     private static GraphNode NodeFor(ISymbol symbol, string id, NodeKind kind, SyntaxNode declaration, bool isTest)
     {

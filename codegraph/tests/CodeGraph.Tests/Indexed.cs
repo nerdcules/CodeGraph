@@ -20,24 +20,35 @@ internal sealed class Indexed
         .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
         .ToArray();
 
-    private Indexed(IReadOnlyCollection<GraphNode> nodes, IReadOnlyCollection<GraphEdge> edges)
+    private static readonly string Root = Path.Combine(Path.GetTempPath(), "codegraph-adhoc");
+
+    private Indexed(RoslynIndexer indexer)
     {
-        Nodes = nodes;
-        Edges = edges;
+        Nodes = indexer.Nodes;
+        Edges = indexer.Edges;
+        Origins = indexer.Origins;
     }
 
     public IReadOnlyCollection<GraphNode> Nodes { get; }
 
     public IReadOnlyCollection<GraphEdge> Edges { get; }
 
+    public IReadOnlyCollection<EdgeOrigin> Origins { get; }
+
+    /// <summary>The path a source file named <paramref name="name"/> gets in the adhoc project.</summary>
+    public static string PathOf(string name) => Path.Combine(Root, name);
+
     /// <summary>Indexes one source file, named <c>Test.cs</c>.</summary>
     public static Task<Indexed> OfAsync(string source) => OfAsync(("Test.cs", source));
 
-    public static async Task<Indexed> OfAsync(params (string Name, string Source)[] files)
+    public static Task<Indexed> OfAsync(params (string Name, string Source)[] files) => OfAsync(walk: null, files);
+
+    /// <summary>Indexes the project but walks only the files named in <paramref name="walk"/> (all when null).</summary>
+    public static async Task<Indexed> OfAsync(IReadOnlyCollection<string>? walk, params (string Name, string Source)[] files)
     {
         using var workspace = new AdhocWorkspace();
         var projectId = ProjectId.CreateNewId();
-        var root = Path.Combine(Path.GetTempPath(), "codegraph-adhoc");
+        var root = Root;
 
         var project = ProjectInfo.Create(
             projectId,
@@ -56,9 +67,10 @@ internal sealed class Indexed
 
         var solution = workspace.AddProject(project).Solution;
         var indexer = new RoslynIndexer(_ => { });
-        await indexer.IndexProjectAsync(solution.GetProject(projectId)!, solution, CancellationToken.None);
+        var paths = walk?.Select(PathOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        await indexer.IndexProjectAsync(solution.GetProject(projectId)!, solution, CancellationToken.None, paths);
 
-        return new Indexed(indexer.Nodes, indexer.Edges);
+        return new Indexed(indexer);
     }
 
     public GraphNode Node(string id) =>
