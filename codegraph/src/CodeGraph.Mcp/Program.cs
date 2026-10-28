@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Protocol;
 
 // Parse positional db path and optional --web PORT flag.
 var dbPath = (string?)null;
@@ -29,12 +30,61 @@ for (var i = 0; i < args.Length; i++)
 
 dbPath ??= Environment.GetEnvironmentVariable("CODEGRAPH_DB");
 
-if (string.IsNullOrWhiteSpace(dbPath) || !File.Exists(dbPath))
+// No explicit path: use this worktree's graph, found from the current directory (Claude Code starts MCP
+// servers in the project directory), so one .mcp.json serves every worktree of a repo.
+var discovered = false;
+if (string.IsNullOrWhiteSpace(dbPath))
 {
-    Console.Error.WriteLine("usage: codegraph-mcp <path-to-graph.db> [--web PORT]");
+    var cwd = Directory.GetCurrentDirectory();
+    dbPath = Worktree.FindDb(cwd) ?? Worktree.DefaultDbPath(cwd);
+    discovered = true;
+}
+
+dbPath = Path.GetFullPath(dbPath);
+if (!discovered && !File.Exists(dbPath))
+{
+    Console.Error.WriteLine("usage: codegraph-mcp [path-to-graph.db] [--web PORT]");
+    Console.Error.WriteLine("       no path: finds .codegraph/graph.db from the current directory up to the git worktree root");
     Console.Error.WriteLine("       --web PORT  also serve the graph visualiser on http://localhost:PORT");
     Console.Error.WriteLine("       set CODEGRAPH_DB as an alternative to the positional argument");
     return 1;
+}
+
+Console.Error.WriteLine(File.Exists(dbPath)
+    ? $"codegraph: serving {dbPath}"
+    : $"codegraph: no graph yet at {dbPath}; tools will say so until codegraph-index builds it");
+
+var freshness = new IndexFreshness(dbPath, TimeSpan.FromSeconds(3));
+
+void AddGraph(IServiceCollection services)
+{
+    // Read-only and per request: DuckDB lets one process write or many read, so a store held open for the
+    // server's lifetime would lock out codegraph-index. Each tool call opens, queries and closes.
+    services.AddSingleton(freshness);
+    services.AddScoped(_ => GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(15)));
+    services
+        .AddMcpServer()
+        .WithStdioServerTransport()
+        .WithToolsFromAssembly()
+        .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
+        {
+            if (!File.Exists(dbPath))
+            {
+                return new CallToolResult
+                {
+                    IsError = true,
+                    Content = [new TextContentBlock { Text = $"no code graph at {dbPath}. Build it from this worktree with: codegraph-index <solution.sln>" }],
+                };
+            }
+
+            var result = await next(context, cancellationToken);
+            if (freshness.Check().Warning() is { } warning)
+            {
+                result.Content.Insert(0, new TextContentBlock { Text = warning });
+            }
+
+            return result;
+        }));
 }
 
 if (webPort.HasValue)
@@ -46,12 +96,7 @@ if (webPort.HasValue)
     webBuilder.Logging.AddConsole(opts => opts.LogToStandardErrorThreshold = LogLevel.Trace);
     webBuilder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Warning);
     webBuilder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
-    webBuilder.Services.AddSingleton(new GraphStore(dbPath));
-    webBuilder.Services
-        .AddMcpServer()
-        .WithStdioServerTransport()
-        .WithToolsFromAssembly();
-    // Web mode: no stdio MCP transport — use codegraph-mcp without --web for VS Code.
+    AddGraph(webBuilder.Services);
 
     var webApp = webBuilder.Build();
     MapWebApi(webApp);
@@ -64,11 +109,7 @@ else
     // ── Pure MCP mode ──────────────────────────────────────────
     var builder = Host.CreateApplicationBuilder(hostArgs.ToArray());
     builder.Logging.AddConsole(opts => opts.LogToStandardErrorThreshold = LogLevel.Trace);
-    builder.Services.AddSingleton(new GraphStore(dbPath));
-    builder.Services
-        .AddMcpServer()
-        .WithStdioServerTransport()
-        .WithToolsFromAssembly();
+    AddGraph(builder.Services);
 
     await builder.Build().RunAsync();
 }

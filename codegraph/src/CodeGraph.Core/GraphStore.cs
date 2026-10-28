@@ -18,15 +18,21 @@ public sealed class GraphStore : IDisposable
         nameof(EdgeKind.DependsOn),
         nameof(EdgeKind.TestedBy),
         nameof(EdgeKind.InvokedByFramework),
+        nameof(EdgeKind.References),
     ];
 
+    // References only ever points at types, so it widens impact_of(type) without changing member walks.
     private static readonly string[] ImpactEdgeKinds =
     [
         nameof(EdgeKind.Calls),
         nameof(EdgeKind.Overrides),
         nameof(EdgeKind.Implements),
         nameof(EdgeKind.Inherits),
+        nameof(EdgeKind.References),
     ];
+
+    /// <summary>Bumped when the indexer's output changes shape; a mismatch forces a full rebuild.</summary>
+    public const string SchemaVersion = "2";
 
     private readonly DuckDBConnection _connection;
 
@@ -49,17 +55,211 @@ public sealed class GraphStore : IDisposable
 
     public void Dispose() => _connection.Dispose();
 
+    /// <summary>
+    /// Opens a store, retrying while another process holds the DuckDB file lock. DuckDB allows one writer
+    /// or many readers per file, so the indexer and the MCP servers take turns.
+    /// </summary>
+    public static GraphStore Open(string dbPath, bool readOnly, TimeSpan wait)
+    {
+        var deadline = DateTime.UtcNow + wait;
+        while (true)
+        {
+            try
+            {
+                return new GraphStore(dbPath, readOnly);
+            }
+            catch (DuckDBException) when (DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(100);
+            }
+        }
+    }
+
     /// <summary>Drops all graph data. Called before a full re-index.</summary>
     public void Clear()
     {
+        Execute("DELETE FROM edge_origins;");
         Execute("DELETE FROM edges;");
         Execute("DELETE FROM nodes;");
+        Execute("DELETE FROM files;");
     }
 
     public void Write(IEnumerable<GraphNode> nodes, IEnumerable<GraphEdge> edges)
     {
         using var transaction = _connection.BeginTransaction();
+        WriteCore(transaction, nodes, edges, []);
+        transaction.Commit();
+    }
 
+    /// <summary>
+    /// Swaps in a re-index in one transaction so readers never see a half-written graph.
+    /// <paramref name="removedFiles"/> are source (or project) paths whose nodes and edge origins are dropped
+    /// first; an edge is only deleted once no remaining file still produces it.
+    /// With <paramref name="full"/> everything is dropped instead.
+    /// </summary>
+    public void Replace(
+        bool full,
+        IReadOnlyCollection<string> removedFiles,
+        IEnumerable<GraphNode> nodes,
+        IEnumerable<GraphEdge> edges,
+        IEnumerable<EdgeOrigin> origins,
+        IEnumerable<FileStamp> files,
+        IReadOnlyDictionary<string, string> meta)
+    {
+        using var transaction = _connection.BeginTransaction();
+
+        if (full)
+        {
+            foreach (var table in new[] { "edge_origins", "edges", "nodes", "files" })
+            {
+                Execute($"DELETE FROM {table};", transaction);
+            }
+        }
+        else if (removedFiles.Count > 0)
+        {
+            var removed = Lines(removedFiles);
+            Execute(
+                $"""
+                 DELETE FROM edges e
+                 WHERE EXISTS (SELECT 1 FROM edge_origins o
+                               WHERE o.from_id = e.from_id AND o.to_id = e.to_id AND o.kind = e.kind
+                                 AND o.file_path IN ({PathList}))
+                   AND NOT EXISTS (SELECT 1 FROM edge_origins o
+                                   WHERE o.from_id = e.from_id AND o.to_id = e.to_id AND o.kind = e.kind
+                                     AND o.file_path NOT IN ({PathList}));
+                 """, transaction, removed);
+            Execute($"DELETE FROM edge_origins WHERE file_path IN ({PathList});", transaction, removed);
+            Execute($"DELETE FROM nodes WHERE file_path IN ({PathList});", transaction, removed);
+            Execute($"DELETE FROM files WHERE path IN ({PathList});", transaction, removed);
+        }
+
+        // No dangling-edge sweep: edges to node-less targets (implicit constructors) are legitimate and a full
+        // index keeps them too. A file pointing at a removed member is a dependent, so it was re-walked above.
+        WriteCore(transaction, nodes, edges, origins);
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                INSERT INTO files (path, hash, size, mtime_ticks) VALUES ($path, $hash, $size, $mtime)
+                ON CONFLICT (path) DO UPDATE SET hash = excluded.hash, size = excluded.size, mtime_ticks = excluded.mtime_ticks;
+                """;
+            foreach (var file in files)
+            {
+                command.Parameters.Clear();
+                command.Parameters.Add(P("path", file.Path));
+                command.Parameters.Add(P("hash", file.Hash));
+                command.Parameters.Add(P("size", file.Size));
+                command.Parameters.Add(P("mtime", file.MtimeTicks));
+                command.ExecuteNonQuery();
+            }
+        }
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "INSERT OR REPLACE INTO meta (key, value) VALUES ($key, $value);";
+            foreach (var (key, value) in meta)
+            {
+                command.Parameters.Clear();
+                command.Parameters.Add(P("key", key));
+                command.Parameters.Add(P("value", value));
+                command.ExecuteNonQuery();
+            }
+        }
+
+        transaction.Commit();
+    }
+
+    /// <summary>Index metadata: schema version, solution, git commit, time. Empty for a database from before metadata existed.</summary>
+    public IReadOnlyDictionary<string, string> ReadMeta()
+    {
+        var meta = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!TableExists("meta"))
+        {
+            return meta;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT key, value FROM meta;";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            meta[reader.GetString(0)] = reader.GetString(1);
+        }
+
+        return meta;
+    }
+
+    /// <summary>The stamp of every source file as of the last index, keyed by path.</summary>
+    public IReadOnlyDictionary<string, FileStamp> IndexedFiles()
+    {
+        var files = new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
+        if (!TableExists("files"))
+        {
+            return files;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT path, hash, size, mtime_ticks FROM files;";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var stamp = new FileStamp(reader.GetString(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt64(3));
+            files[stamp.Path] = stamp;
+        }
+
+        return files;
+    }
+
+    /// <summary>Paths of the project files (.csproj) behind every Project node.</summary>
+    public IReadOnlyList<string> ProjectFilePaths()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT DISTINCT file_path FROM nodes WHERE kind = 'Project' AND file_path IS NOT NULL;";
+        var paths = new List<string>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            paths.Add(reader.GetString(0));
+        }
+
+        return paths;
+    }
+
+    /// <summary>
+    /// Files whose walk must be redone when <paramref name="paths"/> change: files with an edge into a node declared
+    /// in one of them (callers, subclasses, referencers, tests), and files with an edge out of one (other partial
+    /// declarations of the same type).
+    /// </summary>
+    public IReadOnlySet<string> DependentFiles(IReadOnlyCollection<string> paths)
+    {
+        var dependents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (paths.Count == 0 || !TableExists("edge_origins"))
+        {
+            return dependents;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT DISTINCT o.file_path FROM edge_origins o
+             JOIN nodes n ON n.id = o.to_id OR n.id = o.from_id
+             WHERE n.file_path IN ({PathList}) AND n.kind != 'Project';
+             """;
+        command.Parameters.Add(P("paths", Lines(paths)));
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            dependents.Add(reader.GetString(0));
+        }
+
+        return dependents;
+    }
+
+    private void WriteCore(DuckDBTransaction transaction, IEnumerable<GraphNode> nodes, IEnumerable<GraphEdge> edges, IEnumerable<EdgeOrigin> origins)
+    {
         using (var command = _connection.CreateCommand())
         {
             command.Transaction = transaction;
@@ -123,7 +323,22 @@ public sealed class GraphStore : IDisposable
             }
         }
 
-        transaction.Commit();
+        using (var command = _connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                "INSERT INTO edge_origins (from_id, to_id, kind, file_path) VALUES ($from, $to, $kind, $file) ON CONFLICT DO NOTHING;";
+
+            foreach (var origin in origins)
+            {
+                command.Parameters.Clear();
+                command.Parameters.Add(P("from", origin.Edge.FromId));
+                command.Parameters.Add(P("to", origin.Edge.ToId));
+                command.Parameters.Add(P("kind", origin.Edge.Kind.ToString()));
+                command.Parameters.Add(P("file", origin.FilePath));
+                command.ExecuteNonQuery();
+            }
+        }
     }
 
     public (int Nodes, int Edges) Count()
@@ -293,6 +508,21 @@ public sealed class GraphStore : IDisposable
             command.Parameters.Add(P("kind", kind.ToString()));
         }
         return ReadNodes(command);
+    }
+
+    /// <summary>Every edge. Use sparingly - may return tens of thousands of rows.</summary>
+    public IReadOnlyList<GraphEdge> AllEdges()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT from_id, to_id, kind FROM edges ORDER BY kind, from_id, to_id;";
+        var edges = new List<GraphEdge>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            edges.Add(new GraphEdge(reader.GetString(0), reader.GetString(1), Enum.Parse<EdgeKind>(reader.GetString(2))));
+        }
+
+        return edges;
     }
 
     /// <summary>All edges leaving <paramref name="id"/>, with the target node resolved.</summary>
@@ -926,6 +1156,27 @@ public sealed class GraphStore : IDisposable
             )
             """);
         Execute("CREATE INDEX IF NOT EXISTS ix_edges_to ON edges (to_id, kind)");
+        Execute(
+            """
+            CREATE TABLE IF NOT EXISTS edge_origins (
+                from_id   VARCHAR NOT NULL,
+                to_id     VARCHAR NOT NULL,
+                kind      VARCHAR NOT NULL,
+                file_path VARCHAR NOT NULL,
+                PRIMARY KEY (from_id, to_id, kind, file_path)
+            )
+            """);
+        Execute("CREATE INDEX IF NOT EXISTS ix_edge_origins_file ON edge_origins (file_path)");
+        Execute(
+            """
+            CREATE TABLE IF NOT EXISTS files (
+                path        VARCHAR PRIMARY KEY,
+                hash        VARCHAR NOT NULL,
+                size        BIGINT NOT NULL,
+                mtime_ticks BIGINT NOT NULL
+            )
+            """);
+        Execute("CREATE TABLE IF NOT EXISTS meta (key VARCHAR PRIMARY KEY, value VARCHAR NOT NULL)");
 
         // Idempotent column additions for databases created before this schema version.
         EnsureColumn("nodes", "type_kind",    "VARCHAR DEFAULT 'None'");
@@ -944,12 +1195,32 @@ public sealed class GraphStore : IDisposable
         Execute($"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition};");
     }
 
-    private void Execute(string sql)
+    private void Execute(string sql, DuckDBTransaction? transaction = null, string? paths = null)
     {
         using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = sql;
+        if (paths is not null)
+        {
+            command.Parameters.Add(P("paths", paths));
+        }
+
         command.ExecuteNonQuery();
     }
+
+    private bool TableExists(string table)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM duckdb_tables() WHERE table_name = $table;";
+        command.Parameters.Add(P("table", table));
+        return Convert.ToInt32(command.ExecuteScalar()) > 0;
+    }
+
+    // Path sets travel as one newline-joined parameter split server-side: works on read-only
+    // connections (no temp table) and avoids thousands of positional parameters.
+    private const string PathList = "SELECT unnest(string_split($paths, chr(10)))";
+
+    private static string Lines(IEnumerable<string> paths) => string.Join('\n', paths);
 
     private static DuckDBParameter P(string name, object? value) =>
         new() { ParameterName = name, Value = value };
