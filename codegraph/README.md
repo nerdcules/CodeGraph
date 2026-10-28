@@ -11,6 +11,43 @@ src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
 tests/CodeGraph.Tests   store traversals + indexer extraction
 ```
 
+## Why use the Code-Graph MCP?
+
+Without a graph, Claude answers structural questions by reading source. "Who calls
+`SaveAsync`?" becomes a grep for the name, a read of every file that matched, and a guess
+about which matches are the one you mean. That is slow, it is expensive in context, and it
+is wrong in the ways that matter most in C#: it finds unrelated methods with the same name,
+misses calls that go through an interface or a base class, and never finds the indirect
+implementor two levels down.
+
+The graph fixes the accuracy problem first. The indexer runs the real Roslyn compiler over
+the solution, so every edge is a resolved symbol, not a text match. `impact_of` walks
+callers, overrides and implementations transitively; `implementors_of` follows `Inherits`
+as well as `Implements`; `references_to` sees a type in signatures, generic arguments,
+casts and attributes. Claude gets the same answer the compiler would give.
+
+It also fixes the cost problem. A typical turn is `find_symbol` → `impact_of` → `snippet`
+on the two or three declarations that matter, which is low thousands of tokens instead of
+the tens of thousands spent opening files. Context stays free for the actual change, and
+long sessions degrade less.
+
+Beyond navigation, the graph answers questions that are impractical from source at all:
+which tests guard a member (`tests_for`), what is unreachable from any entry point
+(`dead_code_report`, `uncovered`), the shortest call path between two methods
+(`path_between`), and which members are called the most (`most_called`).
+
+The practical properties that make it usable day to day:
+
+- **Trustworthy when stale.** Every answer is checked against the working tree first. If
+  indexed files changed, the answer says so and marks the affected rows, so Claude never
+  silently reasons from an old graph.
+- **Cheap to keep fresh.** Re-indexing is incremental: only changed files and their
+  dependents are re-walked, and it runs safely while Claude sessions are open.
+- **One config for every worktree.** The server discovers `.codegraph/graph.db` from its
+  working directory, so a single `.mcp.json` serves every checkout, each with its own graph.
+- **Read-only and local.** The server only ever reads the graph file. No source leaves the
+  machine and nothing is written during a query.
+
 ## Build
 
 ```bash
