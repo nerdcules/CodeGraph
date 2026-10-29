@@ -34,7 +34,9 @@ long sessions degrade less.
 Beyond navigation, the graph answers questions that are impractical from source at all:
 which tests guard a member (`tests_for`), what is unreachable from any entry point
 (`dead_code_report`, `uncovered`), the shortest call path between two methods
-(`path_between`), and which members are called the most (`most_called`).
+(`path_between`), which members are called the most (`most_called`), and "where's the code
+that does X" when no symbol name is known (`search_code`, full-text over names, comments and
+bodies).
 
 The practical properties that make it usable day to day:
 
@@ -94,11 +96,26 @@ can be removed without touching edges that another file still produces. Projects
 re-walked files skip compilation entirely. `--full` rebuilds from scratch, and so does a
 schema-version or solution mismatch.
 
-The solution load (MSBuild evaluation) is paid every run, so a no-op re-index of this repo
-takes about 9s against about 50s for a full one. An edit to a widely used file still compiles
-every project that depends on it. Not covered: a *new* overload or extension method in a file
-that existing callers never referenced can change what an untouched file binds to. Run `--full`
-after big refactors.
+The solution load (MSBuild evaluation) is paid every one-shot run, so a no-op re-index of this
+repo takes about 9s against about 50s for a full one. An edit to a widely used file still
+compiles every project that depends on it. Not covered: a *new* overload or extension method in
+a file that existing callers never referenced can change what an untouched file binds to. Run
+`--full` after big refactors.
+
+### Watch mode
+
+```bash
+dotnet run --project src/CodeGraph.Indexer -- /path/to/GymX.sln --watch
+```
+
+`--watch` pays the solution load once and keeps running. A `FileSystemWatcher` on the worktree
+collects saves, waits for a quiet half second, applies the edits to the loaded Roslyn solution in
+memory (new text, new files into the project whose directory holds them, deleted files out) and
+runs the same incremental walk as above, so a one-file edit re-indexes in well under a second
+instead of the 9s a cold run spends in MSBuild. A change to a `.csproj`, `.sln`, `.props` or
+`.targets` file is the one thing that triggers a real reload. Build output (`bin/`, `obj/`) is
+ignored. Ctrl+C stops it. The MCP server notices each swap through the db's mtime, so Claude's
+next answer uses the new graph.
 
 The incremental contract is tested directly: v1 full, then an edit and an incremental run,
 must equal v2 full (`IncrementalIndexTests`).
@@ -108,11 +125,28 @@ for the final swap, which is one transaction, and the MCP server opens the graph
 per tool call. So re-indexing works while Claude sessions are running, and each side
 retries briefly if it hits the other's lock.
 
+## Install
+
+```powershell
+.\install.ps1                                   # Windows → C:\tools\codegraph
+.\install.ps1 -InstallDir D:\tools\codegraph -AddToPath
+```
+
+```bash
+./install.sh                                    # macOS / Linux → ~/.codegraph/bin
+./install.sh --install-dir /opt/codegraph --add-to-path
+```
+
+Both scripts build with warnings as errors, run the test suite (`-SkipTests` / `--skip-tests`
+to skip), publish `codegraph-index` and `codegraph-mcp` into the install folder, and print the
+`.mcp.json` below with the right path filled in. Re-run to upgrade. A running `codegraph-mcp`
+holds its files open, so the script stops rather than overwrite it; close the Claude Code
+sessions using it, or pass `-Force` / `--force` to stop them.
+
 ## Wire it into Claude Code
 
-`dotnet publish -c Release` once, then put one `.mcp.json` in the repo. Leave out the db
-path: the server looks for `.codegraph/graph.db` from its working directory up to the git
-worktree root. Claude Code starts it in the project directory, so the same file works in
+Put one `.mcp.json` in the repo (the install script prints it). Leave out the db path: the
+server looks for `.codegraph/graph.db` from its working directory up to the git worktree root. Claude Code starts it in the project directory, so the same file works in
 every worktree (`C:/dev/sa-1`, `C:/dev/sa-2`, …), each reading its own graph:
 
 ```json
@@ -130,6 +164,24 @@ build it with codegraph-index". An explicit path argument or `CODEGRAPH_DB` stil
 discovery. Two solutions in one worktree need `--db` to keep separate graphs.
 
 Add `.codegraph/` to `.gitignore`.
+
+### Telemetry
+
+Every tool call is recorded: tool, duration, size of the answer, and the size of the source
+files the answer pointed at, which is what reading them instead would have cost. One JSON line
+per call goes to `.codegraph/telemetry.jsonl` beside the graph; nothing leaves the machine.
+`usage_stats` reports both this session and all time:
+
+```
+this session (3 call(s), 1201 result tokens, ~54656 source tokens saved)
+tool         calls  errors   avg ms  result tok  source tok   saved tok
+search_code      2       0      138         521       23443       22922
+find_symbol      1       0       25         680       32414       31734
+```
+
+Tokens are estimated at four characters each, and "saved" is an upper bound: it assumes the
+model would have opened every file an answer mentions. Set `CODEGRAPH_TELEMETRY=off` to keep
+the counts in memory only.
 
 ### Staleness
 
@@ -151,15 +203,17 @@ files added by a checkout aren't in the graph. `index_status` shows the full pic
 | tool | what it answers |
 |---|---|
 | `find_symbol` | id, kind, signature, location for a name |
+| `search_code` | "where's the code that does X": ranked full-text search over names, signatures, comments, string literals and body identifiers |
 | `outline` | children of a node, no bodies |
 | `callers_of` / `callees_of` | call graph, N hops |
 | `impact_of` | transitive dependents + guarding tests (for a type: every member that references it, too) |
 | `tests_for` | tests that call a member directly |
-| `references_to` | where a type is used: signatures, fields, locals, generic args, casts, attributes, record parameters |
+| `references_to` | where a type is used: signatures, fields, locals (including `var`-inferred ones), generic args, casts, attributes, record parameters, `using` aliases |
 | `implementors_of` / `inheritors_of` | who implements an interface (including subclasses of implementors) / derives from a type |
 | `snippet` | just the declaration span from source |
 | `graph_stats` | sanity check |
 | `index_status` | which graph, built when and at which commit, which files changed since |
+| `usage_stats` | calls per tool, latency, answer size and estimated source tokens saved, this session and all time |
 
 A typical Claude turn: `find_symbol` → `impact_of` → `snippet` on the two or three
 things that matter. Low thousands of tokens instead of tens of thousands.
@@ -168,11 +222,21 @@ things that matter. Low thousands of tokens instead of tens of thousands.
 Indexing this repo is the quickest end-to-end check: `tests_for` on `GraphStore.Impact`
 should come back with the tests in `tests/CodeGraph.Tests`.
 
+### Full-text search
+
+`search_code` answers intent-style questions when no symbol name is known. At index time every
+type and member gets a document: its name (weighted ×3), its doc and leading comments (×2), its
+signature, and the identifiers, string literals and comments in its body. Identifiers split on
+case boundaries, so `SaveWorkoutAsync` is found by "save workout"; a light stemmer folds
+plurals and tenses on both sides. Queries are ranked by BM25 in plain SQL over two tables in the
+same DuckDB file, so there is no extension to install and read-only queries work as for every
+other tool. Results show how many of the query's terms each hit matched.
+
+This is lexical search: it finds code that uses the same words, not code that means the same
+thing. Embeddings would close that gap and are the natural next step.
+
 ## Not yet
 
-- Skipping the MSBuild solution load on re-index (the remaining fixed cost), e.g. a
-  long-running indexer that watches the worktree.
-- `References` from `var`-inferred types (`var x = GetFoo()` names no type) and through
-  `using` aliases.
-- FTS5 / embeddings for "where's the code that does X" style search.
-- Telemetry (query counts, tokens saved) — the software-factory feedback loop.
+- Embeddings for semantic "where's the code that does X" search; `search_code` is lexical.
+- `--watch` re-reads a project's globs only on a project-file change, so a new file in a
+  directory no project covers is picked up by the next cold run.

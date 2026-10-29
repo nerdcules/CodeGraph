@@ -56,11 +56,17 @@ Console.Error.WriteLine(File.Exists(dbPath)
 
 var freshness = new IndexFreshness(dbPath, TimeSpan.FromSeconds(3));
 
+// Telemetry stays beside the graph, one JSON line per tool call; CODEGRAPH_TELEMETRY=off keeps it in memory only.
+var telemetrySetting = Environment.GetEnvironmentVariable("CODEGRAPH_TELEMETRY");
+var telemetryOff = telemetrySetting is not null && telemetrySetting.Trim().ToLowerInvariant() is "0" or "off" or "false" or "no";
+var telemetry = new Telemetry(telemetryOff ? null : Path.Combine(Path.GetDirectoryName(dbPath)!, "telemetry.jsonl"));
+
 void AddGraph(IServiceCollection services)
 {
     // Read-only and per request: DuckDB lets one process write or many read, so a store held open for the
     // server's lifetime would lock out codegraph-index. Each tool call opens, queries and closes.
     services.AddSingleton(freshness);
+    services.AddSingleton(telemetry);
     services.AddScoped(_ => GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(15)));
     services
         .AddMcpServer()
@@ -77,12 +83,24 @@ void AddGraph(IServiceCollection services)
                 };
             }
 
-            var result = await next(context, cancellationToken);
+            var scope = telemetry.Begin(context.Params?.Name ?? "?");
+            CallToolResult result;
+            try
+            {
+                result = await next(context, cancellationToken);
+            }
+            catch
+            {
+                scope.Complete(0, isError: true);
+                throw;
+            }
+
             if (freshness.Check().Warning() is { } warning)
             {
                 result.Content.Insert(0, new TextContentBlock { Text = warning });
             }
 
+            scope.Complete(result.Content.OfType<TextContentBlock>().Sum(block => (long)block.Text.Length), result.IsError == true);
             return result;
         }));
 }

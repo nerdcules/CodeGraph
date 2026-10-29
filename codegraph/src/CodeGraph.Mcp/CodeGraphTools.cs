@@ -11,8 +11,66 @@ namespace CodeGraph.Mcp;
 /// Rows whose file was edited since indexing end in <c>STALE</c>; the call-tool filter in Program adds the summary line.
 /// </summary>
 [McpServerToolType]
-public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness)
+public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry)
 {
+    [McpServerTool(Name = "search_code", ReadOnly = true, Idempotent = true)]
+    [Description("Where's the code that does X: full-text search over names, signatures, comments, string literals and body identifiers of every type and member. Use for intent-style questions ('retry failed uploads', 'parse the config file') when you don't know a symbol name; use find_symbol when you do.")]
+    public string SearchCode(
+        [Description("Words describing what the code does, e.g. 'send welcome email' or 'validate jwt token'")] string query,
+        [Description("Optional kind filter: Type, Method, Property, Field, Event")] string? kind = null,
+        [Description("Optional substring to filter by file path, e.g. 'Services' or 'GymX.Core'")] string? file = null,
+        [Description("Max results, default 20, max 100")] int limit = 20)
+    {
+        NodeKind? kindFilter = null;
+        if (kind is not null)
+        {
+            if (!Enum.TryParse<NodeKind>(kind, ignoreCase: true, out var parsed))
+                return $"unknown kind '{kind}'. Use one of: {string.Join(", ", Enum.GetNames<NodeKind>())}";
+            kindFilter = parsed;
+        }
+
+        var terms = SearchText.QueryTerms(query);
+        if (terms.Count == 0)
+            return $"'{query}' has no searchable words (stop words and single characters are ignored)";
+
+        if (store.SearchDocumentCount() == 0)
+            return "this graph has no full-text index; rebuild it with codegraph-index --full";
+
+        var hits = store.Search(query, kindFilter, file, Math.Clamp(limit, 1, 100));
+        if (hits.Count == 0)
+            return $"nothing matches [{string.Join(", ", terms)}]. Try other words for the same idea, or find_symbol if you know part of a name.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"{hits.Count} result(s) for [{string.Join(", ", terms)}], best first:");
+        sb.Append(Format(hits.Select(h => (h.Node, (string?)$"{h.MatchedTerms}/{h.QueryTerms} terms, score {h.Score:F1}"))));
+        return sb.ToString();
+    }
+
+    [McpServerTool(Name = "usage_stats", ReadOnly = true, Idempotent = true)]
+    [Description("How the graph is being used: calls per tool, latency, result size, and an estimate of the source tokens those answers saved the model from reading. Session and all-time.")]
+    public string UsageStats()
+    {
+        var session = telemetry.Session;
+        var allTime = telemetry.AllTime();
+
+        var sb = new StringBuilder();
+        sb.AppendLine(telemetry.LogPath is null
+            ? "telemetry : in memory only (CODEGRAPH_TELEMETRY=off)"
+            : $"telemetry : {telemetry.LogPath} (set CODEGRAPH_TELEMETRY=off to stop writing it)");
+        sb.AppendLine("tokens are estimated at 4 characters each; 'source tok' is the size of the files an answer pointed at,");
+        sb.AppendLine("which is what reading them instead would have cost; 'saved tok' is that minus the answer itself.");
+        sb.AppendLine();
+        sb.AppendLine($"this session ({Totals(session)})");
+        sb.AppendLine(Telemetry.Table(ToolUsage.Group(session)));
+        sb.AppendLine();
+        sb.AppendLine($"all time ({Totals(allTime)})");
+        sb.AppendLine(Telemetry.Table(ToolUsage.Group(allTime)));
+        return sb.ToString();
+
+        static string Totals(IReadOnlyList<ToolCallRecord> calls) =>
+            $"{calls.Count} call(s), {calls.Sum(c => c.ResultTokens)} result tokens, ~{calls.Sum(c => c.TokensSaved)} source tokens saved";
+    }
+
     [McpServerTool(Name = "find_symbol", ReadOnly = true, Idempotent = true)]
     [Description("Find types and members by name (case-insensitive). Returns id, kind, signature and location. Use the id with the other tools.")]
     public string FindSymbol(
@@ -256,6 +314,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness)
             return $"{node.FullName} has no readable source location ({node.FilePath ?? "no path"})";
         }
 
+        Telemetry.Current?.AddSourceFile(node.FilePath);
         var lines = await File.ReadAllLinesAsync(node.FilePath, cancellationToken);
         var pad = Math.Clamp(context, 0, 50);
         var start = Math.Max(1, node.StartLine - pad);
@@ -590,9 +649,12 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness)
     private string Format(IEnumerable<(GraphNode Node, string? Extra)> rows)
     {
         var report = freshness.Check();
+        var scope = Telemetry.Current;
         var sb = new StringBuilder();
         foreach (var (node, extra) in rows)
         {
+            // Without the graph the model would open each of these files; that is the cost the answer stands in for.
+            scope?.AddSourceFile(node.FilePath);
             sb.Append(node.Kind.ToString().ToLowerInvariant()).Append("  ");
             sb.Append(node.FullName);
             if (!string.IsNullOrEmpty(extra))

@@ -14,7 +14,7 @@ namespace CodeGraph.Indexer;
 /// Every edge also records the file whose walk produced it (<see cref="Origins"/>), so an incremental run
 /// can drop and redo one file's contribution.
 /// </summary>
-public sealed class RoslynIndexer
+public sealed partial class RoslynIndexer
 {
     private static readonly HashSet<string> TestAttributeNames = new(StringComparer.Ordinal)
     {
@@ -47,12 +47,13 @@ public sealed class RoslynIndexer
     private readonly Dictionary<string, GraphNode> _nodes = new(StringComparer.Ordinal);
     private readonly HashSet<GraphEdge> _edges = [];
     private readonly HashSet<EdgeOrigin> _origins = [];
+    private readonly Dictionary<string, SearchDocument> _search = new(StringComparer.Ordinal);
     private readonly HashSet<string> _documentPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Action<string> _log;
 
-    // Names of every type declared in the solution (plus "Foo" for "FooAttribute"). Binding every identifier in
-    // every body is the expensive part of finding type references; most identifiers are locals and members, so
-    // only names that could be a source type are handed to the semantic model.
+    // Names of every type declared in the solution (plus "Foo" for "FooAttribute", plus every using alias).
+    // Binding every identifier in every body is the expensive part of finding type references; most identifiers
+    // are locals and members, so only names that could be a source type are handed to the semantic model.
     private HashSet<string>? _sourceTypeNames;
 
     public RoslynIndexer(Action<string> log)
@@ -65,6 +66,9 @@ public sealed class RoslynIndexer
     public IReadOnlyCollection<GraphEdge> Edges => _edges;
 
     public IReadOnlyCollection<EdgeOrigin> Origins => _origins;
+
+    /// <summary>Full-text documents for every type and member node that was walked.</summary>
+    public IReadOnlyCollection<SearchDocument> SearchDocuments => _search.Values;
 
     /// <summary>Every C# source file in the solution, walked or not.</summary>
     public IReadOnlyCollection<string> DocumentPaths => _documentPaths;
@@ -81,20 +85,44 @@ public sealed class RoslynIndexer
         Func<IReadOnlyCollection<string>, IReadOnlySet<string>?>? selectFiles,
         CancellationToken cancellationToken)
     {
-        using var workspace = MSBuildWorkspace.Create();
-        using var workspaceFailures = workspace.RegisterWorkspaceFailedHandler(e =>
+        using var workspace = await OpenAsync(solutionOrProjectPath, _log, cancellationToken);
+        await IndexAsync(workspace.CurrentSolution, selectFiles, cancellationToken);
+    }
+
+    /// <summary>
+    /// Loads a solution or project through MSBuild. This is the fixed cost of every run (seconds to tens of
+    /// seconds); watch mode pays it once and keeps the workspace, applying later edits in memory.
+    /// </summary>
+    public static async Task<MSBuildWorkspace> OpenAsync(string solutionOrProjectPath, Action<string> log, CancellationToken cancellationToken)
+    {
+        var workspace = MSBuildWorkspace.Create();
+        workspace.RegisterWorkspaceFailedHandler(e =>
         {
             if (e.Diagnostic.Kind == WorkspaceDiagnosticKind.Failure)
             {
-                _log($"workspace: {e.Diagnostic.Message}");
+                log($"workspace: {e.Diagnostic.Message}");
             }
         });
 
         var extension = Path.GetExtension(solutionOrProjectPath);
-        var solution = extension is ".sln" or ".slnx"
-            ? await workspace.OpenSolutionAsync(solutionOrProjectPath, cancellationToken: cancellationToken)
-            : (await workspace.OpenProjectAsync(solutionOrProjectPath, cancellationToken: cancellationToken)).Solution;
+        if (extension is ".sln" or ".slnx")
+        {
+            await workspace.OpenSolutionAsync(solutionOrProjectPath, cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await workspace.OpenProjectAsync(solutionOrProjectPath, cancellationToken: cancellationToken);
+        }
 
+        return workspace;
+    }
+
+    /// <summary>Walks an already-loaded solution; see <see cref="IndexAsync(string, Func{IReadOnlyCollection{string}, IReadOnlySet{string}?}?, CancellationToken)"/>.</summary>
+    public async Task IndexAsync(
+        Solution solution,
+        Func<IReadOnlyCollection<string>, IReadOnlySet<string>?>? selectFiles,
+        CancellationToken cancellationToken)
+    {
         var projects = solution.Projects.Where(p => p.Language == LanguageNames.CSharp).ToList();
         foreach (var path in projects.SelectMany(p => p.Documents).Select(d => d.FilePath).OfType<string>())
         {
@@ -197,6 +225,12 @@ public sealed class RoslynIndexer
             var primary = type.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax(cancellationToken) ?? typeDeclaration;
             AddNode(NodeFor(type, typeId, NodeKind.Type, primary, isTest: false));
             AddEdge(new GraphEdge(fileId, typeId, EdgeKind.Contains), origin);
+            AddSearchDocument(typeId,
+            [
+                (type.Name, 3),
+                (type.ContainingNamespace?.ToDisplayString(), 1),
+                (CommentText(typeDeclaration.GetLeadingTrivia()), 2),
+            ]);
 
             // also wire parent type → nested type so outline(outer) shows nested types
             if (type.ContainingType is { } parentType && IsInSource(parentType)
@@ -256,6 +290,14 @@ public sealed class RoslynIndexer
             var isTest = symbol is IMethodSymbol && HasTestAttribute(symbol);
             AddNode(NodeFor(symbol, memberId, kind, member, isTest));
             AddEdge(new GraphEdge(typeId, memberId, EdgeKind.Contains), origin);
+            AddSearchDocument(memberId,
+            [
+                (symbol.Name, 3),
+                (symbol.ContainingType?.Name, 1),
+                (CommentText(member.GetLeadingTrivia()), 2),
+                (symbol.ToDisplayString(SignatureFormat), 1),
+                (BodyText(member), 1),
+            ]);
 
             if (symbol is IMethodSymbol method && HasFrameworkEntrypointAttribute(method))
             {
@@ -332,6 +374,18 @@ public sealed class RoslynIndexer
 
     private void IndexTypeReference(SimpleNameSyntax name, SemanticModel model, string fromId, string origin, IReadOnlySet<string>? skip, CancellationToken cancellationToken)
     {
+        // `var x = GetFoo()` names no type in syntax; the semantic model knows what it inferred, and that type
+        // (with its generic arguments, e.g. List<Foo>) is as much a dependency as a spelled-out one.
+        if (name is IdentifierNameSyntax { IsVar: true })
+        {
+            if (model.GetTypeInfo(name, cancellationToken).Type is { } inferred)
+            {
+                AddReferences(fromId, inferred, origin, skip);
+            }
+
+            return;
+        }
+
         if (_sourceTypeNames?.Contains(name.Identifier.ValueText) != true)
         {
             return;
@@ -346,13 +400,55 @@ public sealed class RoslynIndexer
             symbol = ctor.ContainingType;
         }
 
-        if (symbol is not INamedTypeSymbol type || !IsInSource(type) || IdOf(type.OriginalDefinition) is not { } typeId
-            || skip?.Contains(typeId) == true)
+        // `using Alias = N.Foo;` binds to what the alias stands for, which may be a tuple or a generic
+        // instantiation (`using Models = List<Foo>;`) naming source types only in its arguments.
+        if (symbol is IAliasSymbol alias)
         {
-            return;
+            symbol = alias.Target;
         }
 
-        AddEdge(new GraphEdge(fromId, typeId, EdgeKind.References), origin);
+        if (symbol is ITypeSymbol type)
+        {
+            AddReferences(fromId, type, origin, skip);
+        }
+    }
+
+    /// <summary>References to every source type mentioned by <paramref name="type"/>: itself, its generic arguments, element and tuple types.</summary>
+    private void AddReferences(string fromId, ITypeSymbol type, string origin, IReadOnlySet<string>? skip)
+    {
+        foreach (var typeId in SourceTypeIds(type).Distinct(StringComparer.Ordinal))
+        {
+            if (skip?.Contains(typeId) != true)
+            {
+                AddEdge(new GraphEdge(fromId, typeId, EdgeKind.References), origin);
+            }
+        }
+    }
+
+    private static IEnumerable<string> SourceTypeIds(ITypeSymbol type)
+    {
+        switch (type)
+        {
+            case INamedTypeSymbol named:
+                if (IsInSource(named) && IdOf(named.OriginalDefinition) is { } id)
+                {
+                    yield return id;
+                }
+
+                foreach (var argument in named.TypeArguments.SelectMany(SourceTypeIds))
+                {
+                    yield return argument;
+                }
+
+                break;
+            case IArrayTypeSymbol array:
+                foreach (var element in SourceTypeIds(array.ElementType))
+                {
+                    yield return element;
+                }
+
+                break;
+        }
     }
 
     private static async Task<HashSet<string>> SourceTypeNamesAsync(Solution solution, CancellationToken cancellationToken)
@@ -374,10 +470,68 @@ public sealed class RoslynIndexer
                     names.Add(name[..^"Attribute".Length]);
                 }
             }
+
+            // Alias names (file-scoped or global) are the other way an identifier can stand for a source type.
+            foreach (var directive in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
+            {
+                if (directive.Alias is { } alias)
+                {
+                    names.Add(alias.Name.Identifier.ValueText);
+                }
+            }
         }
 
         return names;
     }
+
+    private void AddSearchDocument(string nodeId, IEnumerable<(string? Text, int Weight)> parts)
+    {
+        // Partial types and multi-target projects produce the same id more than once; first one wins, as for nodes.
+        if (!_search.ContainsKey(nodeId) && SearchText.Document(nodeId, parts) is { } document)
+        {
+            _search[nodeId] = document;
+        }
+    }
+
+    /// <summary>The comment text in <paramref name="trivia"/>, XML tags stripped. Doc comments survive even with documentation parsing off, as plain comments.</summary>
+    private static string? CommentText(SyntaxTriviaList trivia)
+    {
+        var comments = trivia.Where(t => t.IsKind(SyntaxKind.SingleLineCommentTrivia) || t.IsKind(SyntaxKind.MultiLineCommentTrivia)
+                || t.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia) || t.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
+            .Select(t => t.ToFullString())
+            .ToList();
+        return comments.Count == 0 ? null : XmlTag().Replace(string.Join('\n', comments), " ");
+    }
+
+    /// <summary>Identifiers, string literals and comments inside a member: what the code does, in its own words.</summary>
+    private static string BodyText(SyntaxNode member)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var token in member.DescendantTokens())
+        {
+            if (token.IsKind(SyntaxKind.IdentifierToken) || token.IsKind(SyntaxKind.StringLiteralToken)
+                || token.IsKind(SyntaxKind.InterpolatedStringTextToken) || token.IsKind(SyntaxKind.MultiLineRawStringLiteralToken)
+                || token.IsKind(SyntaxKind.SingleLineRawStringLiteralToken))
+            {
+                sb.Append(token.ValueText).Append(' ');
+            }
+        }
+
+        foreach (var trivia in member.DescendantTrivia())
+        {
+            // Leading comments are the doc text, weighted separately; only comments inside the member count here.
+            if (trivia.SpanStart >= member.SpanStart
+                && (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)))
+            {
+                sb.Append(trivia.ToFullString()).Append(' ');
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("<[^>]*>")]
+    private static partial System.Text.RegularExpressions.Regex XmlTag();
 
     private void AddEdgeTo(string fromId, ISymbol target, EdgeKind kind, string origin, HashSet<string>? collect = null)
     {

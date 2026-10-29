@@ -32,7 +32,7 @@ public sealed class GraphStore : IDisposable
     ];
 
     /// <summary>Bumped when the indexer's output changes shape; a mismatch forces a full rebuild.</summary>
-    public const string SchemaVersion = "2";
+    public const string SchemaVersion = "3";
 
     private readonly DuckDBConnection _connection;
 
@@ -78,6 +78,8 @@ public sealed class GraphStore : IDisposable
     /// <summary>Drops all graph data. Called before a full re-index.</summary>
     public void Clear()
     {
+        Execute("DELETE FROM search_terms;");
+        Execute("DELETE FROM search_docs;");
         Execute("DELETE FROM edge_origins;");
         Execute("DELETE FROM edges;");
         Execute("DELETE FROM nodes;");
@@ -95,7 +97,8 @@ public sealed class GraphStore : IDisposable
     /// Swaps in a re-index in one transaction so readers never see a half-written graph.
     /// <paramref name="removedFiles"/> are source (or project) paths whose nodes and edge origins are dropped
     /// first; an edge is only deleted once no remaining file still produces it.
-    /// With <paramref name="full"/> everything is dropped instead.
+    /// With <paramref name="full"/> everything is dropped instead. <paramref name="search"/> are the full-text
+    /// documents of the nodes being written; a node's old document goes with its file.
     /// </summary>
     public void Replace(
         bool full,
@@ -104,13 +107,14 @@ public sealed class GraphStore : IDisposable
         IEnumerable<GraphEdge> edges,
         IEnumerable<EdgeOrigin> origins,
         IEnumerable<FileStamp> files,
-        IReadOnlyDictionary<string, string> meta)
+        IReadOnlyDictionary<string, string> meta,
+        IEnumerable<SearchDocument>? search = null)
     {
         using var transaction = _connection.BeginTransaction();
 
         if (full)
         {
-            foreach (var table in new[] { "edge_origins", "edges", "nodes", "files" })
+            foreach (var table in new[] { "search_terms", "search_docs", "edge_origins", "edges", "nodes", "files" })
             {
                 Execute($"DELETE FROM {table};", transaction);
             }
@@ -118,6 +122,8 @@ public sealed class GraphStore : IDisposable
         else if (removedFiles.Count > 0)
         {
             var removed = Lines(removedFiles);
+            Execute($"DELETE FROM search_terms WHERE node_id IN (SELECT id FROM nodes WHERE file_path IN ({PathList}));", transaction, removed);
+            Execute($"DELETE FROM search_docs WHERE node_id IN (SELECT id FROM nodes WHERE file_path IN ({PathList}));", transaction, removed);
             Execute(
                 $"""
                  DELETE FROM edges e
@@ -136,6 +142,10 @@ public sealed class GraphStore : IDisposable
         // No dangling-edge sweep: edges to node-less targets (implicit constructors) are legitimate and a full
         // index keeps them too. A file pointing at a removed member is a dependent, so it was re-walked above.
         WriteCore(transaction, nodes, edges, origins);
+        if (search is not null)
+        {
+            WriteSearch(transaction, search);
+        }
 
         using (var command = _connection.CreateCommand())
         {
@@ -339,6 +349,110 @@ public sealed class GraphStore : IDisposable
                 command.ExecuteNonQuery();
             }
         }
+    }
+
+    private void WriteSearch(DuckDBTransaction transaction, IEnumerable<SearchDocument> documents)
+    {
+        var list = documents as IReadOnlyCollection<SearchDocument> ?? documents.ToList();
+        if (list.Count == 0)
+        {
+            return;
+        }
+
+        // A re-walked node may have lost terms since last time; start every node clean, in one statement.
+        var ids = Lines(list.Select(d => d.NodeId));
+        Execute($"DELETE FROM search_terms WHERE node_id IN ({PathList});", transaction, ids);
+        Execute($"DELETE FROM search_docs WHERE node_id IN ({PathList});", transaction, ids);
+
+        // Term rows run to hundreds of thousands per solution; one statement per row takes minutes in DuckDB,
+        // the appender takes a second. It appends within the connection's open transaction.
+        using (var appender = _connection.CreateAppender("search_docs"))
+        {
+            foreach (var document in list)
+            {
+                appender.CreateRow().AppendValue(document.NodeId).AppendValue(document.Length).EndRow();
+            }
+        }
+
+        using (var appender = _connection.CreateAppender("search_terms"))
+        {
+            foreach (var document in list)
+            {
+                foreach (var (term, tf) in document.Terms)
+                {
+                    appender.CreateRow().AppendValue(document.NodeId).AppendValue(term).AppendValue(tf).EndRow();
+                }
+            }
+        }
+    }
+
+    /// <summary>Number of nodes with a full-text document; zero for a graph built before search existed.</summary>
+    public int SearchDocumentCount()
+    {
+        if (!TableExists("search_docs"))
+        {
+            return 0;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM search_docs;";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    /// <summary>
+    /// "Where's the code that does X": BM25 over the names, signatures, doc comments and body identifiers the
+    /// indexer tokenized. Nodes matching more of the query's terms rank first, then by score.
+    /// </summary>
+    public IReadOnlyList<SearchHit> Search(string query, NodeKind? kind = null, string? filePattern = null, int limit = 20)
+    {
+        var terms = SearchText.QueryTerms(query);
+        if (terms.Count == 0 || !TableExists("search_terms"))
+        {
+            return [];
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             WITH q AS ({PathList} AS term),
+             stats AS (SELECT COUNT(*) AS n, AVG(length) AS avgdl FROM search_docs),
+             df AS (
+                 SELECT term, COUNT(*) AS df FROM search_terms
+                 WHERE term IN (SELECT term FROM q)
+                 GROUP BY term
+             ),
+             scored AS (
+                 SELECT t.node_id,
+                        COUNT(DISTINCT t.term) AS matched,
+                        SUM(ln(1 + (s.n - df.df + 0.5) / (df.df + 0.5))
+                            * t.tf * 2.2 / (t.tf + 1.2 * (0.25 + 0.75 * d.length / NULLIF(s.avgdl, 0)))) AS score
+                 FROM search_terms t
+                 JOIN df ON df.term = t.term
+                 JOIN search_docs d ON d.node_id = t.node_id
+                 CROSS JOIN stats s
+                 GROUP BY t.node_id
+             )
+             SELECT {QualifiedNodeColumns}, sc.score, sc.matched
+             FROM scored sc
+             JOIN nodes n ON n.id = sc.node_id
+             WHERE ($kind IS NULL OR n.kind = $kind)
+               AND ($file IS NULL OR n.file_path ILIKE $file)
+             ORDER BY sc.matched DESC, sc.score DESC, n.full_name
+             LIMIT $limit;
+             """;
+        command.Parameters.Add(P("paths", Lines(terms)));
+        command.Parameters.Add(P("kind", kind?.ToString()));
+        command.Parameters.Add(P("file", filePattern is null ? null : $"%{filePattern}%"));
+        command.Parameters.Add(P("limit", Math.Clamp(limit, 1, 200)));
+
+        var hits = new List<SearchHit>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            hits.Add(new SearchHit(ReadNode(reader), reader.GetDouble(reader.FieldCount - 2), reader.GetInt32(reader.FieldCount - 1), terms.Count));
+        }
+
+        return hits;
     }
 
     public (int Nodes, int Edges) Count()
@@ -1177,6 +1291,23 @@ public sealed class GraphStore : IDisposable
             )
             """);
         Execute("CREATE TABLE IF NOT EXISTS meta (key VARCHAR PRIMARY KEY, value VARCHAR NOT NULL)");
+        Execute(
+            """
+            CREATE TABLE IF NOT EXISTS search_docs (
+                node_id VARCHAR PRIMARY KEY,
+                length  INTEGER NOT NULL
+            )
+            """);
+        Execute(
+            """
+            CREATE TABLE IF NOT EXISTS search_terms (
+                node_id VARCHAR NOT NULL,
+                term    VARCHAR NOT NULL,
+                tf      INTEGER NOT NULL,
+                PRIMARY KEY (node_id, term)
+            )
+            """);
+        Execute("CREATE INDEX IF NOT EXISTS ix_search_terms_term ON search_terms (term)");
 
         // Idempotent column additions for databases created before this schema version.
         EnsureColumn("nodes", "type_kind",    "VARCHAR DEFAULT 'None'");

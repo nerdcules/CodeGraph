@@ -26,6 +26,45 @@ public sealed class TypeReferenceTests
             $"edges from {fromId}: {string.Join(", ", indexed.Edges.Where(e => e.FromId == fromId))}");
     }
 
+    [Theory]
+    [InlineData("var local", "class C { static Model Get() => new(); void M() { var m = Get(); _ = m; } }", "M:N.C.M")]
+    [InlineData("var generic argument", "class C { static System.Collections.Generic.List<Model> Get() => new(); void M() { var l = Get(); _ = l; } }", "M:N.C.M")]
+    [InlineData("var foreach", "class C { static Model[] All() => []; void M() { foreach (var m in All()) { _ = m; } } }", "M:N.C.M")]
+    [InlineData("var deconstruction", "class C { static (Model, int) Pair() => default; void M() { var (m, i) = Pair(); _ = m; _ = i; } }", "M:N.C.M")]
+    [InlineData("out var", "class C { static bool TryGet(out Model m) { m = new(); return true; } void M() { if (TryGet(out var m)) _ = m; } }", "M:N.C.M")]
+    public async Task Records_a_reference_from_a_var_declaration_to_the_inferred_type(string _, string source, string fromId)
+    {
+        var indexed = await Indexed.OfAsync(("Model.cs", Model), ("C.cs", $"namespace N; {source}"));
+
+        Assert.True(indexed.HasEdge(fromId, "T:N.Model", EdgeKind.References),
+            $"edges from {fromId}: {string.Join(", ", indexed.Edges.Where(e => e.FromId == fromId))}");
+    }
+
+    [Fact]
+    public async Task Does_not_record_a_reference_from_var_to_a_framework_type()
+    {
+        var indexed = await Indexed.OfAsync("namespace N; class C { void M() { var sb = new System.Text.StringBuilder(); _ = sb; } }");
+
+        Assert.Empty(indexed.TargetsOf("M:N.C.M", EdgeKind.References));
+    }
+
+    [Theory]
+    [InlineData("field through alias", "using M = N.Model;\nnamespace N; class C { M? F; }", "F:N.C.F")]
+    [InlineData("static access through alias", "using M = N.Model;\nnamespace N; class C { object X() => M.Empty; }", "M:N.C.X")]
+    [InlineData("generic alias (C# 12 alias any type)", "using Models = System.Collections.Generic.List<N.Model>;\nnamespace N; class C { Models? F; }", "F:N.C.F")]
+    [InlineData("tuple alias", "using Pair = (N.Model First, int Second);\nnamespace N; class C { Pair F; }", "F:N.C.F")]
+    [InlineData("global alias from another file", "namespace N; class C { M? F; }", "F:N.C.F")]
+    public async Task Records_a_reference_through_a_using_alias(string _, string source, string fromId)
+    {
+        var indexed = await Indexed.OfAsync(
+            ("Model.cs", Model),
+            ("Globals.cs", "global using M = N.Model;"),
+            ("C.cs", source));
+
+        Assert.True(indexed.HasEdge(fromId, "T:N.Model", EdgeKind.References),
+            $"edges from {fromId}: {string.Join(", ", indexed.Edges.Where(e => e.FromId == fromId))}");
+    }
+
     [Fact]
     public async Task Records_a_reference_through_an_attribute_without_its_suffix()
     {

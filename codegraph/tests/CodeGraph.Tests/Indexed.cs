@@ -27,6 +27,7 @@ internal sealed class Indexed
         Nodes = indexer.Nodes;
         Edges = indexer.Edges;
         Origins = indexer.Origins;
+        SearchDocuments = indexer.SearchDocuments;
     }
 
     public IReadOnlyCollection<GraphNode> Nodes { get; }
@@ -34,6 +35,8 @@ internal sealed class Indexed
     public IReadOnlyCollection<GraphEdge> Edges { get; }
 
     public IReadOnlyCollection<EdgeOrigin> Origins { get; }
+
+    public IReadOnlyCollection<SearchDocument> SearchDocuments { get; }
 
     /// <summary>The path a source file named <paramref name="name"/> gets in the adhoc project.</summary>
     public static string PathOf(string name) => Path.Combine(Root, name);

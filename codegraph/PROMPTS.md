@@ -91,6 +91,32 @@ the class for a few hundred tokens. It then reads only the spans it needs.
 
 ---
 
+### 8. Finding code by what it does
+
+> Where's the code that retries a failed upload? I don't know what it's called.
+
+**Tools:** `search_code` → `snippet` on the top hit or two.
+
+`search_code` is a ranked full-text search over every type and member: names split on case
+boundaries, doc and leading comments, signatures, string literals and the identifiers in bodies.
+"retry failed upload" finds `UploadQueue.RetryFailed` and the `// retried once on 5xx` comment
+inside `BlobSender.Send` without a grep, and each hit shows how many of the query's words it
+matched. Once a name is known, switch to `find_symbol` and the graph tools.
+
+---
+
+### 9. Is the graph earning its keep?
+
+> How much has codegraph been used in this project, and how much reading did it save?
+
+**Tool:** `usage_stats`.
+
+Calls per tool, latency, answer size, and the size of the source files each answer pointed at,
+for this session and all time. Tokens are estimated; "saved" assumes the files would otherwise
+have been read in full.
+
+---
+
 ## When answers look wrong
 
 > Is the code graph up to date?
@@ -105,8 +131,8 @@ and the full list of changed files.
 ## Tips
 
 - **Ask structural questions, not textual ones.** "Who calls", "what implements", "what breaks"
-  and "which tests" are what the graph is for. To search for a string or a comment, plain grep
-  is still the right tool.
+  and "which tests" are what the graph is for. "Where's the code that does X" goes to
+  `search_code`; to find one exact string, plain grep is still the right tool.
 - **Name the symbol as precisely as you can.** `WorkoutService.SaveAsync` resolves in one call,
   while `Save` may return twenty matches.
 - **Callers outside the solution are invisible.** The graph only knows the indexed solution.
