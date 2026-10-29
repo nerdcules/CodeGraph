@@ -5,10 +5,13 @@ Roslyn-based code graph indexer plus an MCP server, so Claude Code can answer
 graph query instead of re-reading source files.
 
 ```
-src/CodeGraph.Core      model + SQLite store + traversals
-src/CodeGraph.Indexer   codegraph-index: Roslyn extractor → graph.db
+src/CodeGraph.Core      model + DuckDB store + traversals + full-text search + telemetry
+src/CodeGraph.Indexer   codegraph-index: Roslyn extractor → graph.db (one-shot or --watch)
 src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
-tests/CodeGraph.Tests   store traversals + indexer extraction
+src/CodeGraph.Web       graph visualiser UI, embedded into codegraph-mcp --web
+tests/CodeGraph.Tests   store, search, telemetry, indexer extraction, watch-mode sync
+install.ps1 / .sh       build, test, publish both executables, print .mcp.json
+nuget.config            nuget.org only, source-mapped, audit on
 ```
 
 ## Why use the Code-Graph MCP?
@@ -59,6 +62,12 @@ dotnet build -warnaserror
 `Directory.Build.props` pins `RoslynVersion`; the other versions live in each `.csproj`.
 `TreatWarningsAsErrors` also promotes NuGet audit warnings, so a package picking up a
 published advisory fails the build until it is bumped — that is deliberate.
+
+`nuget.config` makes restore the same on every machine: it clears inherited feeds, registers
+nuget.org as the only source and maps every package to it, so a private feed on a developer
+box can neither slow restore down nor substitute a same-named package. It also turns the
+audit on explicitly, at `low` severity and over transitive packages too (`NuGetAuditMode=all`),
+which is what the build break above rests on.
 
 `CodeGraph.Indexer` references `Microsoft.Build.Framework` with `ExcludeAssets="runtime"`
 and `PrivateAssets="all"`. MSBuildLocator loads MSBuild from the installed SDK, and shipping
