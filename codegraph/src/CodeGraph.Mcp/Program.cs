@@ -69,7 +69,29 @@ void AddGraph(IServiceCollection services)
     services.AddSingleton(telemetry);
     services.AddScoped(_ => GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(15)));
     services
-        .AddMcpServer()
+        .AddMcpServer(options =>
+        {
+            // What a client shows on its page for this server (VS Code's "MCP Server: codegraph", Claude's /mcp).
+            options.ServerInfo = new Implementation
+            {
+                Name = "codegraph",
+                Title = "CodeGraph",
+                Version = ServerVersion(),
+                Description = "Compiler-built code graph for C# solutions: who calls this, what breaks if it changes, "
+                            + "which tests guard it, where is the code that does X. Read-only, local, no network.",
+                WebsiteUrl = "https://github.com/nerdcules/CodeGraph",
+                Icons = [new Icon { Source = LogoDataUri(), MimeType = "image/svg+xml", Sizes = ["any"] }],
+            };
+            options.ServerInstructions =
+                """
+                codegraph answers structural questions about the indexed C# solution from a Roslyn-built graph, so prefer
+                it to grepping or opening files. Typical turn: find_symbol (or search_code when you only know what the
+                code does) → impact_of / callers_of / references_to → snippet on the two or three declarations that matter.
+                Ids in [brackets] are Roslyn doc-comment ids; pass them back verbatim. An answer that starts with
+                "⚠ STALE INDEX" is from a graph older than the working tree; rows ending in STALE come from edited files.
+                Call impact_of before changing anything shared, and tests_for / covered_by to find the tests that guard it.
+                """;
+        })
         .WithStdioServerTransport()
         .WithToolsFromAssembly()
         .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
@@ -223,6 +245,25 @@ static void MapWebApi(WebApplication app)
             }),
         };
     });
+}
+
+static string ServerVersion()
+{
+    var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+    var informational = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+        .FirstOrDefault()?.InformationalVersion;
+    // Strip the source-link hash that the SDK appends ("1.2.0+abc123").
+    var version = informational?.Split('+')[0];
+    return string.IsNullOrEmpty(version) ? assembly.GetName().Version?.ToString(3) ?? "0.0.0" : version;
+}
+
+static string LogoDataUri()
+{
+    using var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("CodeGraph.Mcp.logo.svg")
+        ?? throw new InvalidOperationException("Embedded logo not found. Rebuild the project.");
+    var svg = new StreamReader(stream).ReadToEnd();
+    return "data:image/svg+xml;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(svg));
 }
 
 static string ReadEmbeddedHtml()

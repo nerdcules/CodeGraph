@@ -7,5 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <RoslynVersion>5.9.0</RoslynVersion>
+    <!-- Shown by MCP clients as the server version; bump on release. -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 </Project>

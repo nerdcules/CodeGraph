@@ -1,8 +1,14 @@
+<p align="center"><img src="assets/logo.svg" width="112" alt="CodeGraph logo"></p>
+
 # CodeGraph
 
 Roslyn-based code graph indexer plus an MCP server, so Claude Code can answer
 "who calls this / what breaks if I change it / which tests guard it" from a small
 graph query instead of re-reading source files.
+
+[MCP-SERVER.md](MCP-SERVER.md) is the server's reference page: install, configuration, every
+tool with its arguments, output format, staleness, telemetry and troubleshooting.
+[PROMPTS.md](PROMPTS.md) shows the prompts that drive it.
 
 ```
 src/CodeGraph.Core      model + DuckDB store + traversals + full-text search + telemetry
@@ -12,6 +18,8 @@ src/CodeGraph.Web       graph visualiser UI, embedded into codegraph-mcp --web
 tests/CodeGraph.Tests   store, search, telemetry, indexer extraction, watch-mode sync
 install.ps1 / .sh       build, test, publish both executables, print .mcp.json
 nuget.config            nuget.org only, source-mapped, audit on
+assets/logo.svg         the logo; also the web UI's favicon and header mark
+MCP-SERVER.md           reference page for the server and its tools
 ```
 
 ## Why use the Code-Graph MCP?
@@ -59,7 +67,8 @@ The practical properties that make it usable day to day:
 dotnet build -warnaserror
 ```
 
-`Directory.Build.props` pins `RoslynVersion`; the other versions live in each `.csproj`.
+`Directory.Build.props` pins `RoslynVersion` and the product `Version` that MCP clients display
+for the server; the package versions live in each `.csproj`.
 `TreatWarningsAsErrors` also promotes NuGet audit warnings, so a package picking up a
 published advisory fails the build until it is bumped — that is deliberate.
 
@@ -168,6 +177,11 @@ every worktree (`C:/dev/sa-1`, `C:/dev/sa-2`, …), each reading its own graph:
 }
 ```
 
+The server identifies itself at `initialize` with a name, title, version, description, website
+and the logo as an icon, plus short instructions for the model, so the page a client shows for
+it (VS Code's "MCP Server: codegraph", Claude Code's `/mcp`) is populated without a gallery
+listing. [MCP-SERVER.md](MCP-SERVER.md#what-clients-show-for-the-server) lists the fields.
+
 A worktree that hasn't been indexed yet still starts. Its tools answer "no code graph at …,
 build it with codegraph-index". An explicit path argument or `CODEGRAPH_DB` still wins over
 discovery. Two solutions in one worktree need `--db` to keep separate graphs.
@@ -226,6 +240,7 @@ files added by a checkout aren't in the graph. `index_status` shows the full pic
 
 A typical Claude turn: `find_symbol` → `impact_of` → `snippet` on the two or three
 things that matter. Low thousands of tokens instead of tens of thousands.
+[MCP-SERVER.md](MCP-SERVER.md) lists every tool with its arguments and ranges;
 [PROMPTS.md](PROMPTS.md) has example prompts and the tools each one uses.
 
 Indexing this repo is the quickest end-to-end check: `tests_for` on `GraphStore.Impact`

@@ -21,5 +21,7 @@
   </Target>
   <ItemGroup>
     <EmbeddedResource Include="wwwroot/index.html" />
+    <!-- The logo travels in the initialize response as the server's icon, so MCP clients can show it. -->
+    <EmbeddedResource Include="../../assets/logo.svg" LogicalName="CodeGraph.Mcp.logo.svg" />
   </ItemGroup>
 </Project>

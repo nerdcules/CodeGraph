@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="CodeGraph">
+  <title>CodeGraph</title>
+  <desc>A ring of five linked nodes open on the right, forming a C, around one highlighted centre node: the symbol under change and everything the graph says depends on it.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14263B"/>
+      <stop offset="1" stop-color="#0D1B2A"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+
+  <!-- edges: ring (the C) and spokes to the centre -->
+  <g stroke="#00C9B1" stroke-width="3.5" stroke-linecap="round" fill="none">
+    <path d="M84 29.4 L44 29.4 L24 64 L44 98.6 L84 98.6" opacity="0.9"/>
+    <g opacity="0.55">
+      <line x1="64" y1="64" x2="84" y2="29.4"/>
+      <line x1="64" y1="64" x2="44" y2="29.4"/>
+      <line x1="64" y1="64" x2="24" y2="64"/>
+      <line x1="64" y1="64" x2="44" y2="98.6"/>
+      <line x1="64" y1="64" x2="84" y2="98.6"/>
+    </g>
+  </g>
+
+  <!-- ring nodes -->
+  <g fill="#00C9B1" stroke="#0D1B2A" stroke-width="2.5">
+    <circle cx="84" cy="29.4" r="7"/>
+    <circle cx="44" cy="29.4" r="7"/>
+    <circle cx="24" cy="64"   r="7"/>
+    <circle cx="44" cy="98.6" r="7"/>
+    <circle cx="84" cy="98.6" r="7"/>
+  </g>
+
+  <!-- the node under change -->
+  <circle cx="64" cy="64" r="11" fill="#FFD166" stroke="#0D1B2A" stroke-width="2.5" filter="url(#glow)"/>
+
+  <!-- the opening of the C: a call out of the graph, not yet indexed -->
+  <g stroke="#FFD166" stroke-width="3.5" stroke-linecap="round" opacity="0.9">
+    <line x1="96" y1="64" x2="108" y2="64"/>
+    <polyline points="102,58 108,64 102,70" fill="none"/>
+  </g>
+</svg>
