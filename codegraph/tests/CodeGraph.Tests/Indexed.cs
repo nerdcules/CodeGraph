@@ -13,7 +13,7 @@ namespace CodeGraph.Tests;
 /// </summary>
 internal sealed class Indexed
 {
-    private static readonly IReadOnlyList<MetadataReference> FrameworkReferences =
+    internal static readonly IReadOnlyList<MetadataReference> FrameworkReferences =
         ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? string.Empty)
         .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
         .Where(path => path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))

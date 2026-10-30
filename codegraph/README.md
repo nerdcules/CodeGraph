@@ -12,7 +12,7 @@ tool with its arguments, output format, staleness, telemetry and troubleshooting
 
 ```
 src/CodeGraph.Core      model + DuckDB store + traversals + full-text search + telemetry
-src/CodeGraph.Indexer   codegraph-index: Roslyn extractor → graph.db (one-shot or --watch)
+src/CodeGraph.Indexer   codegraph-index: Roslyn extractor → graph.db (one-shot or --watch) + console progress
 src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
 src/CodeGraph.Web       graph visualiser UI, embedded into codegraph-mcp --web
 tests/CodeGraph.Tests   store, search, telemetry, indexer extraction, watch-mode sync
@@ -137,6 +137,31 @@ next answer uses the new graph.
 
 The incremental contract is tested directly: v1 full, then an edit and an incremental run,
 must equal v2 full (`IncrementalIndexTests`).
+
+The swap itself is a bulk load. Every table (nodes, edges, edge origins, file stamps, search
+terms) goes through DuckDB's appender into a connection-local staging table and is merged in
+with one statement per table: nodes and stamps update in place, duplicate edges and origins
+are dropped. DuckDB takes milliseconds per parameterized `INSERT`, which for a solution of
+tens of thousands of nodes and edges was over ten minutes and looked like a hang; the same
+write now takes about a second, and a full index of this repo takes 9s end to end, almost all
+of it MSBuild and Roslyn. `BulkWriteTests` cover the merge rules on a 20,000-node graph.
+
+### Progress
+
+Project log lines carry a counter (`[12/33] project: App.Core`), and in a terminal one status
+line on stderr updates in place with a spinner, the phase, a detail and the phase's elapsed time:
+
+```
+| loading solution: App.slnx (14s)
+/ indexing: [12/33] App.Core: compiling (3s)
+- indexing: [12/33] App.Core: 120/340 files (5s)
+\ writing graph: 11095 nodes, 42437 edges (1s)
+```
+
+It ticks on a timer, so a long MSBuild load or compilation still visibly moves. The line is cut
+to the console width and cleared before every log line, between watch-mode runs and on exit.
+When stderr is redirected (a pipe, a test runner, a log file) only the log lines are written.
+The renderer is `ConsoleStatus`; the indexer reports through `IndexProgress` (`ProgressTests`).
 
 DuckDB allows one writer *or* many readers per file. The indexer only takes the write lock
 for the final swap, which is one transaction, and the MCP server opens the graph read-only

@@ -147,24 +147,7 @@ public sealed class GraphStore : IDisposable
             WriteSearch(transaction, search);
         }
 
-        using (var command = _connection.CreateCommand())
-        {
-            command.Transaction = transaction;
-            command.CommandText =
-                """
-                INSERT INTO files (path, hash, size, mtime_ticks) VALUES ($path, $hash, $size, $mtime)
-                ON CONFLICT (path) DO UPDATE SET hash = excluded.hash, size = excluded.size, mtime_ticks = excluded.mtime_ticks;
-                """;
-            foreach (var file in files)
-            {
-                command.Parameters.Clear();
-                command.Parameters.Add(P("path", file.Path));
-                command.Parameters.Add(P("hash", file.Hash));
-                command.Parameters.Add(P("size", file.Size));
-                command.Parameters.Add(P("mtime", file.MtimeTicks));
-                command.ExecuteNonQuery();
-            }
-        }
+        WriteFiles(transaction, files);
 
         using (var command = _connection.CreateCommand())
         {
@@ -268,88 +251,124 @@ public sealed class GraphStore : IDisposable
         return dependents;
     }
 
+    // DuckDB executes a parameterized INSERT in milliseconds, which is minutes for a solution's worth of rows
+    // (one run burned 12 CPU-minutes on edges alone). The appender loads a table in a second but cannot merge,
+    // so rows are appended to a temp table first and one statement per table merges them in with the same
+    // conflict rules a per-row insert had: nodes and files update in place, edges and origins ignore duplicates.
     private void WriteCore(DuckDBTransaction transaction, IEnumerable<GraphNode> nodes, IEnumerable<GraphEdge> edges, IEnumerable<EdgeOrigin> origins)
     {
-        using (var command = _connection.CreateCommand())
+        Stage(transaction, "stage_nodes", StageNodeSchema);
+        using (var appender = StageAppender("stage_nodes"))
         {
-            command.Transaction = transaction;
-            command.CommandText =
-                """
-                INSERT INTO nodes
-                    (id, kind, name, full_name, signature, file_path, start_line, end_line, is_test,
-                     type_kind, accessibility, is_static, is_abstract, is_virtual, is_sealed, is_async, is_override, member_kind)
-                VALUES
-                    ($id, $kind, $name, $full_name, $signature, $file_path, $start_line, $end_line, $is_test,
-                     $type_kind, $accessibility, $is_static, $is_abstract, $is_virtual, $is_sealed, $is_async, $is_override, $member_kind)
-                ON CONFLICT (id) DO UPDATE SET
-                    kind = excluded.kind, name = excluded.name, full_name = excluded.full_name,
-                    signature = excluded.signature, file_path = excluded.file_path,
-                    start_line = excluded.start_line, end_line = excluded.end_line,
-                    is_test = excluded.is_test, type_kind = excluded.type_kind,
-                    accessibility = excluded.accessibility, is_static = excluded.is_static,
-                    is_abstract = excluded.is_abstract, is_virtual = excluded.is_virtual,
-                    is_sealed = excluded.is_sealed, is_async = excluded.is_async,
-                    is_override = excluded.is_override, member_kind = excluded.member_kind;
-                """;
-
             foreach (var node in nodes)
             {
-                command.Parameters.Clear();
-                command.Parameters.Add(P("id", node.Id));
-                command.Parameters.Add(P("kind", node.Kind.ToString()));
-                command.Parameters.Add(P("name", node.Name));
-                command.Parameters.Add(P("full_name", node.FullName));
-                command.Parameters.Add(P("signature", node.Signature));
-                command.Parameters.Add(P("file_path", node.FilePath));
-                command.Parameters.Add(P("start_line", node.StartLine));
-                command.Parameters.Add(P("end_line", node.EndLine));
-                command.Parameters.Add(P("is_test", node.IsTest));
-                command.Parameters.Add(P("type_kind", node.TypeKind.ToString()));
-                command.Parameters.Add(P("accessibility", node.Accessibility.ToString()));
-                command.Parameters.Add(P("is_static", node.IsStatic));
-                command.Parameters.Add(P("is_abstract", node.IsAbstract));
-                command.Parameters.Add(P("is_virtual", node.IsVirtual));
-                command.Parameters.Add(P("is_sealed", node.IsSealed));
-                command.Parameters.Add(P("is_async", node.IsAsync));
-                command.Parameters.Add(P("is_override", node.IsOverride));
-                command.Parameters.Add(P("member_kind", node.MemberKind.ToString()));
-                command.ExecuteNonQuery();
+                appender.CreateRow()
+                    .AppendValue(node.Id)
+                    .AppendValue(node.Kind.ToString())
+                    .AppendValue(node.Name)
+                    .AppendValue(node.FullName)
+                    .AppendValue(node.Signature)
+                    .AppendValue(node.FilePath)
+                    .AppendValue(node.StartLine)
+                    .AppendValue(node.EndLine)
+                    .AppendValue(node.IsTest)
+                    .AppendValue(node.TypeKind.ToString())
+                    .AppendValue(node.Accessibility.ToString())
+                    .AppendValue(node.IsStatic)
+                    .AppendValue(node.IsAbstract)
+                    .AppendValue(node.IsVirtual)
+                    .AppendValue(node.IsSealed)
+                    .AppendValue(node.IsAsync)
+                    .AppendValue(node.IsOverride)
+                    .AppendValue(node.MemberKind.ToString())
+                    .EndRow();
             }
         }
 
-        using (var command = _connection.CreateCommand())
-        {
-            command.Transaction = transaction;
-            command.CommandText =
-                "INSERT INTO edges (from_id, to_id, kind) VALUES ($from, $to, $kind) ON CONFLICT DO NOTHING;";
+        // The last row for an id wins, as the last per-row upsert used to. ON CONFLICT DO UPDATE rejects a source
+        // with duplicate keys, so the staging rows are deduplicated first.
+        Execute(
+            """
+            INSERT INTO nodes
+            SELECT * FROM stage_nodes
+            QUALIFY row_number() OVER (PARTITION BY id ORDER BY rowid DESC) = 1
+            ON CONFLICT (id) DO UPDATE SET
+                kind = excluded.kind, name = excluded.name, full_name = excluded.full_name,
+                signature = excluded.signature, file_path = excluded.file_path,
+                start_line = excluded.start_line, end_line = excluded.end_line,
+                is_test = excluded.is_test, type_kind = excluded.type_kind,
+                accessibility = excluded.accessibility, is_static = excluded.is_static,
+                is_abstract = excluded.is_abstract, is_virtual = excluded.is_virtual,
+                is_sealed = excluded.is_sealed, is_async = excluded.is_async,
+                is_override = excluded.is_override, member_kind = excluded.member_kind;
+            """, transaction);
+        Execute("DELETE FROM stage_nodes;", transaction);
 
+        Stage(transaction, "stage_edges", "from_id VARCHAR, to_id VARCHAR, kind VARCHAR");
+        using (var appender = StageAppender("stage_edges"))
+        {
             foreach (var edge in edges)
             {
-                command.Parameters.Clear();
-                command.Parameters.Add(P("from", edge.FromId));
-                command.Parameters.Add(P("to", edge.ToId));
-                command.Parameters.Add(P("kind", edge.Kind.ToString()));
-                command.ExecuteNonQuery();
+                appender.CreateRow().AppendValue(edge.FromId).AppendValue(edge.ToId).AppendValue(edge.Kind.ToString()).EndRow();
             }
         }
 
-        using (var command = _connection.CreateCommand())
-        {
-            command.Transaction = transaction;
-            command.CommandText =
-                "INSERT INTO edge_origins (from_id, to_id, kind, file_path) VALUES ($from, $to, $kind, $file) ON CONFLICT DO NOTHING;";
+        Execute("INSERT INTO edges SELECT DISTINCT from_id, to_id, kind FROM stage_edges ON CONFLICT DO NOTHING;", transaction);
+        Execute("DELETE FROM stage_edges;", transaction);
 
+        Stage(transaction, "stage_edge_origins", "from_id VARCHAR, to_id VARCHAR, kind VARCHAR, file_path VARCHAR");
+        using (var appender = StageAppender("stage_edge_origins"))
+        {
             foreach (var origin in origins)
             {
-                command.Parameters.Clear();
-                command.Parameters.Add(P("from", origin.Edge.FromId));
-                command.Parameters.Add(P("to", origin.Edge.ToId));
-                command.Parameters.Add(P("kind", origin.Edge.Kind.ToString()));
-                command.Parameters.Add(P("file", origin.FilePath));
-                command.ExecuteNonQuery();
+                appender.CreateRow()
+                    .AppendValue(origin.Edge.FromId)
+                    .AppendValue(origin.Edge.ToId)
+                    .AppendValue(origin.Edge.Kind.ToString())
+                    .AppendValue(origin.FilePath)
+                    .EndRow();
             }
         }
+
+        Execute("INSERT INTO edge_origins SELECT DISTINCT from_id, to_id, kind, file_path FROM stage_edge_origins ON CONFLICT DO NOTHING;", transaction);
+        Execute("DELETE FROM stage_edge_origins;", transaction);
     }
+
+    private void WriteFiles(DuckDBTransaction transaction, IEnumerable<FileStamp> files)
+    {
+        Stage(transaction, "stage_files", "path VARCHAR, hash VARCHAR, size BIGINT, mtime_ticks BIGINT");
+        using (var appender = StageAppender("stage_files"))
+        {
+            foreach (var file in files)
+            {
+                appender.CreateRow().AppendValue(file.Path).AppendValue(file.Hash).AppendValue(file.Size).AppendValue(file.MtimeTicks).EndRow();
+            }
+        }
+
+        Execute(
+            """
+            INSERT INTO files
+            SELECT * FROM stage_files
+            QUALIFY row_number() OVER (PARTITION BY path ORDER BY rowid DESC) = 1
+            ON CONFLICT (path) DO UPDATE SET hash = excluded.hash, size = excluded.size, mtime_ticks = excluded.mtime_ticks;
+            """, transaction);
+        Execute("DELETE FROM stage_files;", transaction);
+    }
+
+    private const string StageNodeSchema =
+        "id VARCHAR, kind VARCHAR, name VARCHAR, full_name VARCHAR, signature VARCHAR, file_path VARCHAR, " +
+        "start_line INTEGER, end_line INTEGER, is_test BOOLEAN, type_kind VARCHAR, accessibility VARCHAR, " +
+        "is_static BOOLEAN, is_abstract BOOLEAN, is_virtual BOOLEAN, is_sealed BOOLEAN, is_async BOOLEAN, " +
+        "is_override BOOLEAN, member_kind VARCHAR";
+
+    /// <summary>A connection-local, unconstrained staging table; it lives in DuckDB's temp catalog, never in the file.</summary>
+    private void Stage(DuckDBTransaction transaction, string table, string columns)
+    {
+        Execute($"CREATE TEMP TABLE IF NOT EXISTS {table} ({columns});", transaction);
+        Execute($"DELETE FROM {table};", transaction);
+    }
+
+    private DuckDBAppender StageAppender(string table) => _connection.CreateAppender("temp", "main", table);
 
     private void WriteSearch(DuckDBTransaction transaction, IEnumerable<SearchDocument> documents)
     {

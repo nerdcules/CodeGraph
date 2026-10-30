@@ -40,9 +40,23 @@ return watch ? await WatchAsync(target, dbPath, forceFull) : await RunAsync(targ
 [MethodImpl(MethodImplOptions.NoInlining)]
 static async Task<int> RunAsync(string target, string dbPath, bool forceFull)
 {
-    using var workspace = await RoslynIndexer.OpenAsync(target, Log, CancellationToken.None);
-    await IndexAsync(workspace.CurrentSolution, target, dbPath, forceFull, CancellationToken.None);
-    return 0;
+    try
+    {
+        using var workspace = await OpenAsync(target, CancellationToken.None);
+        await IndexAsync(workspace.CurrentSolution, target, dbPath, forceFull, CancellationToken.None);
+        return 0;
+    }
+    finally
+    {
+        ConsoleStatus.Clear();
+    }
+}
+
+/// <summary>The MSBuild load, shown as its own phase: it used to be the one step that printed nothing.</summary>
+static async Task<MSBuildWorkspace> OpenAsync(string target, CancellationToken cancellationToken)
+{
+    ConsoleStatus.Phase("loading solution", Path.GetFileName(target));
+    return await RoslynIndexer.OpenAsync(target, Log, cancellationToken);
 }
 
 /// <summary>
@@ -100,10 +114,11 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
     Solution? solution = null;
     try
     {
-        workspace = await RoslynIndexer.OpenAsync(target, Log, stopping.Token);
+        workspace = await OpenAsync(target, stopping.Token);
         solution = workspace.CurrentSolution;
         await IndexAsync(solution, target, dbPath, forceFull, stopping.Token);
         watcher.EnableRaisingEvents = true;
+        ConsoleStatus.Clear();
         Log($"watching {root} (Ctrl+C to stop)");
 
         while (!stopping.IsCancellationRequested)
@@ -136,7 +151,7 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
                 {
                     Log("project file changed; reloading the solution");
                     workspace.Dispose();
-                    workspace = await RoslynIndexer.OpenAsync(target, Log, stopping.Token);
+                    workspace = await OpenAsync(target, stopping.Token);
                     solution = workspace.CurrentSolution;
                 }
                 else
@@ -145,6 +160,7 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
                 }
 
                 await IndexAsync(solution, target, dbPath, forceFull: false, stopping.Token);
+                ConsoleStatus.Clear();
             }
             catch (OperationCanceledException) when (stopping.IsCancellationRequested)
             {
@@ -153,6 +169,7 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
             catch (Exception exception)
             {
                 // One bad batch (a file locked mid-save, a db lock held too long) must not end the watch.
+                ConsoleStatus.Clear();
                 Log($"re-index failed: {exception.Message}; will retry on the next change");
                 foreach (var path in batch)
                 {
@@ -167,6 +184,7 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
     }
     finally
     {
+        ConsoleStatus.Clear();
         workspace?.Dispose();
     }
 
@@ -194,7 +212,7 @@ static string? ReadOrNull(string path)
     }
 }
 
-static void Log(string message) => Console.Error.WriteLine(message);
+static void Log(string message) => ConsoleStatus.Log(message);
 
 /// <summary>One index run over a loaded solution: incremental against what the db holds, or full.</summary>
 static async Task IndexAsync(Solution solution, string target, string dbPath, bool forceFull, CancellationToken cancellationToken)
@@ -213,7 +231,8 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
     var removed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     var walked = -1;
 
-    var indexer = new RoslynIndexer(Log);
+    ConsoleStatus.Phase("indexing", "stamping files");
+    var indexer = new RoslynIndexer(Log, progress => ConsoleStatus.Detail(progress.ToString()));
     await indexer.IndexAsync(solution, documents =>
     {
         foreach (var path in documents)
@@ -263,10 +282,12 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
 
     // Open for writing only now: DuckDB allows one writer or many readers, so holding the lock during the
     // (long) solution load would block every MCP server reading this graph.
+    ConsoleStatus.Phase("writing graph", $"{indexer.Nodes.Count} nodes, {indexer.Edges.Count} edges");
     using var store = GraphStore.Open(dbPath, readOnly: false, TimeSpan.FromSeconds(60));
     store.Replace(full, removed, indexer.Nodes, indexer.Edges, indexer.Origins, stamps.Values, meta, indexer.SearchDocuments);
 
     var (nodes, edges) = store.Count();
+    ConsoleStatus.Clear();
     var scope = walked < 0 ? "" : $", {walked} file(s) walked";
     Log($"indexed {nodes} nodes, {edges} edges ({meta[MetaKeys.Mode]}{scope}) in {stopwatch.Elapsed.TotalSeconds:F1}s → {dbPath}");
 }

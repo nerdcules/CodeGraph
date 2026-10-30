@@ -50,15 +50,21 @@ public sealed partial class RoslynIndexer
     private readonly Dictionary<string, SearchDocument> _search = new(StringComparer.Ordinal);
     private readonly HashSet<string> _documentPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Action<string> _log;
+    private readonly Action<IndexProgress>? _progress;
+    private int _projectOrdinal;
+    private int _projectCount;
 
     // Names of every type declared in the solution (plus "Foo" for "FooAttribute", plus every using alias).
     // Binding every identifier in every body is the expensive part of finding type references; most identifiers
     // are locals and members, so only names that could be a source type are handed to the semantic model.
     private HashSet<string>? _sourceTypeNames;
 
-    public RoslynIndexer(Action<string> log)
+    /// <param name="log">Receives one line per project walked and any workspace failures.</param>
+    /// <param name="progress">Receives finer-grained progress than the log: which project, which file, compiling.</param>
+    public RoslynIndexer(Action<string> log, Action<IndexProgress>? progress = null)
     {
         _log = log;
+        _progress = progress;
     }
 
     public IReadOnlyCollection<GraphNode> Nodes => _nodes.Values;
@@ -130,9 +136,11 @@ public sealed partial class RoslynIndexer
         }
 
         var files = selectFiles?.Invoke(_documentPaths);
+        _projectCount = projects.Count;
         foreach (var project in projects)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            _projectOrdinal++;
             await IndexProjectAsync(project, solution, cancellationToken, files);
         }
     }
@@ -143,7 +151,8 @@ public sealed partial class RoslynIndexer
     /// </summary>
     internal async Task IndexProjectAsync(Project project, Solution solution, CancellationToken cancellationToken, IReadOnlySet<string>? files = null)
     {
-        _log($"project: {project.Name}");
+        var counter = _projectCount > 0 ? $"[{_projectOrdinal}/{_projectCount}] " : "";
+        _log($"{counter}project: {project.Name}");
 
         var projectId = $"P:{project.Name}";
         var projectOrigin = project.FilePath ?? projectId;
@@ -173,6 +182,7 @@ public sealed partial class RoslynIndexer
             return; // nothing changed here; skip the compilation, which is most of the cost
         }
 
+        _progress?.Invoke(new IndexProgress(_projectOrdinal, _projectCount, project.Name, 0, documents.Count));
         var compilation = await project.GetCompilationAsync(cancellationToken);
         if (compilation is null)
         {
@@ -182,8 +192,10 @@ public sealed partial class RoslynIndexer
 
         _sourceTypeNames ??= await SourceTypeNamesAsync(solution, cancellationToken);
 
+        var walked = 0;
         foreach (var document in documents)
         {
+            _progress?.Invoke(new IndexProgress(_projectOrdinal, _projectCount, project.Name, ++walked, documents.Count));
             var tree = await document.GetSyntaxTreeAsync(cancellationToken);
             if (tree is null)
             {
@@ -630,4 +642,15 @@ public sealed partial class RoslynIndexer
     private static bool HasFrameworkEntrypointAttribute(ISymbol symbol) =>
         symbol.GetAttributes().Any(a =>
             a.AttributeClass is { } attributeClass && FrameworkEntrypointAttributeNames.Contains(attributeClass.Name));
+}
+
+/// <summary>
+/// Where an index walk is: project <paramref name="Project"/> of <paramref name="Projects"/>, and within it
+/// file <paramref name="File"/> of <paramref name="Files"/>. <paramref name="File"/> is 0 while the project
+/// compiles, which is most of a project's cost.
+/// </summary>
+public sealed record IndexProgress(int Project, int Projects, string ProjectName, int File, int Files)
+{
+    public override string ToString() =>
+        File == 0 ? $"[{Project}/{Projects}] {ProjectName}: compiling" : $"[{Project}/{Projects}] {ProjectName}: {File}/{Files} files";
 }
