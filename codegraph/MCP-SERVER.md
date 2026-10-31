@@ -32,6 +32,14 @@ that speaks stdio.
 The script builds, runs the tests, publishes `codegraph-index` and `codegraph-mcp`, and prints
 the configuration below with the real path. See the [README](README.md#install) for options.
 
+`uninstall.ps1` / `uninstall.sh` reverses the install: folder, PATH entry, and with `-Repo` /
+`--repo` a repo's `.mcp.json` entry and `.codegraph/` graph.
+
+From a source checkout, `setup.ps1 -Solution <path>` / `setup.sh --solution <path>` pulls the
+latest CodeGraph on request, builds, writes the `.mcp.json` entry as `dotnet run --project
+<checkout>/src/CodeGraph.Mcp -c Release --no-build`, and indexes with `dotnet run`. See the
+[README](README.md#from-a-source-checkout).
+
 ## Configure
 
 Put one `.mcp.json` at the repo root. Leave out the database path: the server finds
@@ -120,7 +128,10 @@ A moved `HEAD` is reported too. `index_status` shows the full picture.
 ## Tools
 
 All 28 tools are read-only and idempotent. `id` always means a node id from `find_symbol` or
-`search_code`. Depth and limit arguments are clamped to the ranges shown.
+`search_code`. Depth and limit arguments are clamped to the ranges shown. `Calls` edges cover
+method calls, constructions, and property, field and event accesses; the caller, test and
+coverage walks treat a call to an interface or base member as a call to every implementation
+and override.
 
 ### Finding things
 
@@ -137,9 +148,9 @@ All 28 tools are read-only and idempotent. `id` always means a node id from `fin
 
 | tool | arguments | answers |
 |---|---|---|
-| `callers_of` | `id`, `depth` (1–5, 1) | Who calls this member, transitively. |
-| `callees_of` | `id`, `depth` (1–5, 1) | What this member calls (source only, not framework or NuGet). |
-| `impact_of` | `id`, `depth` (1–10, 5) | Everything that could break: transitive callers, overriders, implementers, subclasses, and for a type every member that references it. Guarding tests are listed separately. Call before editing anything shared. |
+| `callers_of` | `id`, `depth` (1–20, 1) | Who calls or reads this member, transitively. A call to an interface or base member counts for every implementation and override. |
+| `callees_of` | `id`, `depth` (1–20, 1) | What this member calls (source only, not framework or NuGet). |
+| `impact_of` | `id`, `depth` (1–20, 5) | Everything that could break: transitive callers, overriders, implementers, subclasses, and for a type every member that references it. Guarding tests are listed separately. Call before editing anything shared. |
 | `path_between` | `from`, `to`, `edgeKinds` (Calls), `maxDepth` (1–20, 10), `maxPaths` (1–5, 3) | Shortest call chains from one method to another. |
 | `most_called` | `limit` (1–100, 20), `minCallers` (1), `offset` | Methods ranked by direct caller count. |
 | `traverse` | `id`, `edgeKind`, `direction` (inbound / outbound), `depth` (1–10, 1) | Generic walk over one edge kind when no named tool fits. |
@@ -157,8 +168,8 @@ All 28 tools are read-only and idempotent. `id` always means a node id from `fin
 
 | tool | arguments | answers |
 |---|---|---|
-| `tests_for` | `id` | Test methods that call this member directly. |
-| `covered_by` | `id`, `depth` (1–15, 10) | Tests that reach this member transitively, with hop count. |
+| `tests_for` | `id` | Test methods that call or read this member directly, including through an interface or base member it implements. |
+| `covered_by` | `id`, `depth` (1–30, 10) | Tests that reach this member transitively, following interface and virtual dispatch, with hop count. |
 | `coverage_stats` | | Share of production methods reachable from any test through the call graph. Static reachability, not line coverage. |
 | `uncovered` | `file?`, `limit` (1–500, 100), `offset` | Production methods no test reaches. |
 

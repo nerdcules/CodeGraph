@@ -64,7 +64,9 @@ sending email?" without Claude opening every file along the way.
 
 This fits `/code-review` or a pre-merge check well. "Reached by a test" is static reachability
 through the call graph, not line coverage, so treat a hit as "some test calls this", not
-"this is well tested".
+"this is well tested". The walk follows interface and virtual dispatch (a test that calls
+`IRunner.Run` reaches `Runner.Run`) and counts property and field reads as calls. Raise
+`depth` (up to 30) before concluding nothing reaches a member deep in a service.
 
 ---
 

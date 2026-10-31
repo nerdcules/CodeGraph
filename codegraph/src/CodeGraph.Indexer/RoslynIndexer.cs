@@ -5,6 +5,7 @@ using RoslynAccessibility = Microsoft.CodeAnalysis.Accessibility;
 using RoslynTypeKind = Microsoft.CodeAnalysis.TypeKind;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
+using Microsoft.CodeAnalysis.Text;
 
 namespace CodeGraph.Indexer;
 
@@ -58,6 +59,9 @@ public sealed partial class RoslynIndexer
     // Binding every identifier in every body is the expensive part of finding type references; most identifiers
     // are locals and members, so only names that could be a source type are handed to the semantic model.
     private HashSet<string>? _sourceTypeNames;
+
+    // Names of every property, field and event declared in the solution, the same prefilter for member accesses.
+    private HashSet<string>? _sourceMemberNames;
 
     /// <param name="log">Receives one line per project walked and any workspace failures.</param>
     /// <param name="progress">Receives finer-grained progress than the log: which project, which file, compiling.</param>
@@ -190,7 +194,10 @@ public sealed partial class RoslynIndexer
             return;
         }
 
-        _sourceTypeNames ??= await SourceTypeNamesAsync(solution, cancellationToken);
+        if (_sourceTypeNames is null)
+        {
+            (_sourceTypeNames, _sourceMemberNames) = await SourceNamesAsync(solution, cancellationToken);
+        }
 
         var walked = 0;
         foreach (var document in documents)
@@ -217,6 +224,8 @@ public sealed partial class RoslynIndexer
 
     private void IndexDocument(SyntaxNode root, SemanticModel model, string fileId, string origin, string frameworkRootId, CancellationToken cancellationToken)
     {
+        IndexTopLevelStatements(root, model, fileId, origin, frameworkRootId, cancellationToken);
+
         foreach (var typeDeclaration in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -260,6 +269,25 @@ public sealed partial class RoslynIndexer
                 AddEdgeTo(typeId, iface, EdgeKind.Implements, origin, supertypes);
             }
 
+            // Member-level dispatch: Run() implements IRunner.Run(), so a call to the interface member reaches
+            // this one. Without these edges a test that only sees the interface never covers the class.
+            if (type.TypeKind is RoslynTypeKind.Class or RoslynTypeKind.Struct)
+            {
+                foreach (var ifaceMember in type.AllInterfaces.Where(IsInSource).SelectMany(i => i.GetMembers()))
+                {
+                    if (ifaceMember is not (IMethodSymbol { MethodKind: MethodKind.Ordinary } or IPropertySymbol or IEventSymbol)
+                        || type.FindImplementationForInterfaceMember(ifaceMember) is not { } implementation
+                        || !IsInSource(implementation)
+                        || IdOf(implementation.OriginalDefinition) is not { } implementationId
+                        || IdOf(ifaceMember) is not { } ifaceMemberId)
+                    {
+                        continue;
+                    }
+
+                    AddEdge(new GraphEdge(implementationId, ifaceMemberId, EdgeKind.Implements), origin);
+                }
+            }
+
             // Type-level mentions outside any member: attributes, primary-constructor / record parameters,
             // generic arguments in the base list (IHandler<Foo>) and constraints. The supertypes themselves
             // are already Inherits/Implements edges.
@@ -276,6 +304,49 @@ public sealed partial class RoslynIndexer
                     IndexMember(member, model, typeId, origin, frameworkRootId, cancellationToken);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Top-level statements are the compiler-generated entry point, and in an ASP.NET app they hold the DI
+    /// registrations and the lambdas that construct services. They get a node for the generated method,
+    /// reachable from the framework root, and their calls and accesses are attributed to it.
+    /// </summary>
+    private void IndexTopLevelStatements(SyntaxNode root, SemanticModel model, string fileId, string origin, string frameworkRootId, CancellationToken cancellationToken)
+    {
+        if (root is not CompilationUnitSyntax unit)
+        {
+            return;
+        }
+
+        var statements = unit.Members.OfType<GlobalStatementSyntax>().ToList();
+        if (statements.Count == 0
+            || model.Compilation.GetEntryPoint(cancellationToken) is not { } entry
+            || IdOf(entry) is not { } entryId)
+        {
+            return;
+        }
+
+        var location = unit.SyntaxTree.GetLocation(TextSpan.FromBounds(statements[0].SpanStart, statements[^1].Span.End));
+        // Roslyn displays the synthesized method as <top-level-statements-entry-point>; "Main" is what people look for.
+        AddNode(NodeFor(entry, entryId, NodeKind.Method, location, isTest: false) with
+        {
+            Name = "Main",
+            FullName = $"{entry.ContainingType.ToDisplayString()}.Main",
+            Signature = "top-level statements",
+        });
+        AddEdge(new GraphEdge(fileId, entryId, EdgeKind.Contains), origin);
+        AddEdge(new GraphEdge(frameworkRootId, entryId, EdgeKind.InvokedByFramework), origin);
+        AddSearchDocument(entryId,
+        [
+            ("Main", 3),
+            (Path.GetFileName(origin), 1),
+            (string.Join(" ", statements.Select(BodyText)), 1),
+        ]);
+
+        foreach (var statement in statements)
+        {
+            IndexBody(statement, model, entryId, callerIsTest: false, origin, cancellationToken);
         }
     }
 
@@ -339,6 +410,7 @@ public sealed partial class RoslynIndexer
             if (node is SimpleNameSyntax name)
             {
                 IndexTypeReference(name, model, callerId, origin, skip: null, cancellationToken);
+                IndexMemberAccess(name, model, callerId, callerIsTest, origin, cancellationToken);
                 continue;
             }
 
@@ -349,7 +421,7 @@ public sealed partial class RoslynIndexer
             }
 
             var info = model.GetSymbolInfo(node, cancellationToken);
-            var target = info.Symbol ?? info.CandidateSymbols.FirstOrDefault();
+            var target = info.Symbol ?? Unambiguous(info.CandidateSymbols);
             if (target is not IMethodSymbol method)
             {
                 continue;
@@ -375,6 +447,53 @@ public sealed partial class RoslynIndexer
             }
         }
     }
+
+    /// <summary>
+    /// A binding that failed overload resolution (a compile error in the solution, say) still names the method
+    /// when every candidate is an overload of the same member; candidates from different types are a guess.
+    /// </summary>
+    private static ISymbol? Unambiguous(System.Collections.Immutable.ImmutableArray<ISymbol> candidates) =>
+        candidates.Length > 0
+        && candidates.All(c => c.Name == candidates[0].Name
+                               && SymbolEqualityComparer.Default.Equals(c.ContainingType, candidates[0].ContainingType))
+            ? candidates[0]
+            : null;
+
+    /// <summary>
+    /// A read or write of a property, field or event is a dependency as real as a call: without it, "who uses
+    /// IStaging.Enabled" is empty and a test that reads it does not cover it. Recorded as a Calls edge so every
+    /// caller and coverage walk sees it. Only names declared as members somewhere in the solution are bound.
+    /// </summary>
+    private void IndexMemberAccess(SimpleNameSyntax name, SemanticModel model, string callerId, bool callerIsTest, string origin, CancellationToken cancellationToken)
+    {
+        if (_sourceMemberNames?.Contains(name.Identifier.ValueText) != true || IsNameOfArgument(name))
+        {
+            return;
+        }
+
+        var symbol = model.GetSymbolInfo(name, cancellationToken).Symbol;
+        if (symbol is not (IPropertySymbol or IEventSymbol or IFieldSymbol { ContainingType.TypeKind: not RoslynTypeKind.Enum }))
+        {
+            return;
+        }
+
+        symbol = symbol.OriginalDefinition;
+        if (!IsInSource(symbol) || IdOf(symbol) is not { } targetId || targetId == callerId)
+        {
+            return;
+        }
+
+        AddEdge(new GraphEdge(callerId, targetId, EdgeKind.Calls), origin);
+        if (callerIsTest)
+        {
+            AddEdge(new GraphEdge(targetId, callerId, EdgeKind.TestedBy), origin);
+        }
+    }
+
+    /// <summary><c>nameof(Foo.Bar)</c> binds Bar but reads nothing.</summary>
+    private static bool IsNameOfArgument(SyntaxNode name) =>
+        name.Ancestors().TakeWhile(a => a is not MemberDeclarationSyntax)
+            .Any(a => a is InvocationExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.ValueText: "nameof" } });
 
     private void IndexTypeReferences(SyntaxNode scope, SemanticModel model, string fromId, string origin, IReadOnlySet<string> skip, CancellationToken cancellationToken)
     {
@@ -463,9 +582,10 @@ public sealed partial class RoslynIndexer
         }
     }
 
-    private static async Task<HashSet<string>> SourceTypeNamesAsync(Solution solution, CancellationToken cancellationToken)
+    private static async Task<(HashSet<string> Types, HashSet<string> Members)> SourceNamesAsync(Solution solution, CancellationToken cancellationToken)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
+        var members = new HashSet<string>(StringComparer.Ordinal);
         foreach (var document in solution.Projects.Where(p => p.Language == LanguageNames.CSharp).SelectMany(p => p.Documents))
         {
             if (await document.GetSyntaxRootAsync(cancellationToken) is not { } root)
@@ -473,13 +593,31 @@ public sealed partial class RoslynIndexer
                 continue;
             }
 
-            foreach (var declaration in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
+            foreach (var node in root.DescendantNodes())
             {
-                var name = declaration.Identifier.ValueText;
-                names.Add(name);
-                if (name.EndsWith("Attribute", StringComparison.Ordinal) && name.Length > "Attribute".Length)
+                switch (node)
                 {
-                    names.Add(name[..^"Attribute".Length]);
+                    case BaseTypeDeclarationSyntax declaration:
+                        var name = declaration.Identifier.ValueText;
+                        names.Add(name);
+                        if (name.EndsWith("Attribute", StringComparison.Ordinal) && name.Length > "Attribute".Length)
+                        {
+                            names.Add(name[..^"Attribute".Length]);
+                        }
+
+                        break;
+                    case PropertyDeclarationSyntax property:
+                        members.Add(property.Identifier.ValueText);
+                        break;
+                    case EventDeclarationSyntax @event:
+                        members.Add(@event.Identifier.ValueText);
+                        break;
+                    case FieldDeclarationSyntax field:
+                        members.UnionWith(field.Declaration.Variables.Select(v => v.Identifier.ValueText));
+                        break;
+                    case EventFieldDeclarationSyntax eventField:
+                        members.UnionWith(eventField.Declaration.Variables.Select(v => v.Identifier.ValueText));
+                        break;
                 }
             }
 
@@ -493,7 +631,7 @@ public sealed partial class RoslynIndexer
             }
         }
 
-        return names;
+        return (names, members);
     }
 
     private void AddSearchDocument(string nodeId, IEnumerable<(string? Text, int Weight)> parts)
@@ -568,9 +706,12 @@ public sealed partial class RoslynIndexer
     }
 
 
-    private static GraphNode NodeFor(ISymbol symbol, string id, NodeKind kind, SyntaxNode declaration, bool isTest)
+    private static GraphNode NodeFor(ISymbol symbol, string id, NodeKind kind, SyntaxNode declaration, bool isTest) =>
+        NodeFor(symbol, id, kind, declaration.GetLocation(), isTest);
+
+    private static GraphNode NodeFor(ISymbol symbol, string id, NodeKind kind, Location location, bool isTest)
     {
-        var span = declaration.GetLocation().GetLineSpan();
+        var span = location.GetLineSpan();
         return new GraphNode(
             id,
             kind,

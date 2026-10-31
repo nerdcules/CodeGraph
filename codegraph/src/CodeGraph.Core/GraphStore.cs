@@ -32,7 +32,7 @@ public sealed class GraphStore : IDisposable
     ];
 
     /// <summary>Bumped when the indexer's output changes shape; a mismatch forces a full rebuild.</summary>
-    public const string SchemaVersion = "3";
+    public const string SchemaVersion = "4";
 
     private readonly DuckDBConnection _connection;
 
@@ -614,7 +614,7 @@ public sealed class GraphStore : IDisposable
 
     /// <summary>Nodes that call <paramref name="id"/>, transitively up to <paramref name="maxDepth"/>.</summary>
     public IReadOnlyList<GraphHit> Callers(string id, int maxDepth = 1) =>
-        Walk(id, maxDepth, inbound: true, [nameof(EdgeKind.Calls)]);
+        Walk(id, maxDepth, inbound: true, [nameof(EdgeKind.Calls)], dispatch: true);
 
     /// <summary>Nodes that <paramref name="id"/> calls, transitively up to <paramref name="maxDepth"/>.</summary>
     public IReadOnlyList<GraphHit> Callees(string id, int maxDepth = 1) =>
@@ -625,7 +625,7 @@ public sealed class GraphStore : IDisposable
     /// overriders, implementers and subclasses. Test methods in the result are the ones that guard it.
     /// </summary>
     public IReadOnlyList<GraphHit> Impact(string id, int maxDepth = 5) =>
-        Walk(id, maxDepth, inbound: true, ImpactEdgeKinds);
+        Walk(id, maxDepth, inbound: true, ImpactEdgeKinds, dispatch: true);
 
     /// <summary>All nodes, optionally filtered to one kind. Use sparingly - may return thousands of rows.</summary>
     public IReadOnlyList<GraphNode> AllNodes(NodeKind? kind = null)
@@ -698,9 +698,17 @@ public sealed class GraphStore : IDisposable
         using var command = _connection.CreateCommand();
         command.CommandText =
             $"""
-             SELECT {QualifiedNodeColumns} FROM nodes n
+             WITH RECURSIVE up(id) AS (
+                 SELECT $id
+                 UNION
+                 SELECT e.to_id FROM edges e
+                 JOIN up ON e.from_id = up.id
+                 JOIN nodes m ON m.id = e.from_id AND m.kind <> 'Type'
+                 WHERE e.kind IN ('Implements', 'Overrides')
+             )
+             SELECT DISTINCT {QualifiedNodeColumns} FROM nodes n
              JOIN edges e ON e.to_id = n.id
-             WHERE e.from_id = $id AND e.kind = 'TestedBy'
+             WHERE e.from_id IN (SELECT id FROM up) AND e.kind = 'TestedBy'
              ORDER BY n.full_name;
              """;
         command.Parameters.Add(P("id", id));
@@ -715,13 +723,16 @@ public sealed class GraphStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText =
-            """
+            $"""
             WITH RECURSIVE reach(id) AS (
                 SELECT id FROM nodes WHERE is_test = true AND kind = 'Method'
                 UNION
-                SELECT e.to_id FROM edges e
-                JOIN reach r ON e.from_id = r.id
-                WHERE e.kind = 'Calls'
+                SELECT s.next
+                FROM reach r
+                JOIN (
+                    SELECT to_id AS next, from_id AS at FROM edges WHERE kind = 'Calls'
+                    UNION ALL {DispatchDown}
+                ) s ON s.at = r.id
             )
             SELECT
                 (SELECT COUNT(*) FROM nodes WHERE kind = 'Method' AND is_test = false) AS total,
@@ -771,9 +782,12 @@ public sealed class GraphStore : IDisposable
              WITH RECURSIVE reach(id) AS (
                  SELECT id FROM nodes WHERE is_test = true AND kind = 'Method'
                  UNION
-                 SELECT e.to_id FROM edges e
-                 JOIN reach r ON e.from_id = r.id
-                 WHERE e.kind = 'Calls'
+                 SELECT s.next
+                 FROM reach r
+                 JOIN (
+                     SELECT to_id AS next, from_id AS at FROM edges WHERE kind = 'Calls'
+                     UNION ALL {DispatchDown}
+                 ) s ON s.at = r.id
              )
              SELECT {NodeColumns} FROM nodes
              WHERE kind = 'Method' AND is_test = false
@@ -795,18 +809,21 @@ public sealed class GraphStore : IDisposable
         using var command = _connection.CreateCommand();
         command.CommandText =
             $"""
-             WITH RECURSIVE walk(id, depth) AS (
-                 SELECT $id, 0
+             WITH RECURSIVE walk(id, depth, hop) AS (
+                 SELECT $id, 0, false
                  UNION
-                 SELECT e.from_id, w.depth + 1
-                 FROM edges e
-                 JOIN walk w ON e.to_id = w.id
-                 WHERE e.kind = 'Calls' AND w.depth < $max
+                 SELECT s.next, w.depth + s.step, s.hop
+                 FROM walk w
+                 JOIN (
+                     SELECT from_id AS next, to_id AS at, 1 AS step, false AS hop FROM edges WHERE kind = 'Calls'
+                     UNION ALL {DispatchUp}
+                 ) s ON s.at = w.id
+                 WHERE w.depth < $max
              )
              SELECT {QualifiedNodeColumns}, MIN(w.depth) AS depth
              FROM walk w
              JOIN nodes n ON n.id = w.id
-             WHERE w.depth > 0 AND n.is_test = true
+             WHERE w.depth > 0 AND NOT w.hop AND n.is_test = true
              GROUP BY {GroupByNodeColumns}
              ORDER BY depth, n.full_name;
              """;
@@ -1036,26 +1053,37 @@ public sealed class GraphStore : IDisposable
         return value is not null and not DBNull && Convert.ToInt32(value) > 0;
     }
 
-    private IReadOnlyList<GraphHit> Walk(string id, int maxDepth, bool inbound, string[] edgeKinds)
+    /// <summary>
+    /// With <paramref name="dispatch"/>, an inbound walk also treats a call to an interface or base member as a
+    /// call to every member that implements or overrides it: from each member reached, it hops to the members
+    /// it implements or overrides at the same depth and continues from their callers. Those hops are followed
+    /// but not reported, so the result holds only real callers.
+    /// </summary>
+    private IReadOnlyList<GraphHit> Walk(string id, int maxDepth, bool inbound, string[] edgeKinds, bool dispatch = false)
     {
         var (nextColumn, matchColumn) = inbound ? ("from_id", "to_id") : ("to_id", "from_id");
         var kindList = string.Join(", ", edgeKinds.Select((_, i) => $"$k{i}"));
+        var dispatchStep = dispatch && inbound ? $"UNION ALL {DispatchUp}" : "";
 
         using var command = _connection.CreateCommand();
         command.CommandText =
             $"""
-             WITH RECURSIVE walk(id, depth) AS (
-                 SELECT $id, 0
+             WITH RECURSIVE walk(id, depth, hop) AS (
+                 SELECT $id, 0, false
                  UNION
-                 SELECT e.{nextColumn}, w.depth + 1
-                 FROM edges e
-                 JOIN walk w ON e.{matchColumn} = w.id
-                 WHERE e.kind IN ({kindList}) AND w.depth < $max
+                 SELECT s.next, w.depth + s.step, s.hop
+                 FROM walk w
+                 JOIN (
+                     SELECT {nextColumn} AS next, {matchColumn} AS at, 1 AS step, false AS hop
+                     FROM edges WHERE kind IN ({kindList})
+                     {dispatchStep}
+                 ) s ON s.at = w.id
+                 WHERE w.depth < $max
              )
              SELECT {QualifiedNodeColumns}, MIN(w.depth) AS depth
              FROM walk w
              JOIN nodes n ON n.id = w.id
-             WHERE w.depth > 0
+             WHERE w.depth > 0 AND NOT w.hop
              GROUP BY {GroupByNodeColumns}
              ORDER BY depth, n.full_name;
              """;
@@ -1369,6 +1397,29 @@ public sealed class GraphStore : IDisposable
     // Path sets travel as one newline-joined parameter split server-side: works on read-only
     // connections (no temp table) and avoids thousands of positional parameters.
     private const string PathList = "SELECT unnest(string_split($paths, chr(10)))";
+
+    /// <summary>
+    /// Step rows (next, at, step, hop) that take a walk from a member up to the interface or base members it
+    /// implements or overrides, at the same depth and flagged as a hop. A recursive CTE may reference itself
+    /// once per step, so these are unioned with the ordinary edge rows rather than added as a second branch.
+    /// Type-level Implements/Inherits edges are excluded: a class is not "called".
+    /// </summary>
+    private const string DispatchUp =
+        """
+        SELECT e.to_id AS next, e.from_id AS at, 0 AS step, true AS hop
+        FROM edges e
+        JOIN nodes m ON m.id = e.from_id AND m.kind <> 'Type'
+        WHERE e.kind IN ('Implements', 'Overrides')
+        """;
+
+    /// <summary>The forward counterpart (next, at): from an interface or base member down to every implementation or override.</summary>
+    private const string DispatchDown =
+        """
+        SELECT e.from_id AS next, e.to_id AS at
+        FROM edges e
+        JOIN nodes m ON m.id = e.from_id AND m.kind <> 'Type'
+        WHERE e.kind IN ('Implements', 'Overrides')
+        """;
 
     private static string Lines(IEnumerable<string> paths) => string.Join('\n', paths);
 

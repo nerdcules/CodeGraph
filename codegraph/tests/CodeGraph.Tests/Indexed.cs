@@ -30,6 +30,9 @@ internal sealed class Indexed
         SearchDocuments = indexer.SearchDocuments;
     }
 
+    /// <summary>Wraps an indexer another harness has already driven.</summary>
+    public static Indexed From(RoslynIndexer indexer) => new(indexer);
+
     public IReadOnlyCollection<GraphNode> Nodes { get; }
 
     public IReadOnlyCollection<GraphEdge> Edges { get; }

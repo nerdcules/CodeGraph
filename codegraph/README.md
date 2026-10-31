@@ -17,6 +17,8 @@ src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
 src/CodeGraph.Web       graph visualiser UI, embedded into codegraph-mcp --web
 tests/CodeGraph.Tests   store, search, telemetry, indexer extraction, watch-mode sync
 install.ps1 / .sh       build, test, publish both executables, print .mcp.json
+setup.ps1 / .sh         pull latest, build, write .mcp.json as `dotnet run`, index (no publish)
+uninstall.ps1 / .sh     remove the install folder, PATH entry, a repo's .mcp.json entry and graph
 nuget.config            nuget.org only, source-mapped, audit on
 assets/logo.svg         the logo; also the web UI's favicon and header mark
 MCP-SERVER.md           reference page for the server and its tools
@@ -36,6 +38,15 @@ the solution, so every edge is a resolved symbol, not a text match. `impact_of` 
 callers, overrides and implementations transitively; `implementors_of` follows `Inherits`
 as well as `Implements`; `references_to` sees a type in signatures, generic arguments,
 casts and attributes. Claude gets the same answer the compiler would give.
+
+Three things a plain call graph misses are in the graph too, because they are where a grep
+beat an early version of this tool on "which tests reach X": a call to an interface or base
+member counts as a call to every implementation and override (`Runner.Run` has a
+member-level `Implements` edge to `IRunner.Run`, and `callers_of`, `covered_by`, `tests_for`,
+`impact_of` and the coverage tools follow it); reading or writing a property, field or event
+is a `Calls` edge, so `IStaging.Enabled` has callers; and top-level statements are indexed
+as the program's `Main`, so DI registrations and the lambdas that construct services belong
+to a node and reach what they call.
 
 It also fixes the cost problem. A typical turn is `find_symbol` → `impact_of` → `snippet`
 on the two or three declarations that matter, which is low thousands of tokens instead of
@@ -186,6 +197,48 @@ to skip), publish `codegraph-index` and `codegraph-mcp` into the install folder,
 holds its files open, so the script stops rather than overwrite it; close the Claude Code
 sessions using it, or pass `-Force` / `--force` to stop them.
 
+### Uninstall
+
+```powershell
+.\uninstall.ps1                                  # removes C:\tools\codegraph
+.\uninstall.ps1 -InstallDir D:\tools\codegraph -Repo C:\dev\App -Force -Yes
+```
+
+```bash
+./uninstall.sh [--install-dir DIR] [--repo DIR]... [--force] [--yes]
+```
+
+Deletes the install folder (after checking it really holds codegraph), takes it out of the
+user PATH or the `# codegraph` lines out of `~/.bashrc` / `~/.zshrc`, and for each `-Repo` /
+`--repo` removes the `codegraph` entry from that repo's `.mcp.json` (other servers stay) and
+deletes its `.codegraph/` graph and telemetry. It asks before each deletion unless `-Yes` /
+`--yes`, and refuses while a codegraph process runs from the folder unless `-Force` / `--force`
+stops it. A checkout wired up by `setup.ps1` has nothing installed; use `-Repo` alone to undo
+its `.mcp.json` entry and graph.
+
+### From a source checkout
+
+`setup.ps1` / `setup.sh` is the no-publish alternative for people who keep this repo cloned:
+nothing is copied anywhere, the MCP server runs from the checkout with `dotnet run --no-build`,
+and an upgrade is a `git pull` plus a build. The script fetches origin and, if the checkout is
+behind, asks before fast-forwarding (never over local changes); builds Release with warnings as
+errors; writes or updates the `codegraph` entry in the target repo's `.mcp.json`, keeping any
+other servers there; and indexes the solution with `dotnet run --project src/CodeGraph.Indexer`.
+
+```powershell
+.\setup.ps1 -Solution C:\dev\App\App.sln          # asks before pulling and before touching .mcp.json
+.\setup.ps1 -Solution C:\dev\App\App.sln -Yes -Full  # no questions; rebuild the graph from scratch
+```
+
+```bash
+./setup.sh --solution ~/dev/App/App.sln [--yes] [--full] [--no-pull] [--config-dir DIR]
+```
+
+The `.mcp.json` entry it writes is `dotnet run --project <checkout>/src/CodeGraph.Mcp -c Release
+--no-build`, which starts in about a second and prints nothing but JSON-RPC on stdout. Re-run the
+script after pulling, since `--no-build` runs whatever was built last. On Windows use the
+PowerShell script; the bash one under Git Bash writes `/d/...` paths that other hosts cannot read.
+
 ## Wire it into Claude Code
 
 Put one `.mcp.json` in the repo (the install script prints it). Leave out the db path: the
@@ -253,9 +306,9 @@ files added by a checkout aren't in the graph. `index_status` shows the full pic
 | `find_symbol` | id, kind, signature, location for a name |
 | `search_code` | "where's the code that does X": ranked full-text search over names, signatures, comments, string literals and body identifiers |
 | `outline` | children of a node, no bodies |
-| `callers_of` / `callees_of` | call graph, N hops |
+| `callers_of` / `callees_of` | call graph, N hops; calls include property, field and event accesses, and a call to an interface or base member reaches its implementations |
 | `impact_of` | transitive dependents + guarding tests (for a type: every member that references it, too) |
-| `tests_for` | tests that call a member directly |
+| `tests_for` | tests that call or read a member directly, through its interface too |
 | `references_to` | where a type is used: signatures, fields, locals (including `var`-inferred ones), generic args, casts, attributes, record parameters, `using` aliases |
 | `implementors_of` / `inheritors_of` | who implements an interface (including subclasses of implementors) / derives from a type |
 | `snippet` | just the declaration span from source |

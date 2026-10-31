@@ -190,24 +190,24 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "callers_of", ReadOnly = true, Idempotent = true)]
-    [Description("Who calls this member. depth 1 = direct callers; higher depth walks the call graph outward.")]
+    [Description("Who calls or reads this member (property and field accesses count). A call to an interface or base member counts as a call to every implementation and override. depth 1 = direct callers; higher depth walks the call graph outward.")]
     public string CallersOf(
         [Description("Node id from find_symbol")] string id,
-        [Description("How many hops to follow, 1-5, default 1")] int depth = 1) =>
-        Traversal(id, store.Callers(id, Math.Clamp(depth, 1, 5)), "callers");
+        [Description("How many hops to follow, 1-20, default 1")] int depth = 1) =>
+        Traversal(id, store.Callers(id, Math.Clamp(depth, 1, 20)), "callers");
 
     [McpServerTool(Name = "callees_of", ReadOnly = true, Idempotent = true)]
     [Description("What this member calls (only source in the indexed solution, not framework/NuGet). depth 1 = direct callees.")]
     public string CalleesOf(
         [Description("Node id from find_symbol")] string id,
-        [Description("How many hops to follow, 1-5, default 1")] int depth = 1) =>
-        Traversal(id, store.Callees(id, Math.Clamp(depth, 1, 5)), "callees");
+        [Description("How many hops to follow, 1-20, default 1")] int depth = 1) =>
+        Traversal(id, store.Callees(id, Math.Clamp(depth, 1, 20)), "callees");
 
     [McpServerTool(Name = "impact_of", ReadOnly = true, Idempotent = true)]
     [Description("Everything that could break if this changes: transitive callers, overriders, implementers, subclasses, and for a type every member that references it — and which tests guard it. Call this before editing a shared member or type.")]
     public string ImpactOf(
         [Description("Node id from find_symbol")] string id,
-        [Description("Max hops, 1-10, default 5")] int depth = 5)
+        [Description("Max hops, 1-20, default 5")] int depth = 5)
     {
         var node = store.GetNode(id);
         if (node is null)
@@ -215,7 +215,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             return NotFound(id);
         }
 
-        var hits = store.Impact(id, Math.Clamp(depth, 1, 10));
+        var hits = store.Impact(id, Math.Clamp(depth, 1, 20));
         var tests = hits.Where(h => h.Node.IsTest).ToList();
         var others = hits.Where(h => !h.Node.IsTest).ToList();
 
@@ -282,7 +282,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "tests_for", ReadOnly = true, Idempotent = true)]
-    [Description("Test methods that call this member directly.")]
+    [Description("Test methods that call or read this member directly, including through an interface or base member it implements or overrides.")]
     public string TestsFor([Description("Node id from find_symbol")] string id)
     {
         if (store.GetNode(id) is null)
@@ -510,14 +510,14 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [Description("Projects (and their transitive dependencies) that this project references.")]
     public string DependsOn(
         [Description("Node id from find_symbol (a Project node)")] string id,
-        [Description("Max hops, 1-10, default 5")] int depth = 5) =>
+        [Description("Max hops, 1-20, default 5")] int depth = 5) =>
         Traversal(id, store.Walk(id, [nameof(EdgeKind.DependsOn)], inbound: false, Math.Clamp(depth, 1, 10)), "dependencies");
 
     [McpServerTool(Name = "dependents_of", ReadOnly = true, Idempotent = true)]
     [Description("Projects that depend on this project, directly or transitively.")]
     public string DependentsOf(
         [Description("Node id from find_symbol (a Project node)")] string id,
-        [Description("Max hops, 1-10, default 5")] int depth = 5) =>
+        [Description("Max hops, 1-20, default 5")] int depth = 5) =>
         Traversal(id, store.Walk(id, [nameof(EdgeKind.DependsOn)], inbound: true, Math.Clamp(depth, 1, 10)), "dependents");
 
     [McpServerTool(Name = "neighbors", ReadOnly = true, Idempotent = true)]
@@ -612,17 +612,17 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "covered_by", ReadOnly = true, Idempotent = true)]
-    [Description("Test methods that transitively reach this member via the call graph. Shows depth (hop count from test to target). Complements tests_for, which only shows direct callers.")]
+    [Description("Test methods that transitively reach this member via the call graph, following interface and virtual dispatch (a test that calls IRunner.Run reaches Runner.Run). Shows depth (hop count from test to target). Complements tests_for, which only shows direct callers.")]
     public string CoveredBy(
         [Description("Node id from find_symbol")] string id,
-        [Description("Max hops to search, 1-15, default 10")] int depth = 10)
+        [Description("Max hops to search, 1-30, default 10")] int depth = 10)
     {
         var node = store.GetNode(id);
         if (node is null) return NotFound(id);
 
-        var hits = store.TransitiveTests(id, Math.Clamp(depth, 1, 15));
+        var hits = store.TransitiveTests(id, Math.Clamp(depth, 1, 30));
         if (hits.Count == 0)
-            return $"{node.FullName}: not reached by any test within {Math.Clamp(depth, 1, 15)} hops — consider adding coverage";
+            return $"{node.FullName}: not reached by any test within {Math.Clamp(depth, 1, 30)} hops — consider adding coverage";
 
         var sb = new StringBuilder();
         sb.AppendLine($"{hits.Count} test(s) transitively cover {node.FullName}:");
