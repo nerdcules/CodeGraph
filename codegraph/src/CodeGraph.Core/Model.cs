@@ -9,6 +9,8 @@ public enum NodeKind
     Property,
     Field,
     Event,
+    /// <summary>A framework or NuGet member the solution calls or constructs. No file; only inbound Calls edges.</summary>
+    External,
 }
 
 /// <summary>More precise classification of a Type node.</summary>
@@ -40,6 +42,11 @@ public enum EdgeKind
     InvokedByFramework,
     /// <summary>Member (or type) mentions a type: signatures, fields, locals, generic arguments, casts, attributes.</summary>
     References,
+    /// <summary>
+    /// Member calls or constructs a framework or NuGet member (an <see cref="NodeKind.External"/> node). Kept apart
+    /// from <see cref="Calls"/> so walks over the solution's own call graph scan no more edges than before.
+    /// </summary>
+    CallsExternal,
 }
 
 /// <summary>

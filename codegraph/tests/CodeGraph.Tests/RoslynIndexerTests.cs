@@ -127,13 +127,17 @@ public sealed class RoslynIndexerTests
     }
 
     [Fact]
-    public async Task Does_not_emit_calls_into_the_framework()
+    public async Task A_call_into_the_framework_targets_an_External_node()
     {
         var indexed = await Indexed.OfAsync(
             "namespace N; class C { void M() { System.Console.WriteLine(\"hi\"); } }");
 
-        // Only source in the indexed solution becomes an edge; framework and NuGet targets are dropped.
+        Assert.Equal(["M:System.Console.WriteLine(System.String)"], indexed.TargetsOf("M:N.C.M", EdgeKind.CallsExternal));
         Assert.Empty(indexed.TargetsOf("M:N.C.M", EdgeKind.Calls));
+        var external = indexed.Node("M:System.Console.WriteLine(System.String)");
+        Assert.Equal(NodeKind.External, external.Kind);
+        Assert.Null(external.FilePath);
+        Assert.Contains("[System.Console]", external.Signature);
     }
 
     [Fact]

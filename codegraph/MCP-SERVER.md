@@ -158,10 +158,10 @@ and override.
 | tool | arguments | answers |
 |---|---|---|
 | `callers_of` | `id`, `depth` (1–20, 1) | Who calls or reads this member, transitively. A call to an interface or base member counts for every implementation and override. |
-| `callees_of` | `id`, `depth` (1–20, 1) | What this member calls (source only, not framework or NuGet). |
+| `callees_of` | `id`, `depth` (1–20, 1), `includeExternal` (false) | What this member calls; with `includeExternal`, the framework and NuGet members too. |
 | `impact_of` | `id`, `depth` (1–20, 5) | Everything that could break: transitive callers, overriders, implementers, subclasses, and for a type every member that references it. Guarding tests are listed separately. Call before editing anything shared. |
 | `path_between` | `from`, `to`, `edgeKinds` (Calls), `maxDepth` (1–20, 10), `maxPaths` (1–5, 3) | Shortest call chains from one method to another. |
-| `most_called` | `limit` (1–100, 20), `minCallers` (1), `offset` | Methods ranked by direct caller count. |
+| `most_called` | `limit` (1–100, 20), `minCallers` (1), `offset`, `includeExternal` (false), `nameFilter?` | Methods ranked by direct caller count. With `includeExternal` and e.g. `nameFilter: "System.IO"`, which framework APIs the solution leans on. |
 | `traverse` | `id`, `edgeKind`, `direction` (inbound / outbound), `depth` (1–10, 1) | Generic walk over one edge kind when no named tool fits. |
 
 ### Types
@@ -217,7 +217,13 @@ and override.
 | `usage_stats` | | Calls per tool, latency, answer size and estimated source tokens saved, this session and all time. |
 
 Edge kinds, for `traverse` and `path_between`: `Calls`, `Inherits`, `Implements`, `Overrides`,
-`Contains`, `DependsOn`, `TestedBy`, `InvokedByFramework`, `References`.
+`Contains`, `DependsOn`, `TestedBy`, `InvokedByFramework`, `References`, `CallsExternal`.
+
+Framework and NuGet members the solution calls or constructs are `external` nodes (no file), reached by
+`CallsExternal` edges, so `find_symbol "File.Delete"` → `callers_of` / `impact_of` / `covered_by` answer
+"who deletes files and which tests reach that" from the graph alone. Property reads on framework types
+are not recorded; `live_references` covers those. The separate edge kind keeps every walk over the
+solution's own call graph exactly as cheap as before.
 
 ## A typical turn
 

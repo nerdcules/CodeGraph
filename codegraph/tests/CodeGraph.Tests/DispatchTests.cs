@@ -253,7 +253,8 @@ public sealed class ImplicitCallTests
         Assert.True(graph.HasEdge("M:N.C.Async", "M:N.AsyncRes.DisposeAsync", EdgeKind.Calls));
         Assert.True(graph.HasEdge("M:N.C.RefStruct", "M:N.Pattern.Dispose", EdgeKind.Calls));
         Assert.Equal(["M:N.Pattern.#ctor"], graph.TargetsOf("M:N.C.RefStruct", EdgeKind.Calls).Where(t => !t.EndsWith("Dispose")));
-        Assert.Empty(graph.TargetsOf("M:N.C.Framework", EdgeKind.Calls));
+        // A framework resource: its construction and the Dispose the using binds to are External targets.
+        Assert.Equal(["M:System.IO.MemoryStream.#ctor", "M:System.IO.Stream.Dispose"], graph.TargetsOf("M:N.C.Framework", EdgeKind.CallsExternal).Order());
     }
 
     [Fact]

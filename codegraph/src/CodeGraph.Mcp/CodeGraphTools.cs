@@ -430,11 +430,12 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         Traversal(id, store.Callers(id, Math.Clamp(depth, 1, 20)), "callers");
 
     [McpServerTool(Name = "callees_of", ReadOnly = true, Idempotent = true)]
-    [Description("What this member calls (only source in the indexed solution, not framework/NuGet). depth 1 = direct callees.")]
+    [Description("What this member calls. depth 1 = direct callees. Framework and NuGet members it calls are left out unless includeExternal is true.")]
     public string CalleesOf(
         [Description("Node id from find_symbol")] string id,
-        [Description("How many hops to follow, 1-20, default 1")] int depth = 1) =>
-        Traversal(id, store.Callees(id, Math.Clamp(depth, 1, 20)), "callees");
+        [Description("How many hops to follow, 1-20, default 1")] int depth = 1,
+        [Description("Also list framework and NuGet members it calls or constructs, default false")] bool includeExternal = false) =>
+        Traversal(id, store.Callees(id, Math.Clamp(depth, 1, 20), includeExternal), "callees");
 
     [McpServerTool(Name = "impact_of", ReadOnly = true, Idempotent = true)]
     [Description("Everything that could break if this changes: transitive callers, overriders, implementers, subclasses, and for a type every member that references it — and which tests guard it. Call this before editing a shared member or type.")]
@@ -672,13 +673,15 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "most_called", ReadOnly = true, Idempotent = true)]
-    [Description("The most called methods in the codebase, ranked by direct caller count.")]
+    [Description("The most called methods, ranked by direct caller count. With includeExternal, framework and NuGet members rank too; with nameFilter (e.g. 'System.IO' or 'HttpClient') only matching names: which external APIs the solution leans on most.")]
     public string MostCalled(
         [Description("Max results, default 20, max 100")] int limit = 20,
         [Description("Minimum caller threshold to include, default 1")] int minCallers = 1,
-        [Description("Skip this many results for paging, default 0")] int offset = 0)
+        [Description("Skip this many results for paging, default 0")] int offset = 0,
+        [Description("Rank framework and NuGet members too, default false")] bool includeExternal = false,
+        [Description("Only full names containing this, e.g. 'System.IO.File'")] string? nameFilter = null)
     {
-        var top = store.MostCalled(Math.Clamp(limit, 1, 100), minCallers, offset);
+        var top = store.MostCalled(Math.Clamp(limit, 1, 100), minCallers, offset, includeExternal, nameFilter);
 
         if (top.Count == 0)
             return $"no methods with at least {minCallers} callers";
@@ -687,7 +690,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         sb.AppendLine($"Top {top.Count} most called methods (min {minCallers} callers, offset {offset}):");
         foreach (var (m, count) in top)
         {
-            sb.Append("method  ").Append(m.FullName).Append("  ").Append(count).Append(" callers");
+            sb.Append(m.Kind == NodeKind.External ? "external  " : "method  ").Append(m.FullName).Append("  ").Append(count).Append(" callers");
             if (m.FilePath is not null) sb.Append("  ").Append(m.FilePath).Append(':').Append(m.StartLine);
             sb.Append("  [").Append(m.Id).Append(']');
             sb.AppendLine();
@@ -784,10 +787,10 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "traverse", ReadOnly = true, Idempotent = true)]
-    [Description("Generic graph walk: pick any edge kind and direction. Use when the named tools don't cover what you need. Edge kinds: Calls, Inherits, Implements, Overrides, Contains, DependsOn, TestedBy, InvokedByFramework, References.")]
+    [Description("Generic graph walk: pick any edge kind and direction. Use when the named tools don't cover what you need. Edge kinds: Calls, Inherits, Implements, Overrides, Contains, DependsOn, TestedBy, InvokedByFramework, References, CallsExternal.")]
     public string Traverse(
         [Description("Node id from find_symbol")] string id,
-        [Description("Edge kind to follow: Calls, Inherits, Implements, Overrides, Contains, DependsOn, TestedBy, InvokedByFramework, References")] string edgeKind,
+        [Description("Edge kind to follow: Calls, Inherits, Implements, Overrides, Contains, DependsOn, TestedBy, InvokedByFramework, References, CallsExternal")] string edgeKind,
         [Description("Direction: 'inbound' (who points at this node) or 'outbound' (where this node points)")] string direction = "outbound",
         [Description("Max hops, 1-10, default 1")] int depth = 1)
     {

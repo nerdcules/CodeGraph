@@ -43,6 +43,16 @@ public sealed class IncrementalIndexTests
             [("Base.cs", "namespace N; class Base { public override string ToString() => \"b\"; }"), ("D.cs", "namespace N; class D : Base { public override string ToString() => \"\"; }")]
         },
         {
+            "the only call to a framework member removed: its External node goes",
+            [("A.cs", "namespace N; class A { public void Run() { System.IO.File.Delete(\"x\"); } }"), ("B.cs", "namespace N; class B { }")],
+            [("A.cs", "namespace N; class A { public void Run() { } }"), ("B.cs", "namespace N; class B { }")]
+        },
+        {
+            "a framework call moves between files: the External node stays",
+            [("A.cs", "namespace N; class A { public void Run() { System.IO.File.Delete(\"x\"); } }"), ("B.cs", "namespace N; class B { }")],
+            [("A.cs", "namespace N; class A { public void Run() { } }"), ("B.cs", "namespace N; class B { void Go() { System.IO.File.Delete(\"y\"); } }")]
+        },
+        {
             "referenced type deleted",
             [("A.cs", "namespace N; class A { Model? M; }"), ("Model.cs", "namespace N; class Model { }")],
             [("A.cs", "namespace N; class A { Model? M; }"), ("Model.cs", "namespace N; class Mode1 { }")]

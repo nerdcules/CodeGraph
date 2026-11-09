@@ -19,6 +19,7 @@ public sealed class GraphStore : IDisposable
         nameof(EdgeKind.TestedBy),
         nameof(EdgeKind.InvokedByFramework),
         nameof(EdgeKind.References),
+        nameof(EdgeKind.CallsExternal),
     ];
 
     // References only ever points at types, so it widens impact_of(type) without changing member walks.
@@ -32,7 +33,7 @@ public sealed class GraphStore : IDisposable
     ];
 
     /// <summary>Bumped when the indexer's output changes shape; a mismatch forces a full rebuild.</summary>
-    public const string SchemaVersion = "4";
+    public const string SchemaVersion = "5";
 
     private readonly DuckDBConnection _connection;
 
@@ -152,6 +153,17 @@ public sealed class GraphStore : IDisposable
         // No dangling-edge sweep: edges to node-less targets (implicit constructors) are legitimate and a full
         // index keeps them too. A file pointing at a removed member is a dependent, so it was re-walked above.
         WriteCore(transaction, nodes, edges, origins);
+
+        // External nodes belong to no file, so removing a file never removes them; one whose last caller just went
+        // would linger. A full index never has such a node, and incremental must equal full.
+        if (!full && removedFiles.Count > 0)
+        {
+            Execute(
+                """
+                DELETE FROM nodes WHERE kind = 'External'
+                  AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.to_id = nodes.id);
+                """, transaction);
+        }
         if (search is not null)
         {
             WriteSearch(transaction, search);
@@ -632,9 +644,16 @@ public sealed class GraphStore : IDisposable
     public IReadOnlyList<GraphHit> Callers(string id, int maxDepth = 1) =>
         Walk(id, maxDepth, inbound: true, [nameof(EdgeKind.Calls)], dispatch: true);
 
-    /// <summary>Nodes that <paramref name="id"/> calls, transitively up to <paramref name="maxDepth"/>.</summary>
-    public IReadOnlyList<GraphHit> Callees(string id, int maxDepth = 1) =>
-        Walk(id, maxDepth, inbound: false, [nameof(EdgeKind.Calls)]);
+    /// <summary>
+    /// Nodes that <paramref name="id"/> calls, transitively up to <paramref name="maxDepth"/>. Framework and NuGet
+    /// targets (<see cref="NodeKind.External"/>) only with <paramref name="includeExternal"/>.
+    /// </summary>
+    public IReadOnlyList<GraphHit> Callees(string id, int maxDepth = 1, bool includeExternal = false)
+    {
+        return includeExternal
+            ? Walk(id, maxDepth, inbound: false, [nameof(EdgeKind.Calls), nameof(EdgeKind.CallsExternal)])
+            : Walk(id, maxDepth, inbound: false, [nameof(EdgeKind.Calls)]);
+    }
 
     /// <summary>
     /// Everything that could be affected by changing <paramref name="id"/>: transitive callers,
@@ -791,22 +810,29 @@ public sealed class GraphStore : IDisposable
         return (reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2));
     }
 
-    /// <summary>All methods ranked by direct caller count, paged. Ties break by name so pages are stable.</summary>
-    public IReadOnlyList<(GraphNode Method, int CallerCount)> MostCalled(int limit, int minCallers, int offset)
+    /// <summary>
+    /// All methods ranked by direct caller count, paged. Ties break by name so pages are stable.
+    /// <paramref name="includeExternal"/> ranks framework and NuGet members too; <paramref name="nameFilter"/>
+    /// keeps names containing it (<c>System.IO</c>: which file APIs the solution leans on).
+    /// </summary>
+    public IReadOnlyList<(GraphNode Method, int CallerCount)> MostCalled(int limit, int minCallers, int offset, bool includeExternal = false, string? nameFilter = null)
     {
         using var command = _connection.CreateCommand();
+        var kinds = includeExternal ? "('Method', 'External')" : "('Method')";
         command.CommandText =
             $"""
              SELECT {QualifiedNodeColumns}, COUNT(e.from_id) AS caller_count
              FROM nodes n
-             LEFT JOIN edges e ON e.to_id = n.id AND e.kind = 'Calls'
-             WHERE n.kind = 'Method'
+             LEFT JOIN edges e ON e.to_id = n.id AND e.kind IN ('Calls', 'CallsExternal')
+             WHERE n.kind IN {kinds}
+               AND ($name IS NULL OR n.full_name ILIKE $name ESCAPE '\')
              GROUP BY {GroupByNodeColumns}
              HAVING COUNT(e.from_id) >= $min_callers
              ORDER BY caller_count DESC, n.full_name
              LIMIT $limit OFFSET $offset;
              """;
         command.Parameters.Add(P("min_callers", minCallers));
+        command.Parameters.Add(P("name", nameFilter is null ? null : $"%{EscapeLike(nameFilter)}%"));
         command.Parameters.Add(P("limit", Math.Clamp(limit, 1, 100)));
         command.Parameters.Add(P("offset", Math.Max(0, offset)));
         var results = new List<(GraphNode, int)>();
@@ -857,7 +883,7 @@ public sealed class GraphStore : IDisposable
         command.CommandText =
             $"""
              WITH RECURSIVE walk(id, depth, hop) AS (
-                 SELECT $id, 0, false
+                 {CallWalkSeed}
                  UNION
                  SELECT s.next, w.depth + s.step, s.hop
                  FROM walk w
@@ -1087,12 +1113,13 @@ public sealed class GraphStore : IDisposable
         var (nextColumn, matchColumn) = inbound ? ("from_id", "to_id") : ("to_id", "from_id");
         var kindList = string.Join(", ", edgeKinds.Select((_, i) => $"$k{i}"));
         var dispatchStep = dispatch && inbound ? $"UNION ALL {DispatchUp}" : "";
+        var anchor = inbound && edgeKinds.Contains(nameof(EdgeKind.Calls)) ? CallWalkSeed : "SELECT $id, 0, false";
 
         using var command = _connection.CreateCommand();
         command.CommandText =
             $"""
              WITH RECURSIVE walk(id, depth, hop) AS (
-                 SELECT $id, 0, false
+                 {anchor}
                  UNION
                  SELECT s.next, w.depth + s.step, s.hop
                  FROM walk w
@@ -1443,6 +1470,20 @@ public sealed class GraphStore : IDisposable
         FROM edges e
         JOIN nodes m ON m.id = e.from_id AND m.kind <> 'Type'
         WHERE e.kind IN ('Implements', 'Overrides')
+        """;
+
+    /// <summary>
+    /// The anchor row of an inbound call walk. An <see cref="NodeKind.External"/> node's callers arrive over
+    /// CallsExternal edges, which the walk's edge scan leaves out to stay as cheap as it was; so they are seeded
+    /// here at depth 1 through the to_id index, and the walk continues from them over Calls as usual.
+    /// </summary>
+    private const string CallWalkSeed =
+        """
+        SELECT * FROM (
+            SELECT $id AS id, 0 AS depth, false AS hop
+            UNION ALL
+            SELECT from_id, 1, false FROM edges WHERE kind = 'CallsExternal' AND to_id = $id AND $max >= 1
+        )
         """;
 
     private static string Lines(IEnumerable<string> paths) => string.Join('\n', paths);

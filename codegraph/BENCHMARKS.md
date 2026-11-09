@@ -149,3 +149,29 @@ connecting, uses a 150 ms timeout for a socket left by a killed daemon, and reme
 own open drops from about 10 ms to 25 µs. It is released after 1.5 s idle, after 10 s of continuous use, and
 whenever the daemon reports pending saves, so the indexer's write lock waits at most a couple of seconds.
 Net against the original server: a cheap call is about 10× faster and `impact_of` about 2× faster.
+
+## Round 3: framework calls as External nodes
+
+Measured 2026-11-09 on this repo, three builds back to back: before the change, a first attempt that used
+ordinary `Calls` edges for framework targets, and the final design with a separate `CallsExternal` kind.
+
+| measurement | before | first try (`Calls`) | final (`CallsExternal`) |
+|---|---|---|---|
+| graph | 833 nodes, 4892 edges | 1348 nodes, 7527 edges | 1352 nodes, 7564 edges |
+| full index | 9.4 s | 9.7 s | 9.6 s |
+| graph file after full index | 9,228 KB | 10,508 KB | 10,508 KB |
+| no-op incremental index | 2.5 s | 2.5 s | 2.5 s |
+| callers_of depth 1 | 6.8 ms | 7.4 ms | 6.6 ms |
+| impact_of depth 5 | 8.5 ms | 9.3 ms | 8.6 ms |
+| covered_by depth 30 | 8.2 ms | 8.8 ms | 7.8 ms |
+| path_between depth 10 | 12 ms | 15 ms | 11 ms |
+| coverage_stats | 13 ms | 13 ms | 11 ms |
+| uncovered | 13 ms | 14 ms | 11 ms |
+| dead_code_report | 12 ms | 12 ms | 11 ms |
+
+The first attempt added 58% more `Calls` edges, and every recursive walk scans the edges of its kinds, so the
+solution-only walks slowed by up to 50% in an earlier run. Giving framework calls their own edge kind leaves those
+scans exactly as large as before; a walk that starts at an external member seeds its callers through the `to_id`
+index instead. Indexing costs nothing measurable because the targets were already bound for the call edges.
+The graph gains 516 framework members for this repo; `Path.Combine(string, string)` is the most called, with 37
+callers.

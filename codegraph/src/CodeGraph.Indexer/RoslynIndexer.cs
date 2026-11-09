@@ -511,8 +511,14 @@ public sealed partial class RoslynIndexer
             IPropertySymbol property => property.OriginalDefinition,
             _ => null,
         };
-        if (target is null || !IsInSource(target) || IdOf(target) is not { } targetId || targetId == callerId)
+        if (target is null || IdOf(target) is not { } targetId || targetId == callerId)
         {
+            return;
+        }
+
+        if (!IsInSource(target))
+        {
+            AddExternal(callerId, target, targetId, origin);
             return;
         }
 
@@ -521,6 +527,37 @@ public sealed partial class RoslynIndexer
         {
             AddEdge(new GraphEdge(targetId, callerId, EdgeKind.TestedBy), origin);
         }
+    }
+
+    /// <summary>
+    /// A call into the framework or a NuGet package: an <see cref="NodeKind.External"/> node and a CallsExternal edge, so
+    /// "who calls File.Delete" and "who constructs HttpClient" are graph queries. The target is already bound
+    /// for the call, so this costs no extra semantic work. Delegate invocations are skipped (a Func's Invoke says
+    /// nothing about what runs), and so are TestedBy edges, since nobody asks which tests cover the framework.
+    /// </summary>
+    private void AddExternal(string callerId, ISymbol target, string targetId, string origin)
+    {
+        if (target is IMethodSymbol { MethodKind: MethodKind.DelegateInvoke or MethodKind.AnonymousFunction or MethodKind.LocalFunction })
+        {
+            return;
+        }
+
+        AddNode(new GraphNode(
+            targetId,
+            NodeKind.External,
+            target.Name,
+            target.ToDisplayString(),
+            $"{target.ToDisplayString(SignatureFormat)}  [{target.ContainingAssembly?.Name ?? "?"}]",
+            FilePath: null,
+            StartLine: 0,
+            EndLine: 0,
+            IsTest: false,
+            Accessibility: MapAccessibility(target.DeclaredAccessibility),
+            IsStatic: target.IsStatic,
+            IsAbstract: target.IsAbstract,
+            IsVirtual: target.IsVirtual,
+            MemberKind: target is IMethodSymbol m ? MapMemberKind(m) : MemberKind.Ordinary));
+        AddEdge(new GraphEdge(callerId, targetId, EdgeKind.CallsExternal), origin);
     }
 
     /// <summary>
