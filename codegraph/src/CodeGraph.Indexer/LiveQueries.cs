@@ -336,6 +336,14 @@ public static class LiveQueries
             Math.Round(clock.Elapsed.TotalSeconds, 2));
     }
 
+    /// <summary>Where each parameter of a method goes in its body; see <see cref="LiveDataFlowQuery"/>.</summary>
+    public static async Task<LiveDataFlow> DataFlowAsync(Solution solution, string symbolIdOrName, CancellationToken cancellationToken)
+    {
+        var symbol = (await ResolveAsync(solution, symbolIdOrName, cancellationToken)).FirstOrDefault()
+                     ?? throw new LiveException($"no symbol matches '{symbolIdOrName}'");
+        return await LiveDataFlowQuery.AnalyzeAsync(solution, symbol, cancellationToken);
+    }
+
     /// <summary>Changed lines between two texts. A rename never adds or removes a line, so lines pair up one to one.</summary>
     private static IReadOnlyList<LiveLineEdit> LineEdits(SourceText before, SourceText after)
     {

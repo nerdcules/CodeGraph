@@ -167,6 +167,33 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         }
     }
 
+    [McpServerTool(Name = "data_flow", ReadOnly = true, Idempotent = true)]
+    [Description("Where each parameter of a method goes inside its body: passed to which call and as which parameter, stored in which field or property, returned, captured by a lambda, or deciding a branch; locals derived from a parameter are followed too. Use before changing a parameter's type or meaning. One method deep; run it on a callee to go further. Needs the live daemon.")]
+    public Task<string> DataFlow(
+        [Description("Graph id of a method or constructor, e.g. M:N.Type.Method(System.String)")] string symbol,
+        CancellationToken cancellationToken = default) =>
+        Live("data_flow", new { symbol }, (LiveDataFlow d) =>
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"data flow in {d.Member}  {d.File}:{d.Line}");
+            if (d.Parameters.Count == 0) sb.AppendLine("(no parameters)");
+            foreach (var p in d.Parameters)
+            {
+                var facts = new[] { p.Read ? "read" : "never read", p.Written ? "reassigned" : null, p.Captured ? "captured" : null }.OfType<string>();
+                sb.AppendLine($"{p.Type} {p.Name}: {string.Join(", ", facts)}");
+                foreach (var flow in p.Flows)
+                {
+                    sb.Append("  ").Append(flow.Line).Append(": ").Append(flow.Detail);
+                    if (flow.Via is not null) sb.Append(" (via '").Append(flow.Via).Append("')");
+                    if (flow.TargetId is not null) sb.Append("  [").Append(flow.TargetId).Append(']');
+                    sb.AppendLine();
+                }
+            }
+
+            if (d.CapturedLocals.Count > 0) sb.AppendLine($"locals captured by lambdas: {string.Join(", ", d.CapturedLocals)}");
+            return sb.ToString();
+        }, cancellationToken);
+
     [McpServerTool(Name = "rename_preview", ReadOnly = true, Idempotent = true)]
     [Description("Preview a rename with Roslyn's renamer: every line that would change across the solution (declarations, references, interface implementations, overrides), plus any compile errors the rename would cause (name clashes). Nothing is written; apply the edits yourself. Needs the live daemon.")]
     public Task<string> RenamePreview(

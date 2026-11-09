@@ -391,3 +391,80 @@ public sealed class CheckChangeDeclarationTests
         return workspace.CurrentSolution;
     }
 }
+
+public sealed class DataFlowTests
+{
+    private const string Source = """
+        namespace N;
+        public class Repo
+        {
+            private string? _root;
+            public string? Last { get; set; }
+            public static void Write(string path, string text) { }
+            public string Save(string root, string name, int retries, string unused)
+            {
+                _root = root;
+                var path = System.IO.Path.Combine(root, name);
+                Write(path, "x");
+                foreach (var part in name.Split('/')) { Last = part; }
+                if (retries > 0) { System.Func<int> f = () => retries; f(); }
+                return path;
+            }
+            public int Twice(int x) => x * 2;
+        }
+        """;
+
+    [Fact]
+    public async Task Each_parameter_reports_where_its_value_goes_and_derived_locals_are_followed()
+    {
+        var flow = await Analyze("M:N.Repo.Save(System.String,System.String,System.Int32,System.String)");
+        var root = flow.Parameters.Single(p => p.Name == "root");
+        var name = flow.Parameters.Single(p => p.Name == "name");
+        var retries = flow.Parameters.Single(p => p.Name == "retries");
+        var unused = flow.Parameters.Single(p => p.Name == "unused");
+
+        Assert.Contains(root.Flows, f => f is { Kind: "stored", TargetId: "F:N.Repo._root" });
+        Assert.Contains(root.Flows, f => f.Kind == "argument" && f.Detail.Contains("Combine") && f.Detail.Contains("'path1'"));
+        Assert.Contains(root.Flows, f => f is { Kind: "local", Via: null } && f.Detail.Contains("'path'"));
+        // Through the local: path is passed to Write and returned.
+        Assert.Contains(root.Flows, f => f is { Kind: "argument", Via: "path", TargetId: "M:N.Repo.Write(System.String,System.String)" });
+        Assert.Contains(root.Flows, f => f is { Kind: "returned", Via: "path" });
+
+        Assert.Contains(name.Flows, f => f is { Kind: "stored", Via: "part", TargetId: "P:N.Repo.Last" });
+
+        Assert.True(retries.Captured);
+        Assert.Contains(retries.Flows, f => f.Kind == "branch");
+        Assert.Contains(retries.Flows, f => f.Kind == "captured");
+
+        Assert.False(unused.Read);
+        Assert.Empty(unused.Flows);
+    }
+
+    [Fact]
+    public async Task An_expression_bodied_member_returns_its_parameter_flow()
+    {
+        var flow = await Analyze("M:N.Repo.Twice(System.Int32)");
+
+        var x = Assert.Single(flow.Parameters);
+        Assert.Equal("returned", Assert.Single(x.Flows).Kind);
+    }
+
+    [Fact]
+    public async Task Rejects_a_member_that_is_not_a_method()
+    {
+        await Assert.ThrowsAsync<LiveException>(() => Analyze("P:N.Repo.Last"));
+    }
+
+    private static async Task<LiveDataFlow> Analyze(string id)
+    {
+        var workspace = new AdhocWorkspace();
+        var projectId = ProjectId.CreateNewId();
+        workspace.AddProject(ProjectInfo.Create(projectId, VersionStamp.Default, "Demo", "Demo", LanguageNames.CSharp,
+            filePath: Indexed.PathOf("Demo.csproj"),
+            documents: [DocumentInfo.Create(DocumentId.CreateNewId(projectId), "Repo.cs",
+                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(Source), VersionStamp.Default)), filePath: Indexed.PathOf("Repo.cs"))],
+            metadataReferences: Indexed.FrameworkReferences,
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)));
+        return await LiveQueries.DataFlowAsync(workspace.CurrentSolution, id, TestContext.Current.CancellationToken);
+    }
+}

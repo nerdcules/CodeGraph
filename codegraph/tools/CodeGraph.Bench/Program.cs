@@ -185,6 +185,11 @@ static async Task LiveRows(List<(string, string)> rows, string dbPath, GraphStor
         rows.Add(("live check_change, edited file", await MedianAsync(() => live.CallAsync<LiveCheck>("check_change", new { file = node.FilePath, text = text + $"\n// bench {Guid.NewGuid():n}\n" }), 3, warmups: 1)));
     }
 
+    if (store.MostCalled(100, 1, 0).Select(m => m.Method).FirstOrDefault(m => m.Id.Contains('(') && m.FilePath is not null && !m.IsTest) is { } withParameters)
+    {
+        rows.Add(("live data_flow (most-called method with parameters)", await MedianAsync(() => live.CallAsync<LiveDataFlow>("data_flow", new { symbol = withParameters.Id }), runs)));
+    }
+
     rows.Add(("live references, metadata symbol (System.IO.File)", await MedianAsync(() => live.CallAsync<LiveReferences>("references", new { symbol = "System.IO.File", limit = 50 }), runs)));
     rows.Add(("live diagnostics, whole solution", await MedianAsync(() => live.CallAsync<LiveDiagnostics>("diagnostics", new { includeWarnings = false, limit = 30 }), 3, warmups: 1)));
 }

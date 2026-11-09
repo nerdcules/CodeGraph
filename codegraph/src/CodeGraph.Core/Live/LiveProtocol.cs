@@ -149,3 +149,14 @@ public sealed record LiveRename(
     IReadOnlyList<LiveFileEdit> Files,
     IReadOnlyList<LiveDiagnostic> Conflicts,
     double Seconds);
+
+/// <summary>
+/// One place a parameter's value goes. <see cref="Kind"/> is <c>argument</c>, <c>stored</c>, <c>returned</c>,
+/// <c>captured</c>, <c>branch</c> or <c>local</c>; <see cref="Via"/> names the local it travelled through, if any.
+/// </summary>
+public sealed record LiveFlow(int Line, string Kind, string Detail, string? TargetId, string? Via);
+
+public sealed record LiveParameterFlow(string Name, string Type, bool Read, bool Written, bool Captured, IReadOnlyList<LiveFlow> Flows);
+
+/// <summary>Where each parameter of one method goes inside its body, from the semantic model.</summary>
+public sealed record LiveDataFlow(string Member, string? MemberId, string File, int Line, IReadOnlyList<LiveParameterFlow> Parameters, IReadOnlyList<string> CapturedLocals);

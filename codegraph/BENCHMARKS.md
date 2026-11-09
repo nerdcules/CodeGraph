@@ -191,3 +191,10 @@ files. About 2.5 s of each run is the MSBuild load, so the second compilation wa
 the saving grows with each extra target (an `net10.0;net10.0-android;net10.0-ios` app skips two of three).
 The trade-off: code that differs between targets under `#if` is indexed as the first target sees it.
 `--all-targets` restores the old behaviour.
+
+## Round 5: data_flow
+
+`data_flow` on the most-called method with parameters, through the daemon on this repo: **0.42 ms** median
+(7 runs). The same daemon's other live calls in that run: ping 0.25 ms, symbol_at 0.31 ms, source references
+7.1 ms, metadata references 4.3 ms, one-file diagnostics 0.39 ms, whole-solution diagnostics 37 ms,
+check_change 0.4–0.5 s.
