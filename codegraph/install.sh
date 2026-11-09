@@ -55,6 +55,22 @@ for project in src/CodeGraph.Indexer src/CodeGraph.Mcp; do
 done
 chmod +x "$install_dir/codegraph-index" "$install_dir/codegraph-mcp"
 
+# The executables find .NET through DOTNET_ROOT or the machine's default install location, not through PATH.
+# When dotnet comes from a version manager (mise, asdf) or a user-local install, the default location can be
+# missing or hold a runtime without ASP.NET Core, and codegraph-mcp then fails to start. Probe it; when only the
+# runtime of the dotnet on PATH works, the .mcp.json entry carries DOTNET_ROOT.
+step 'Checking the executables start'
+dotnet_root="$(cd "$(dirname "$(readlink -f "$(command -v dotnet)")")" && pwd)"
+mcp_dotnet_root=""
+if "$install_dir/codegraph-mcp" --version >/dev/null 2>&1 && "$install_dir/codegraph-index" --version >/dev/null 2>&1; then
+    echo "ok: codegraph $("$install_dir/codegraph-mcp" --version)"
+elif DOTNET_ROOT="$dotnet_root" "$install_dir/codegraph-mcp" --version >/dev/null 2>&1; then
+    mcp_dotnet_root="$dotnet_root"
+    echo "the default .NET location lacks a runtime codegraph needs; using DOTNET_ROOT=$dotnet_root (the dotnet on PATH)"
+else
+    echo "warning: codegraph-mcp does not start, even with DOTNET_ROOT=$dotnet_root. Run it by hand to see why." >&2
+fi
+
 if [ "$add_to_path" = true ]; then
     case ":$PATH:" in
         *":$install_dir:"*) ;;
@@ -73,15 +89,24 @@ echo "  $install_dir/codegraph-index"
 echo "  $install_dir/codegraph-mcp"
 echo
 echo 'Index a solution (writes <worktree>/.codegraph/graph.db; add .codegraph/ to .gitignore):'
+if [ -n "$mcp_dotnet_root" ]; then
+    echo "  export DOTNET_ROOT=\"$mcp_dotnet_root\"   # add to your shell profile; the executables need it"
+fi
 echo "  $install_dir/codegraph-index /path/to/App.sln          # once, then incremental"
 echo "  $install_dir/codegraph-index /path/to/App.sln --watch  # keep it fresh while you work"
 echo
 echo 'Put this .mcp.json in the repo root; the server finds the graph from its working directory:'
+if [ -n "$mcp_dotnet_root" ]; then
+    mcp_env=",
+      \"env\": { \"DOTNET_ROOT\": \"$mcp_dotnet_root\" }"
+else
+    mcp_env=""
+fi
 cat <<EOF
 {
   "mcpServers": {
     "codegraph": {
-      "command": "$install_dir/codegraph-mcp"
+      "command": "$install_dir/codegraph-mcp"$mcp_env
     }
   }
 }

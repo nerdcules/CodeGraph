@@ -86,6 +86,31 @@ if ($AddToPath) {
 $mcpExe = (Join-Path $InstallDir 'codegraph-mcp.exe') -replace '\\', '/'
 $indexExe = Join-Path $InstallDir 'codegraph-index.exe'
 
+# The executables find .NET through DOTNET_ROOT or the machine-wide install, not through PATH. With a user-local
+# or version-managed dotnet the machine-wide one can be missing or lack ASP.NET Core, and codegraph-mcp then fails
+# to start. Probe it; when only the runtime of the dotnet on PATH works, the .mcp.json entry carries DOTNET_ROOT.
+Step 'Checking the executables start'
+$dotnetRoot = Split-Path -Parent (Get-Command dotnet).Source
+$mcpDotnetRoot = $null
+& (Join-Path $InstallDir 'codegraph-mcp.exe') --version *> $null
+$mcpOk = $LASTEXITCODE -eq 0
+& $indexExe --version *> $null
+if ($mcpOk -and $LASTEXITCODE -eq 0) {
+    Write-Host "ok: codegraph $(& (Join-Path $InstallDir 'codegraph-mcp.exe') --version)"
+} else {
+    $saved = $env:DOTNET_ROOT
+    $env:DOTNET_ROOT = $dotnetRoot
+    & (Join-Path $InstallDir 'codegraph-mcp.exe') --version *> $null
+    $withRoot = $LASTEXITCODE -eq 0
+    $env:DOTNET_ROOT = $saved
+    if ($withRoot) {
+        $mcpDotnetRoot = $dotnetRoot -replace '\\', '/'
+        Write-Host "the machine-wide .NET lacks a runtime codegraph needs; using DOTNET_ROOT=$dotnetRoot (the dotnet on PATH)"
+    } else {
+        Write-Warning "codegraph-mcp.exe does not start, even with DOTNET_ROOT=$dotnetRoot. Run it by hand to see why."
+    }
+}
+
 Step 'Installed'
 Write-Host "  $indexExe"
 Write-Host "  $mcpExe"
@@ -95,7 +120,20 @@ Write-Host "  & '$indexExe' C:\path\to\App.sln          # once, then incremental
 Write-Host "  & '$indexExe' C:\path\to\App.sln --watch  # keep it fresh while you work"
 Write-Host ''
 Write-Host 'Put this .mcp.json in the repo root; the server finds the graph from its working directory:'
-Write-Host @"
+if ($mcpDotnetRoot) {
+    Write-Host "  (set DOTNET_ROOT=$mcpDotnetRoot in your user environment too, for running codegraph-index by hand)"
+    Write-Host @"
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "$mcpExe",
+      "env": { "DOTNET_ROOT": "$mcpDotnetRoot" }
+    }
+  }
+}
+"@
+} else {
+    Write-Host @"
 {
   "mcpServers": {
     "codegraph": {
@@ -104,3 +142,4 @@ Write-Host @"
   }
 }
 "@
+}

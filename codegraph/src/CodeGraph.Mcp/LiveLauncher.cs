@@ -12,6 +12,14 @@ namespace CodeGraph.Mcp;
 /// </summary>
 public static class LiveLauncher
 {
+    /// <summary>The .NET root this process runs on: <c>&lt;root&gt;/shared/Microsoft.NETCore.App/&lt;version&gt;/</c>, three levels up.</summary>
+    public static string? RuntimeRoot()
+    {
+        var runtime = new DirectoryInfo(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory().TrimEnd('/', '\\'));
+        var root = runtime.Parent?.Parent?.Parent;
+        return root is not null && Directory.Exists(Path.Combine(root.FullName, "shared")) ? root.FullName : null;
+    }
+
     public static string? FindIndexer()
     {
         var exe = OperatingSystem.IsWindows() ? "codegraph-index.exe" : "codegraph-index";
@@ -63,6 +71,13 @@ public static class LiveLauncher
             RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(solution)!,
         };
+        // The indexer's apphost looks for .NET in DOTNET_ROOT or the machine's default location, not on PATH, so
+        // under a version manager it can pick a different runtime or none. Point it at the one running this server.
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOTNET_ROOT")) && RuntimeRoot() is { } root)
+        {
+            info.Environment["DOTNET_ROOT"] = root;
+        }
+
         info.ArgumentList.Add(solution);
         info.ArgumentList.Add("--db");
         info.ArgumentList.Add(dbPath);

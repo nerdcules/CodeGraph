@@ -8,6 +8,14 @@ using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 
+if (args is ["--version"])
+{
+    Console.WriteLine(typeof(RoslynIndexer).Assembly
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0] ?? "0.0.0");
+    return 0;
+}
+
 // Flags may come in any order around the one positional argument: `codegraph-index --watch App.sln` works.
 string? targetArg = null;
 string? dbArg = null;

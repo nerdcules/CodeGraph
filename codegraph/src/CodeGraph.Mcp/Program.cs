@@ -9,6 +9,13 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 
+// --version answers without touching a graph: install scripts use it to check the executable starts at all.
+if (args is ["--version"])
+{
+    Console.WriteLine(ServerVersion());
+    return 0;
+}
+
 // Parse positional db path and optional --web PORT flag.
 var dbPath = (string?)null;
 int? webPort = null;
