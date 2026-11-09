@@ -204,8 +204,10 @@ The renderer is `ConsoleStatus`; the indexer reports through `IndexProgress` (`P
 ```
 
 Both scripts build with warnings as errors, run the test suite (`-SkipTests` / `--skip-tests`
-to skip), publish `codegraph-index` and `codegraph-mcp` into the install folder, and print the
-`.mcp.json` below with the right path filled in. Re-run to upgrade. A running `codegraph-mcp`
+to skip), publish `codegraph-index` and `codegraph-mcp` into the install folder, check that both
+start (`--version`), and print the `.mcp.json` below with the right path filled in. When dotnet
+comes from a version manager such as mise or asdf, the executables cannot find it through `PATH`;
+the scripts detect that and add `"env": { "DOTNET_ROOT": "…" }` to the printed entry. Re-run to upgrade. A running `codegraph-mcp`
 holds its files open, so the script stops rather than overwrite it; close the Claude Code
 sessions using it, or pass `-Force` / `--force` to stop them.
 

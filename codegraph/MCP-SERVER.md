@@ -296,5 +296,6 @@ file list whenever the database's mtime changes, regardless of its 3 s cache.
 | `this needs the live daemon, which is not running` | Start `codegraph-index <solution> --watch`, or call `live_status` with `start=true`. |
 | `live daemon: the solution is still loading` | The daemon is in its MSBuild load; retry in a few seconds. |
 | Two solutions in one worktree | Give each its own graph with `codegraph-index … --db <path>` and pass that path (or `CODEGRAPH_DB`) to the server. |
+| `You must install or update .NET to run this application` | The executables look for .NET in `DOTNET_ROOT` or the machine's default location, not on `PATH`; with a version-managed dotnet (mise, asdf) that location may lack ASP.NET Core. The install scripts detect this and add `"env": { "DOTNET_ROOT": … }` to the printed `.mcp.json`; set the same variable in your shell to run `codegraph-index` by hand. `codegraph-mcp --version` is a quick check. |
 | The server will not start after an upgrade | A running `codegraph-mcp` held its files open during publish. Close Claude Code sessions and re-run the install script, or use `-Force` / `--force`. |
 | Server logs | stderr. Claude Code shows them under the MCP server's output. |
