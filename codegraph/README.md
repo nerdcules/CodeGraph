@@ -115,7 +115,10 @@ dotnet run --project src/CodeGraph.Indexer -- /path/to/GymX.sln
 ```
 
 Progress and warnings go to stderr. Multi-target projects (net10.0-android;net10.0-ios)
-open as one project per TFM with the same name; nodes and edges dedupe, first one wins.
+open as one project per target framework. The first target is compiled and walked in full; later
+targets walk only files the first did not have (TFM-conditional files), and are not compiled at all
+when there are none. Code that differs between targets under `#if` is therefore indexed as the first
+target sees it; `--all-targets` compiles every target.
 
 ### Incremental re-indexing
 

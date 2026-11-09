@@ -141,19 +141,52 @@ public sealed partial class RoslynIndexer
 
         var files = selectFiles?.Invoke(_documentPaths);
         _projectCount = projects.Count;
+
+        // A multi-target project opens once per target framework, each a full compilation, and the first one wins
+        // for every node anyway. So a later target walks only the documents the first did not have (files under a
+        // TFM-specific condition); when there are none it is not compiled at all. --all-targets walks every target,
+        // for code that differs between targets under #if.
+        var firstTarget = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var project in projects)
         {
             cancellationToken.ThrowIfCancellationRequested();
             _projectOrdinal++;
-            await IndexProjectAsync(project, solution, cancellationToken, files);
+            var scope = files;
+            IReadOnlyCollection<string>? containOnly = null;
+            if (!AllTargets && project.FilePath is { } projectFile)
+            {
+                var documents = project.Documents.Select(d => d.FilePath).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (firstTarget.TryGetValue(projectFile, out var seen))
+                {
+                    // The shared files still belong to this target's project node; that needs no compilation.
+                    var shared = documents.Where(seen.Contains).Where(d => files is null || files.Contains(d)).ToList();
+                    documents.ExceptWith(seen);
+                    if (files is not null)
+                    {
+                        documents.IntersectWith(files);
+                    }
+
+                    scope = documents;
+                    containOnly = shared;
+                }
+                else
+                {
+                    firstTarget[projectFile] = documents;
+                }
+            }
+
+            await IndexProjectAsync(project, solution, cancellationToken, scope, containOnly);
         }
     }
+
+    /// <summary>Walk every target framework of a multi-target project, not only the first; see <see cref="IndexAsync(Solution, Func{IReadOnlyCollection{string}, IReadOnlySet{string}?}?, CancellationToken)"/>.</summary>
+    public bool AllTargets { get; init; }
 
     /// <summary>
     /// Indexes one already-open Roslyn project, optionally only the documents in <paramref name="files"/>.
     /// Internal so tests can drive it without MSBuild.
     /// </summary>
-    internal async Task IndexProjectAsync(Project project, Solution solution, CancellationToken cancellationToken, IReadOnlySet<string>? files = null)
+    internal async Task IndexProjectAsync(Project project, Solution solution, CancellationToken cancellationToken, IReadOnlySet<string>? files = null, IReadOnlyCollection<string>? containOnly = null)
     {
         var counter = _projectCount > 0 ? $"[{_projectOrdinal}/{_projectCount}] " : "";
         _log($"{counter}project: {project.Name}");
@@ -177,6 +210,11 @@ public sealed partial class RoslynIndexer
         AddNode(new GraphNode(frameworkRootId, NodeKind.Project, "framework", $"{project.Name}.framework",
             Signature: null, FilePath: project.FilePath, StartLine: 0, EndLine: 0, IsTest: false));
         AddEdge(new GraphEdge(projectId, frameworkRootId, EdgeKind.Contains), projectOrigin);
+
+        foreach (var path in containOnly ?? [])
+        {
+            AddEdge(new GraphEdge(projectId, $"F:{path}", EdgeKind.Contains), path);
+        }
 
         var documents = project.Documents
             .Where(d => d.FilePath is not null && (files is null || files.Contains(d.FilePath)))

@@ -119,3 +119,71 @@ public sealed class ProgressTests
         return projectId;
     }
 }
+
+/// <summary>A multi-target project opens once per target framework; only the first is compiled for shared files.</summary>
+public sealed class MultiTargetTests
+{
+    [Fact]
+    public async Task A_later_target_walks_only_its_own_files_and_is_not_compiled_when_it_has_none()
+    {
+        var progress = new List<IndexProgress>();
+        var indexer = new RoslynIndexer(_ => { }, progress.Add);
+
+        await indexer.IndexAsync(Solution(extraInSecond: true), null, TestContext.Current.CancellationToken);
+
+        // First target: both shared files. Second: only the file its condition adds. Third: nothing, so no compile.
+        Assert.Equal([("Demo(net10.0)", 2), ("Demo(net9.0)", 1)], progress.Where(p => p.File == 0).Select(p => (p.ProjectName, p.Files)));
+        var nodes = indexer.Nodes.Select(n => n.Id).ToHashSet();
+        Assert.Contains("T:N.A", nodes);
+        Assert.Contains("T:N.OnlyNet9", nodes);
+    }
+
+    [Fact]
+    public async Task All_targets_walks_every_target_in_full()
+    {
+        var progress = new List<IndexProgress>();
+        var indexer = new RoslynIndexer(_ => { }, progress.Add) { AllTargets = true };
+
+        await indexer.IndexAsync(Solution(extraInSecond: true), null, TestContext.Current.CancellationToken);
+
+        Assert.Equal([("Demo(net10.0)", 2), ("Demo(net9.0)", 3), ("Demo(net8.0)", 2)], progress.Where(p => p.File == 0).Select(p => (p.ProjectName, p.Files)));
+    }
+
+    [Fact]
+    public async Task The_graph_is_the_same_as_walking_every_target_when_the_code_does_not_differ()
+    {
+        var once = new RoslynIndexer(_ => { });
+        var all = new RoslynIndexer(_ => { }) { AllTargets = true };
+        await once.IndexAsync(Solution(extraInSecond: false), null, TestContext.Current.CancellationToken);
+        await all.IndexAsync(Solution(extraInSecond: false), null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(all.Nodes.Select(n => n.Id).Order(), once.Nodes.Select(n => n.Id).Order());
+        Assert.Equal(all.Edges.Select(e => e.ToString()).Order(), once.Edges.Select(e => e.ToString()).Order());
+    }
+
+    /// <summary>One csproj opened as three targets, the way MSBuildWorkspace opens a multi-target project.</summary>
+    private static Solution Solution(bool extraInSecond)
+    {
+        var workspace = new AdhocWorkspace();
+        (string, string)[] shared =
+        [
+            ("A.cs", "namespace N; public class A { public void Run() { new B().Work(); } }"),
+            ("B.cs", "namespace N; public class B { public void Work() { } }"),
+        ];
+        foreach (var tfm in new[] { "net10.0", "net9.0", "net8.0" })
+        {
+            var files = tfm == "net9.0" && extraInSecond ? [.. shared, ("OnlyNet9.cs", "namespace N; public class OnlyNet9 { }")] : shared;
+            var projectId = ProjectId.CreateNewId();
+            workspace.AddProject(ProjectInfo.Create(
+                projectId, VersionStamp.Default, $"Demo({tfm})", "Demo", LanguageNames.CSharp,
+                filePath: Indexed.PathOf("Demo.csproj"),
+                documents: files.Select(f => DocumentInfo.Create(DocumentId.CreateNewId(projectId), f.Item1,
+                    loader: TextLoader.From(TextAndVersion.Create(SourceText.From(f.Item2), VersionStamp.Default)),
+                    filePath: Indexed.PathOf(f.Item1))),
+                metadataReferences: Indexed.FrameworkReferences,
+                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)));
+        }
+
+        return workspace.CurrentSolution;
+    }
+}

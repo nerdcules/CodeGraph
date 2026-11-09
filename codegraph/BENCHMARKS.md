@@ -175,3 +175,19 @@ scans exactly as large as before; a walk that starts at an external member seeds
 index instead. Indexing costs nothing measurable because the targets were already bound for the call edges.
 The graph gains 516 framework members for this repo; `Path.Combine(string, string)` is the most called, with 37
 callers.
+
+## Round 4: multi-target projects compiled once
+
+A scratch copy of `CodeGraph.Core` targeting `net10.0;net10.0-windows`, with one file compiled only for the
+Windows target. Full index, three runs each, same machine.
+
+| mode | graph | full index (3 runs) |
+|---|---|---|
+| `--all-targets` (the old behaviour) | 421 nodes, 1252 edges | 3.7 s, 3.7 s, 3.7 s |
+| default: later targets walk only their own files | 421 nodes, 1252 edges | 3.3 s, 3.2 s, 3.2 s |
+
+The graphs are identical: the Windows-only file and its call are indexed, and both project nodes contain their
+files. About 2.5 s of each run is the MSBuild load, so the second compilation was most of the remaining time;
+the saving grows with each extra target (an `net10.0;net10.0-android;net10.0-ios` app skips two of three).
+The trade-off: code that differs between targets under `#if` is indexed as the first target sees it.
+`--all-targets` restores the old behaviour.

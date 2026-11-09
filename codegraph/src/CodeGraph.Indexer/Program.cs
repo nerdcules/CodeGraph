@@ -22,6 +22,7 @@ string? dbArg = null;
 string? logArg = null;
 double? idleExitMinutes = null;
 var forceFull = false;
+var allTargets = false;
 var watch = false;
 var usage = false;
 for (var i = 0; i < args.Length; i++)
@@ -33,6 +34,9 @@ for (var i = 0; i < args.Length; i++)
             break;
         case "--full":
             forceFull = true;
+            break;
+        case "--all-targets":
+            allTargets = true;
             break;
         case "--watch":
             watch = true;
@@ -67,6 +71,7 @@ if (usage || targetArg is null)
     Console.Error.WriteLine("       default db: <git worktree root>/.codegraph/graph.db (solution dir outside a repo)");
     Console.Error.WriteLine("       re-walks only files whose hash changed, plus files that depend on them;");
     Console.Error.WriteLine("       --full rebuilds everything");
+    Console.Error.WriteLine("       --all-targets compiles every target framework of a multi-target project, not only the first");
     Console.Error.WriteLine("       --watch keeps running: the solution is loaded once, then every save re-indexes");
     Console.Error.WriteLine("               incrementally without the MSBuild load, and the loaded solution answers");
     Console.Error.WriteLine("               the MCP server's live questions over a local pipe (Ctrl+C to stop)");
@@ -96,6 +101,7 @@ var dbPath = dbArg is not null
 // MSBuildLocator must run before the JIT touches any Microsoft.CodeAnalysis.MSBuild type,
 // which is why the actual work lives in a separate, non-inlined method.
 MSBuildLocator.RegisterDefaults();
+IndexOptions.AllTargets = allTargets;
 return watch ? await WatchAsync(target, dbPath, forceFull, idleExitMinutes) : await RunAsync(target, dbPath, forceFull);
 
 [MethodImpl(MethodImplOptions.NoInlining)]
@@ -296,7 +302,7 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
     var walked = -1;
 
     ConsoleStatus.Phase("indexing", "stamping files");
-    var indexer = new RoslynIndexer(Log, progress => ConsoleStatus.Detail(progress.ToString()));
+    var indexer = new RoslynIndexer(Log, progress => ConsoleStatus.Detail(progress.ToString())) { AllTargets = IndexOptions.AllTargets };
     await indexer.IndexAsync(solution, documents =>
     {
         foreach (var path in documents)
@@ -403,6 +409,12 @@ static bool SameStat(FileStamp stamp, string path)
 {
     var info = new FileInfo(path);
     return info.Exists && info.Length == stamp.Size && info.LastWriteTimeUtc.Ticks == stamp.MtimeTicks;
+}
+
+/// <summary>Command-line choices every index pass of this process shares.</summary>
+internal static class IndexOptions
+{
+    public static bool AllTargets { get; set; }
 }
 
 /// <summary>What the last run left behind, read through a short-lived read-only connection.</summary>
