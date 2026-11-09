@@ -30,6 +30,16 @@ public static class LiveLauncher
 
     public static string LogPath(string dbPath) => Path.Combine(Path.GetDirectoryName(dbPath)!, "daemon.log");
 
+    /// <summary>A daemon this server starts stops itself after this long with no save and no tool call.</summary>
+    public const int IdleExitMinutes = 120;
+
+    /// <summary>
+    /// <c>CODEGRAPH_DAEMON=auto</c>: the server starts a daemon for its graph on the first tool call when none runs.
+    /// Off by default, since a daemon holds a loaded solution in memory.
+    /// </summary>
+    public static bool AutoStart =>
+        string.Equals(Environment.GetEnvironmentVariable("CODEGRAPH_DAEMON")?.Trim(), "auto", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Spawns the daemon. Returns a message for the model: started, or why not.</summary>
     public static string Start(string dbPath, string? solution)
     {
@@ -59,6 +69,8 @@ public static class LiveLauncher
         info.ArgumentList.Add("--watch");
         info.ArgumentList.Add("--log");
         info.ArgumentList.Add(log);
+        info.ArgumentList.Add("--idle-exit");
+        info.ArgumentList.Add(IdleExitMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         try
         {
@@ -67,7 +79,7 @@ public static class LiveLauncher
             // With --log the child writes nothing to these, but drain them anyway so it can never block on a full pipe.
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            return $"started codegraph-index --watch (pid {process.Id}); it loads the solution first, which takes seconds to a minute. Log: {log}. Call live_status again to see when it is ready.";
+            return $"started codegraph-index --watch (pid {process.Id}); it loads the solution first, which takes seconds to a minute, and stops itself after {IdleExitMinutes} min unused. Log: {log}. Call live_status again to see when it is ready.";
         }
         catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
         {

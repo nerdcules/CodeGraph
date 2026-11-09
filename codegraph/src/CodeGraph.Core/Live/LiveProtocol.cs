@@ -81,7 +81,10 @@ public sealed record LiveStatus(
     double? LastIndexSeconds,
     int Pending,
     bool Indexing,
-    bool Loading = false);
+    bool Loading = false,
+    long? WorkingSetBytes = null,
+    long? ManagedBytes = null,
+    double? IdleExitMinutes = null);
 
 /// <summary>A source position, one-based like editors show it.</summary>
 public sealed record LivePosition(string File, int Line, int Column);

@@ -230,7 +230,15 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         sb.AppendLine($"solution    : {s.Solution} ({s.Projects} project(s), {s.Documents} document(s))");
         sb.AppendLine($"graph       : {s.DbPath}");
         sb.AppendLine($"last index  : {(s.LastIndexedAt is { } t ? t.ToString("u") : "?")}{(s.LastIndexSeconds is { } sec ? string.Create(CultureInfo.InvariantCulture, $" ({sec}s)") : "")}");
-        sb.AppendLine($"state       : {(s.Indexing ? "indexing" : s.Pending > 0 ? $"{s.Pending} change(s) pending" : "idle, graph matches the working tree")}");
+        sb.AppendLine($"state       : {(s.Loading ? "loading the solution; live tools answer once it is loaded" : s.Indexing ? "indexing" : s.Pending > 0 ? $"{s.Pending} change(s) pending" : "idle, graph matches the working tree")}");
+        if (s.WorkingSetBytes is { } ws)
+        {
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"memory      : {ws / 1048576} MB working set, {(s.ManagedBytes ?? 0) / 1048576} MB managed heap"));
+        }
+
+        sb.AppendLine(s.IdleExitMinutes is { } idle
+            ? string.Create(CultureInfo.InvariantCulture, $"lifetime    : stops after {idle:0.#} min with no save and no tool call")
+            : "lifetime    : runs until stopped");
         return sb.ToString();
     }
 

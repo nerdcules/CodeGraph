@@ -101,6 +101,21 @@ public sealed class WatchLoop
         _wake.Release();
     }
 
+    /// <summary>How long without activity before <see cref="IsIdle"/> says so; null never exits.</summary>
+    public TimeSpan? IdleExit { get; init; }
+
+    /// <summary>
+    /// True when nothing has happened for <see cref="IdleExit"/>: no save, no pass, no live request (the MCP server
+    /// pings before every tool call, so a session in use keeps its daemon). Never while loading or indexing.
+    /// </summary>
+    public bool IsIdle(DateTime now)
+    {
+        lock (_lock)
+        {
+            return IdleExit is { } idle && _current is not null && !_indexing && _pending.Count == 0 && now - LastActivity >= idle;
+        }
+    }
+
     public LiveStatus Status()
     {
         lock (_lock)
@@ -117,7 +132,10 @@ public sealed class WatchLoop
                 _lastIndexSeconds,
                 _pending.Count,
                 _indexing,
-                Loading: current is null);
+                Loading: current is null,
+                WorkingSetBytes: Environment.WorkingSet,
+                ManagedBytes: GC.GetTotalMemory(forceFullCollection: false),
+                IdleExitMinutes: IdleExit?.TotalMinutes);
         }
     }
 

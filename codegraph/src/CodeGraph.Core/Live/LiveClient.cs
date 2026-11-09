@@ -19,6 +19,45 @@ public sealed class LiveClient(string dbPath)
 
     public string PipeName { get; } = LivePipe.NameFor(dbPath);
 
+    /// <summary>
+    /// Makes this graph's pipe name available to a new daemon. Returns the status of a daemon that already answers
+    /// on it (the caller should not start a second one), or null once the name is free. A socket file that exists
+    /// but refuses connections was left by a daemon that was killed; it is removed so the new one can bind.
+    /// </summary>
+    public async Task<LiveStatus?> ClaimAsync(Action<string>? log = null, CancellationToken cancellationToken = default)
+    {
+        if (!LivePipe.Exists(PipeName))
+        {
+            return null;
+        }
+
+        if (await PingAsync(cancellationToken) is { } running)
+        {
+            return running;
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            var socket = LivePipe.SocketPath(PipeName);
+            try
+            {
+                File.Delete(socket);
+                log?.Invoke($"live: removed a stale socket left by a stopped daemon ({socket})");
+            }
+            catch (IOException e)
+            {
+                log?.Invoke($"live: could not remove stale socket {socket}: {e.Message}");
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                log?.Invoke($"live: could not remove stale socket {socket}: {e.Message}");
+            }
+        }
+
+        Interlocked.Exchange(ref _deadUntilTicks, 0);
+        return null;
+    }
+
     /// <summary>True when a daemon answers on this graph's pipe.</summary>
     public async Task<LiveStatus?> PingAsync(CancellationToken cancellationToken = default)
     {

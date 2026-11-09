@@ -190,3 +190,86 @@ public sealed class WatchLoopTests : IAsyncDisposable
         _passes.Enqueue(((await document.GetTextAsync(cancellationToken)).ToString(), full));
     }
 }
+
+public sealed class DaemonLifecycleTests
+{
+    [Fact]
+    public async Task Claim_detects_a_running_daemon_and_frees_a_name_nobody_uses()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"), "graph.db");
+        var client = new LiveClient(dbPath);
+        Assert.Null(await client.ClaimAsync(cancellationToken: TestContext.Current.CancellationToken));
+
+        using var stop = new CancellationTokenSource();
+        var serving = new LiveServer(LivePipe.NameFor(dbPath), (_, _) =>
+            Task.FromResult(LiveResponse.Ok(new LiveStatus(4242, "s", "g", 0, 0, DateTime.UnixEpoch, null, null, 0, false)))).RunAsync(stop.Token);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        var running = await client.ClaimAsync(cancellationToken: TestContext.Current.CancellationToken);
+        stop.Cancel();
+        await serving;
+
+        Assert.Equal(4242, running?.Pid);
+    }
+
+    [Fact]
+    public async Task Claim_removes_a_socket_left_by_a_killed_daemon()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var dbPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"), "graph.db");
+        var socket = LivePipe.SocketPath(LivePipe.NameFor(dbPath));
+        // Bound and never listening: a file that refuses connections, which is what a kill -9 leaves. It stays
+        // open for the test, because .NET unlinks a bound socket's file when the socket is disposed.
+        using var orphan = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.Unix, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Unspecified);
+        orphan.Bind(new System.Net.Sockets.UnixDomainSocketEndPoint(socket));
+        Assert.True(File.Exists(socket));
+
+        var log = new List<string>();
+        Assert.Null(await new LiveClient(dbPath).ClaimAsync(log.Add, TestContext.Current.CancellationToken));
+
+        Assert.False(File.Exists(socket));
+        Assert.Contains(log, l => l.Contains("stale socket"));
+    }
+
+    [Fact]
+    public void Idle_means_quiet_for_the_whole_window_and_never_while_loading_or_without_a_limit()
+    {
+        var loop = new WatchLoop(_ => Task.FromResult<Solution>(null!), (_, _, _) => Task.CompletedTask, _ => null, _ => { }, "s.sln", "g.db")
+        {
+            IdleExit = TimeSpan.FromMinutes(5),
+        };
+        var noLimit = new WatchLoop(_ => Task.FromResult<Solution>(null!), (_, _, _) => Task.CompletedTask, _ => null, _ => { }, "s.sln", "g.db");
+
+        Assert.False(loop.IsIdle(DateTime.UtcNow.AddHours(1)), "still loading: nothing indexed yet");
+        Assert.False(noLimit.IsIdle(DateTime.UtcNow.AddDays(1)));
+    }
+
+    [Fact]
+    public async Task A_loaded_loop_goes_idle_after_the_window_and_activity_resets_it()
+    {
+        using var stop = new CancellationTokenSource();
+        var workspace = new AdhocWorkspace();
+        var loop = new WatchLoop(_ => Task.FromResult(workspace.CurrentSolution), (_, _, _) => Task.CompletedTask, _ => null, _ => { }, "s.sln", "g.db")
+        {
+            IdleExit = TimeSpan.FromMinutes(5),
+        };
+        var running = loop.RunAsync(false, stop.Token);
+        await loop.Ready.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.False(loop.IsIdle(DateTime.UtcNow));
+        Assert.True(loop.IsIdle(DateTime.UtcNow.AddMinutes(6)));
+        var status = loop.Status();
+        Assert.Equal(5, status.IdleExitMinutes);
+        Assert.True(status.WorkingSetBytes > 0);
+
+        loop.Touch();
+        Assert.False(loop.IsIdle(DateTime.UtcNow.AddMinutes(4)));
+
+        stop.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+}

@@ -88,10 +88,11 @@ public sealed class LivePipeTests
 
         var dbPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"), "graph.db");
         var socket = LivePipe.SocketPath(LivePipe.NameFor(dbPath));
-        using (var orphan = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.Unix, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Unspecified))
-        {
-            orphan.Bind(new System.Net.Sockets.UnixDomainSocketEndPoint(socket)); // bound, never listening: what a kill -9 leaves
-        }
+        // Bound and never listening: a file that refuses connections, which is what a kill -9 leaves. It stays
+        // open for the test, because .NET unlinks a bound socket's file when the socket is disposed.
+        using var orphan = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.Unix, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Unspecified);
+        orphan.Bind(new System.Net.Sockets.UnixDomainSocketEndPoint(socket));
+        Assert.True(File.Exists(socket));
 
         try
         {

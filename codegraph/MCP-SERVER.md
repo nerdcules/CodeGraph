@@ -79,6 +79,7 @@ codegraph-mcp [path-to-graph.db] [--web PORT]
 | `--web PORT` | also serve the graph visualiser on `http://localhost:PORT` |
 | `CODEGRAPH_TELEMETRY=off` | keep usage counts in memory only; see [Telemetry](#telemetry) |
 | `CODEGRAPH_INDEXER` | path of `codegraph-index` for `live_status start=true`, when it is not next to the server; see [Live daemon](#live-daemon) |
+| `CODEGRAPH_DAEMON=auto` | start the live daemon on the first tool call when none runs; it stops itself after 120 min unused |
 
 ### What clients show for the server
 
@@ -253,9 +254,21 @@ none runs; a socket left by a killed daemon costs one 150 ms timeout and is then
 
 Start it in a terminal, or let the server start it: `live_status` with `start=true` launches `codegraph-index`
 from next to the server executable (or `CODEGRAPH_INDEXER`), with `--log .codegraph/daemon.log` so nothing it
-prints can touch the MCP protocol on stdio. The solution load takes seconds to a minute; `live_status` says
-when it is ready. Stop it with Ctrl+C or by killing the process; the pipe disappears with it and the server
-falls back to graph-only answers with `STALE` marks.
+prints can touch the MCP protocol on stdio. With `CODEGRAPH_DAEMON=auto` in the server's environment the first
+tool call does that by itself. The pipe answers from the start; during the solution load, which takes seconds
+to a minute, `live_status` says "loading" and the graph tools answer from the last graph without waiting.
+
+Lifecycle:
+
+- **One per graph.** A second `--watch` on the same graph sees the first answering and exits.
+- **Clean stop.** Ctrl+C, SIGTERM and SIGHUP stop it gracefully and take the pipe down. A daemon killed with
+  SIGKILL leaves its socket file; the next daemon removes it, and meanwhile the server's probe spends one
+  150 ms timeout on it and then remembers it as dead for 3 s.
+- **Idle exit.** `--idle-exit <minutes>` stops it after that long with no save and no live request. The server
+  pings before every tool call, so a session in use keeps its daemon. Daemons the server starts use 120 min.
+- **Memory.** `live_status` shows the working set and managed heap; this repo's daemon uses about 220 MB.
+
+The server falls back to graph-only answers with `STALE` marks whenever no daemon is running.
 
 What it costs: the memory of a loaded Roslyn solution (hundreds of MB for a large one) in one process per
 worktree. What it gives: positions, metadata symbols, diagnostics, the what-if compile, and answers that

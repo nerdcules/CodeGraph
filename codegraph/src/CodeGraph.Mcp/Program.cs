@@ -1,5 +1,6 @@
 using CodeGraph.Core;
 using CodeGraph.Core.Live;
+using CodeGraph.Mcp;
 using CodeGraph.Web;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -72,6 +73,9 @@ var flushWait = TimeSpan.FromSeconds(8);
 // when the daemon is about to write.
 var anchor = new GraphAnchor(dbPath);
 
+// CODEGRAPH_DAEMON=auto: the first tool call starts a daemon when none runs; once per server process.
+var autoStart = LiveLauncher.AutoStart ? 1 : 0;
+
 void AddGraph(IServiceCollection services)
 {
     // Read-only and per request: DuckDB lets one process write or many read, so a store held open for the
@@ -131,7 +135,13 @@ void AddGraph(IServiceCollection services)
             anchor.ReleaseIfSwapped();
             // The daemon hears every save the moment it lands, before the (cached) freshness check would notice
             // it, so ask it first; its idle answer costs a fifth of a millisecond.
-            if (await live.PingAsync(cancellationToken) is { } daemon
+            var daemonStatus = await live.PingAsync(cancellationToken);
+            if (daemonStatus is null && Interlocked.Exchange(ref autoStart, 0) == 1)
+            {
+                Console.Error.WriteLine("codegraph: " + LiveLauncher.Start(dbPath, freshness.Check().Meta.GetValueOrDefault(CodeGraph.Core.MetaKeys.Solution)));
+            }
+
+            if (daemonStatus is { Loading: false } daemon
                 && (daemon.Pending > 0 || daemon.Indexing || freshness.Check().IsStale))
             {
                 // The daemon's write needs the file to itself; holding the anchor through the flush would deadlock it.

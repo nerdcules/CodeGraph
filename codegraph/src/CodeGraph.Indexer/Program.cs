@@ -12,6 +12,7 @@ using Microsoft.CodeAnalysis.MSBuild;
 string? targetArg = null;
 string? dbArg = null;
 string? logArg = null;
+double? idleExitMinutes = null;
 var forceFull = false;
 var watch = false;
 var usage = false;
@@ -33,6 +34,10 @@ for (var i = 0; i < args.Length; i++)
             break;
         case "--log" when i + 1 < args.Length:
             logArg = args[++i];
+            break;
+        case "--idle-exit" when i + 1 < args.Length && double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var minutes) && minutes > 0:
+            idleExitMinutes = minutes;
+            i++;
             break;
         case var flag when flag.StartsWith('-'):
             Console.Error.WriteLine($"unknown option: {flag}");
@@ -58,6 +63,7 @@ if (usage || targetArg is null)
     Console.Error.WriteLine("               incrementally without the MSBuild load, and the loaded solution answers");
     Console.Error.WriteLine("               the MCP server's live questions over a local pipe (Ctrl+C to stop)");
     Console.Error.WriteLine("       --log <file>  append the log there instead of stderr (for a daemon started in the background)");
+    Console.Error.WriteLine("       --idle-exit <minutes>  with --watch, stop after that long with no save and no live request");
     return 1;
 }
 
@@ -82,7 +88,7 @@ var dbPath = dbArg is not null
 // MSBuildLocator must run before the JIT touches any Microsoft.CodeAnalysis.MSBuild type,
 // which is why the actual work lives in a separate, non-inlined method.
 MSBuildLocator.RegisterDefaults();
-return watch ? await WatchAsync(target, dbPath, forceFull) : await RunAsync(target, dbPath, forceFull);
+return watch ? await WatchAsync(target, dbPath, forceFull, idleExitMinutes) : await RunAsync(target, dbPath, forceFull);
 
 [MethodImpl(MethodImplOptions.NoInlining)]
 static async Task<int> RunAsync(string target, string dbPath, bool forceFull)
@@ -112,7 +118,7 @@ static async Task<MSBuildWorkspace> OpenAsync(string target, CancellationToken c
 /// <see cref="WatchLoop"/>; this wires it to the file watcher, MSBuild, the console and the pipe.
 /// </summary>
 [MethodImpl(MethodImplOptions.NoInlining)]
-static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
+static async Task<int> WatchAsync(string target, string dbPath, bool forceFull, double? idleExitMinutes)
 {
     using var stopping = new CancellationTokenSource();
     Console.CancelKeyPress += (_, e) =>
@@ -120,6 +126,26 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
         e.Cancel = true;
         stopping.Cancel();
     };
+
+    // `kill`, a service manager or a closing terminal stop it as cleanly as Ctrl+C: the pipe is taken down,
+    // rather than left as a socket file for the next daemon to clear.
+    using var terminate = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGTERM, context =>
+    {
+        context.Cancel = true;
+        stopping.Cancel();
+    });
+    using var hangup = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGHUP, context =>
+    {
+        context.Cancel = true;
+        stopping.Cancel();
+    });
+
+    // One daemon per graph: a second would fight the first for the write lock and the pipe name.
+    if (await new LiveClient(dbPath).ClaimAsync(Log, stopping.Token) is { } running)
+    {
+        Log($"a daemon (pid {running.Pid}) already serves {dbPath}; not starting another");
+        return 0;
+    }
 
     var root = Worktree.RootOf(Path.GetDirectoryName(target)!) ?? Path.GetDirectoryName(target)!;
     MSBuildWorkspace? workspace = null;
@@ -143,7 +169,10 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
         }
     }
 
-    var loop = new WatchLoop(Load, Index, ReadOrNull, Log, target, dbPath);
+    var loop = new WatchLoop(Load, Index, ReadOrNull, Log, target, dbPath)
+    {
+        IdleExit = idleExitMinutes is { } idle ? TimeSpan.FromMinutes(idle) : null,
+    };
 
     using var watcher = new FileSystemWatcher(root)
     {
@@ -166,9 +195,27 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
     };
 
     // The pipe answers from the first moment, so live_status can say "loading" during the MSBuild load.
-    var live = new LiveServer(LivePipe.NameFor(dbPath), new LiveService(() => loop.Current, loop.Status, loop.FlushAsync).HandleAsync, Log);
+    var service = new LiveService(() => loop.Current, loop.Status, loop.FlushAsync);
+    var live = new LiveServer(LivePipe.NameFor(dbPath), (request, cancellationToken) =>
+    {
+        loop.Touch();
+        return service.HandleAsync(request, cancellationToken);
+    }, Log);
     var serving = live.RunAsync(stopping.Token);
     Log($"live: answering on pipe {live.PipeName}");
+
+    var idleWatch = loop.IdleExit is null ? Task.CompletedTask : Task.Run(async () =>
+    {
+        using var tick = new PeriodicTimer(TimeSpan.FromSeconds(Math.Clamp(loop.IdleExit.Value.TotalSeconds / 10, 1, 30)));
+        while (await tick.WaitForNextTickAsync(stopping.Token))
+        {
+            if (loop.IsIdle(DateTime.UtcNow))
+            {
+                Log($"idle for {loop.IdleExit.Value.TotalMinutes:0.#} min; stopping");
+                await stopping.CancelAsync();
+            }
+        }
+    });
 
     // Watch from before the load: a save during it lands in the first incremental pass instead of being lost.
     watcher.EnableRaisingEvents = true;
@@ -186,6 +233,14 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
         ConsoleStatus.Clear();
         await stopping.CancelAsync();
         await serving;
+        try
+        {
+            await idleWatch;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
         workspace?.Dispose();
     }
 
