@@ -14,8 +14,9 @@ tool with its arguments, output format, staleness, telemetry and troubleshooting
 src/CodeGraph.Core      model + DuckDB store + traversals + full-text search + telemetry
 src/CodeGraph.Indexer   codegraph-index: Roslyn extractor → graph.db (one-shot or --watch) + console progress
 src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
-src/CodeGraph.Web       graph visualiser UI, embedded into codegraph-mcp --web
-tests/CodeGraph.Tests   store, search, telemetry, indexer extraction, watch-mode sync
+src/CodeGraph.Web       graph visualiser UI and its API routes, embedded into codegraph-mcp --web
+tests/CodeGraph.Tests   store, search, telemetry, indexer extraction, watch-mode sync, live daemon
+tools/CodeGraph.Bench   codegraph-bench: the numbers in BENCHMARKS.md
 install.ps1 / .sh       build, test, publish both executables, print .mcp.json
 setup.ps1 / .sh         pull latest, build, write .mcp.json as `dotnet run`, index (no publish)
 uninstall.ps1 / .sh     remove the install folder, PATH entry, a repo's .mcp.json entry and graph
@@ -44,7 +45,8 @@ beat an early version of this tool on "which tests reach X": a call to an interf
 member counts as a call to every implementation and override (`Runner.Run` has a
 member-level `Implements` edge to `IRunner.Run`, and `callers_of`, `covered_by`, `tests_for`,
 `impact_of` and the coverage tools follow it); reading or writing a property, field or event
-is a `Calls` edge, so `IStaging.Enabled` has callers; and top-level statements are indexed
+is a `Calls` edge, so `IStaging.Enabled` has callers; a `using`, `foreach` or `await` is a call to
+the Dispose, enumerator or awaiter members it binds to; and top-level statements are indexed
 as the program's `Main`, so DI registrations and the lambdas that construct services belong
 to a node and reach what they call.
 
@@ -102,7 +104,7 @@ dotnet test
 
 `global.json` selects the Microsoft.Testing.Platform runner, which .NET 10 requires for
 xunit.v3. The suite needs no database, no SDK discovery and no network: the store tests run
-against a throwaway SQLite file, and the indexer tests drive the real extractor over an
+against a throwaway DuckDB file, and the indexer tests drive the real extractor over an
 `AdhocWorkspace`, so calls resolve through a genuine semantic model without MSBuild.
 
 ## Index a solution
@@ -149,6 +151,21 @@ next answer uses the new graph.
 The incremental contract is tested directly: v1 full, then an edit and an incremental run,
 must equal v2 full (`IncrementalIndexTests`).
 
+### Live daemon
+
+The watch process is also a daemon. The Roslyn solution it holds answers questions the graph cannot, over a
+local pipe named after the graph file, and the MCP server asks it before every answer whether saves are
+pending so that `STALE` all but disappears while it runs. Five tools use it: `symbol_at` (a file position to
+a graph id), `live_references` (every use of a symbol, including framework and NuGet members the graph does
+not hold), `diagnostics` (compiler errors for the working tree), `check_change` (a what-if compile of a
+proposed file, in memory, reporting what it would break) and `live_status` (which can also start the daemon).
+The graph stays the system of record for transitive and aggregate questions, where it is orders of magnitude
+faster than asking Roslyn repeatedly; see [MCP-SERVER.md](MCP-SERVER.md#live-daemon) and
+[BENCHMARKS.md](BENCHMARKS.md).
+
+A full rebuild writes a fresh file and swaps it in, and every incremental write checkpoints, so the graph file
+no longer grows with each re-index.
+
 The swap itself is a bulk load. Every table (nodes, edges, edge origins, file stamps, search
 terms) goes through DuckDB's appender into a connection-local staging table and is merged in
 with one statement per table: nodes and stamps update in place, duplicate edges and origins
@@ -173,11 +190,6 @@ It ticks on a timer, so a long MSBuild load or compilation still visibly moves. 
 to the console width and cleared before every log line, between watch-mode runs and on exit.
 When stderr is redirected (a pipe, a test runner, a log file) only the log lines are written.
 The renderer is `ConsoleStatus`; the indexer reports through `IndexProgress` (`ProgressTests`).
-
-DuckDB allows one writer *or* many readers per file. The indexer only takes the write lock
-for the final swap, which is one transaction, and the MCP server opens the graph read-only
-per tool call. So re-indexing works while Claude sessions are running, and each side
-retries briefly if it hits the other's lock.
 
 ## Install
 

@@ -78,6 +78,7 @@ codegraph-mcp [path-to-graph.db] [--web PORT]
 | `CODEGRAPH_DB` | environment alternative to the positional path |
 | `--web PORT` | also serve the graph visualiser on `http://localhost:PORT` |
 | `CODEGRAPH_TELEMETRY=off` | keep usage counts in memory only; see [Telemetry](#telemetry) |
+| `CODEGRAPH_INDEXER` | path of `codegraph-index` for `live_status start=true`, when it is not next to the server; see [Live daemon](#live-daemon) |
 
 ### What clients show for the server
 
@@ -125,11 +126,18 @@ STALE come from changed files, and new files are missing. Refresh with: codegrap
 
 A moved `HEAD` is reported too. `index_status` shows the full picture.
 
+When the [live daemon](#live-daemon) is running, the server asks it before every answer whether saves are
+pending, waits for them to be indexed (up to 8 s), and answers from the refreshed graph; `STALE` then only
+appears when no daemon is running.
+
 ## Tools
 
-All 28 tools are read-only and idempotent. `id` always means a node id from `find_symbol` or
+All 33 tools are read-only and idempotent. Five of them (`live_status`, `symbol_at`, `live_references`,
+`diagnostics`, `check_change`) answer from the live Roslyn solution and need the [daemon](#live-daemon).
+`id` always means a node id from `find_symbol` or
 `search_code`. Depth and limit arguments are clamped to the ranges shown. `Calls` edges cover
-method calls, constructions, and property, field and event accesses; the caller, test and
+method calls, constructions, property, field and event accesses, and the members a `using`,
+`foreach` or `await` calls without naming them (Dispose, GetEnumerator, GetAwaiter); the caller, test and
 coverage walks treat a call to an interface or base member as a call to every implementation
 and override.
 
@@ -177,8 +185,8 @@ and override.
 
 | tool | arguments | answers |
 |---|---|---|
-| `dead_code_report` | `includePublicApi` (false), `limit` (1–500, 100), `offset` | Methods with no callers, adjusted for interface dispatch and framework entry points. |
-| `explain_reachability` | `id` | Why a method counts as reachable, or why it is a candidate. |
+| `dead_code_report` | `includePublicApi` (false), `limit` (1–500, 100), `offset` | Methods with no callers that also implement or override nothing that is called, and are not framework entry points. |
+| `explain_reachability` | `id` | Why a method counts as reachable (callers, framework root, or the called interface/base member it implements or overrides), or why it is a candidate. |
 | `list_roots` | `limit` (1–500, 100) | Framework-invoked entry points, e.g. Azure Functions triggers. |
 
 ### Projects
@@ -187,6 +195,16 @@ and override.
 |---|---|---|
 | `depends_on` | `id` (a project), `depth` (1–10, 5) | Projects this project references, transitively. |
 | `dependents_of` | `id` (a project), `depth` (1–10, 5) | Projects that reference this one. |
+
+### Live (from the Roslyn solution held by `codegraph-index --watch`)
+
+| tool | arguments | answers |
+|---|---|---|
+| `live_status` | `start` (false) | Whether a daemon holds this solution: pid, projects, last index, pending saves. `start=true` launches one. |
+| `symbol_at` | `file`, `line`, `column` | The symbol under a position: its graph id, the enclosing member, the type of the expression there. Metadata symbols are reported as not in the graph. |
+| `live_references` | `symbol` (id or dotted name), `limit` (1–200, 50) | Every use of a symbol in the solution, including framework and NuGet members the graph does not hold ("who calls `File.Delete`"). Each row names the enclosing member and shows the line. |
+| `diagnostics` | `file?`, `includeWarnings` (false), `limit` (1–100, 30) | Compiler errors (and warnings) for one file or the whole solution as it is on disk. |
+| `check_change` | `file`, `text` | What-if compile: the proposed full text of a file is applied in memory, its project and every dependent are compiled, and the new and fixed errors come back. Nothing is written. |
 
 ### The server itself
 
@@ -222,6 +240,24 @@ Each call is appended as one JSON line to `.codegraph/telemetry.jsonl` beside th
 them instead would have cost. `usage_stats` turns the file into per-tool totals. The file
 never leaves the machine; `CODEGRAPH_TELEMETRY=off` disables it.
 
+## Live daemon
+
+`codegraph-index <solution> --watch` is the daemon. Besides re-indexing on every save, it keeps the loaded
+Roslyn solution and answers the five live tools over a named pipe (a Unix domain socket on Linux and macOS, a
+real pipe on Windows) whose name is derived from the graph's path, so no port or discovery file is involved and
+one daemon serves every MCP server reading that graph. A request is one JSON line each way over a fresh
+connection; a daemon that is not running fails in microseconds, so the server probes it before every call.
+
+Start it in a terminal, or let the server start it: `live_status` with `start=true` launches `codegraph-index`
+from next to the server executable (or `CODEGRAPH_INDEXER`), with `--log .codegraph/daemon.log` so nothing it
+prints can touch the MCP protocol on stdio. The solution load takes seconds to a minute; `live_status` says
+when it is ready. Stop it with Ctrl+C or by killing the process; the pipe disappears with it and the server
+falls back to graph-only answers with `STALE` marks.
+
+What it costs: the memory of a loaded Roslyn solution (hundreds of MB for a large one) in one process per
+worktree. What it gives: positions, metadata symbols, diagnostics, the what-if compile, and answers that
+reflect the working tree within one debounce of a save. [BENCHMARKS.md](BENCHMARKS.md) has the numbers.
+
 ## Concurrency
 
 DuckDB allows one writer or many readers per file. The server opens the graph read-only for
@@ -237,6 +273,8 @@ the other's lock. The freshness check reloads its file list when the database's 
 | Every answer starts with `⚠ STALE INDEX` | Files changed since the index. Re-run `codegraph-index`, or leave `--watch` running. |
 | `existing graph is from another solution or schema version; rebuilding` | Expected after upgrading codegraph or pointing the indexer at a different solution. The full rebuild runs once. |
 | `this graph has no full-text index` | The graph predates `search_code`. Run `codegraph-index --full`. |
+| `this needs the live daemon, which is not running` | Start `codegraph-index <solution> --watch`, or call `live_status` with `start=true`. |
+| `live daemon: the solution is still loading` | The daemon is in its MSBuild load; retry in a few seconds. |
 | Two solutions in one worktree | Give each its own graph with `codegraph-index … --db <path>` and pass that path (or `CODEGRAPH_DB`) to the server. |
 | The server will not start after an upgrade | A running `codegraph-mcp` held its files open during publish. Close Claude Code sessions and re-run the install script, or use `-Force` / `--force`. |
 | Server logs | stderr. Claude Code shows them under the MCP server's output. |

@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Text;
 using CodeGraph.Core;
+using CodeGraph.Core.Live;
 using ModelContextProtocol.Server;
 
 namespace CodeGraph.Mcp;
@@ -11,8 +13,150 @@ namespace CodeGraph.Mcp;
 /// Rows whose file was edited since indexing end in <c>STALE</c>; the call-tool filter in Program adds the summary line.
 /// </summary>
 [McpServerToolType]
-public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry)
+public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live)
 {
+    // ── Live tools: answered by the Roslyn solution held by codegraph-index --watch, not by the graph ──────────
+
+    [McpServerTool(Name = "live_status", ReadOnly = true, Idempotent = true)]
+    [Description("Whether a live daemon (codegraph-index --watch) holds this solution in memory. When it does, symbol_at, live_references, diagnostics and check_change work, and the graph is refreshed within a second of every save. Pass start=true to launch one.")]
+    public async Task<string> LiveStatus(
+        [Description("Start the daemon if none is running, default false")] bool start = false,
+        CancellationToken cancellationToken = default)
+    {
+        var status = await live.PingAsync(cancellationToken);
+        if (status is not null)
+        {
+            return Describe(status);
+        }
+
+        var solution = freshness.Check().Meta.GetValueOrDefault(MetaKeys.Solution);
+        var how = $"no live daemon for {freshness.DbPath}. Start one with: {LiveLauncher.Command(solution)} (or call live_status with start=true)";
+        return start ? LiveLauncher.Start(freshness.DbPath, solution) : how;
+    }
+
+    [McpServerTool(Name = "symbol_at", ReadOnly = true, Idempotent = true)]
+    [Description("The symbol at a file position (1-based line and column) from the live Roslyn solution: its graph id to use with the other tools, the enclosing member, and the type of the expression there. Needs the live daemon (see live_status).")]
+    public Task<string> SymbolAt(
+        [Description("Absolute path of the source file")] string file,
+        [Description("Line, 1-based")] int line,
+        [Description("Column, 1-based")] int column,
+        CancellationToken cancellationToken = default) =>
+        Live("symbol_at", new LivePosition(Path.GetFullPath(file), line, column), (LiveSymbol s) =>
+        {
+            var sb = new StringBuilder();
+            sb.Append(s.Kind.ToLowerInvariant()).Append("  ").Append(s.Display);
+            if (s.File is not null) sb.Append("  ").Append(s.File).Append(':').Append(s.Line);
+            if (s.Id is not null) sb.Append("  [").Append(s.Id).Append(']');
+            sb.AppendLine(s.InSource ? "" : "  (metadata: not in the graph; use live_references to find its uses)");
+            if (s.ExpressionType is not null) sb.AppendLine($"expression type: {s.ExpressionType}");
+            if (s.EnclosingMemberId is not null) sb.AppendLine($"inside: [{s.EnclosingMemberId}]");
+            return sb.ToString();
+        }, cancellationToken);
+
+    [McpServerTool(Name = "live_references", ReadOnly = true, Idempotent = true)]
+    [Description("Every use of a symbol in the solution, from the live Roslyn solution, including symbols the graph does not hold: framework and NuGet members ('who calls File.Delete', 'where is HttpClient.SendAsync used'). Takes a graph id or a dotted name (System.IO.File.Delete matches all overloads). Needs the live daemon.")]
+    public Task<string> LiveReferences(
+        [Description("Graph id (M:System.IO.File.Delete(System.String)) or dotted name (System.IO.File.Delete)")] string symbol,
+        [Description("Max rows, default 50, max 200")] int limit = 50,
+        CancellationToken cancellationToken = default) =>
+        Live("references", new { symbol, limit = Math.Clamp(limit, 1, 200) }, (LiveReferences r) =>
+        {
+            if (r.Total == 0) return $"{r.Symbol}: no references in the solution";
+            var sb = new StringBuilder();
+            sb.Append($"{r.Total} reference(s) to {r.Symbol}");
+            if (r.References.Count < r.Total) sb.Append($", showing {r.References.Count}");
+            sb.AppendLine(r.InSource ? ":" : " (metadata symbol):");
+            foreach (var reference in r.References)
+            {
+                sb.Append("  ").Append(reference.EnclosingMember ?? "(file level)").Append("  ").Append(reference.File).Append(':').Append(reference.Line);
+                if (reference.EnclosingMemberId is not null) sb.Append("  [").Append(reference.EnclosingMemberId).Append(']');
+                sb.AppendLine();
+                sb.Append("      ").AppendLine(reference.Text);
+            }
+
+            return sb.ToString();
+        }, cancellationToken);
+
+    [McpServerTool(Name = "diagnostics", ReadOnly = true, Idempotent = true)]
+    [Description("Compiler errors (and optionally warnings) for one file or the whole solution as it is on disk right now, from the live Roslyn solution. Needs the live daemon.")]
+    public Task<string> Diagnostics(
+        [Description("Absolute path of a source file; omit for the whole solution")] string? file = null,
+        [Description("Include warnings, default false")] bool includeWarnings = false,
+        [Description("Max rows, default 30, max 100")] int limit = 30,
+        CancellationToken cancellationToken = default) =>
+        Live("diagnostics", new { file = file is null ? null : Path.GetFullPath(file), includeWarnings, limit = Math.Clamp(limit, 1, 100) }, (LiveDiagnostics d) =>
+        {
+            var scope = file is null ? "solution" : Path.GetFileName(file);
+            if (d.Items.Count == 0) return $"{scope}: no errors{(includeWarnings ? " or warnings" : "")}";
+            var sb = new StringBuilder();
+            sb.AppendLine($"{scope}: {d.Errors} error(s), {d.Warnings} warning(s){(d.Items.Count < d.Errors + d.Warnings ? $", showing {d.Items.Count}" : "")}");
+            foreach (var item in d.Items) sb.AppendLine(Format(item));
+            return sb.ToString();
+        }, cancellationToken);
+
+    [McpServerTool(Name = "check_change", ReadOnly = true, Idempotent = true)]
+    [Description("What-if compile: the full new text of one file is applied to the live Roslyn solution in memory, the file's project and everything depending on it are compiled, and the new and fixed errors are reported. Nothing is written to disk. Use before editing a shared file. Needs the live daemon.")]
+    public Task<string> CheckChange(
+        [Description("Absolute path of the file (existing, or new inside a project directory)")] string file,
+        [Description("The complete proposed contents of the file")] string text,
+        CancellationToken cancellationToken = default) =>
+        Live("check_change", new { file = Path.GetFullPath(file), text }, (LiveCheck c) =>
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"compiled {c.ProjectsCompiled.Count} project(s) in {c.Seconds}s ({string.Join(", ", c.ProjectsCompiled)}): {c.ErrorsBefore} error(s) before, {c.ErrorsAfter} after"));
+            if (c.NewErrors.Count == 0 && c.FixedErrors.Count == 0)
+            {
+                sb.AppendLine(c.ErrorsAfter == 0 ? "the change compiles cleanly" : "no new errors; the existing ones remain");
+            }
+
+            if (c.NewErrors.Count > 0)
+            {
+                sb.AppendLine($"new errors ({c.NewErrors.Count}):");
+                foreach (var e in c.NewErrors) sb.AppendLine(Format(e));
+            }
+
+            if (c.FixedErrors.Count > 0)
+            {
+                sb.AppendLine($"fixed errors ({c.FixedErrors.Count}):");
+                foreach (var e in c.FixedErrors) sb.AppendLine(Format(e));
+            }
+
+            return sb.ToString();
+        }, cancellationToken);
+
+    private async Task<string> Live<T>(string method, object parameters, Func<T, string> render, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return render(await live.CallAsync<T>(method, parameters, cancellationToken));
+        }
+        catch (LiveException e)
+        {
+            return $"live daemon: {e.Message}";
+        }
+        catch (Exception e) when (e is IOException or TimeoutException or UnauthorizedAccessException)
+        {
+            var solution = freshness.Check().Meta.GetValueOrDefault(MetaKeys.Solution);
+            return $"this needs the live daemon, which is not running for {freshness.DbPath}. Start it with: {LiveLauncher.Command(solution)} (or live_status with start=true), then retry.";
+        }
+    }
+
+    private static string Describe(LiveStatus s)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"live daemon : running (pid {s.Pid}) since {s.StartedAt:u}");
+        sb.AppendLine($"solution    : {s.Solution} ({s.Projects} project(s), {s.Documents} document(s))");
+        sb.AppendLine($"graph       : {s.DbPath}");
+        sb.AppendLine($"last index  : {(s.LastIndexedAt is { } t ? t.ToString("u") : "?")}{(s.LastIndexSeconds is { } sec ? string.Create(CultureInfo.InvariantCulture, $" ({sec}s)") : "")}");
+        sb.AppendLine($"state       : {(s.Indexing ? "indexing" : s.Pending > 0 ? $"{s.Pending} change(s) pending" : "idle, graph matches the working tree")}");
+        return sb.ToString();
+    }
+
+    private static string Format(LiveDiagnostic d) =>
+        $"  {d.Severity.ToLowerInvariant()} {d.Id}: {d.Message}{(d.File is not null ? $"  {d.File}:{d.Line}" : "")}";
+
+    // ── Graph tools: answered from the DuckDB graph ────────────────────────────────────────────────────────
     [McpServerTool(Name = "search_code", ReadOnly = true, Idempotent = true)]
     [Description("Where's the code that does X: full-text search over names, signatures, comments, string literals and body identifiers of every type and member. Use for intent-style questions ('retry failed uploads', 'parse the config file') when you don't know a symbol name; use find_symbol when you do.")]
     public string SearchCode(
@@ -368,7 +512,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "dead_code_report", ReadOnly = true, Idempotent = true)]
-    [Description("DI-aware and framework-aware dead-code candidates. Adjusts 'never called' with interface dispatch and framework entrypoint roots.")]
+    [Description("Dispatch-aware and framework-aware dead-code candidates: methods with no callers that also implement or override nothing that is called, and are not framework entry points.")]
     public string DeadCodeReport(
         [Description("Include public/protected API methods in analysis. Default false (focus on private/internal).")]
         bool includePublicApi = false,
@@ -378,11 +522,11 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         var (summary, candidates) = store.DeadCodeReport(includePublicApi, Math.Clamp(limit, 1, 500), Math.Max(0, offset));
 
         var sb = new StringBuilder();
-        sb.AppendLine("dead code report (DI + framework aware)");
+        sb.AppendLine("dead code report (dispatch + framework aware)");
         sb.AppendLine();
         sb.AppendLine($"total methods considered     : {summary.TotalMethods}");
         sb.AppendLine($"directly uncalled            : {summary.DirectlyUncalled}");
-        sb.AppendLine($"DI dispatch likely reachable : {summary.DiLikelyUsed}");
+        sb.AppendLine($"reachable via dispatch       : {summary.DiLikelyUsed}");
         sb.AppendLine($"framework entrypoints        : {summary.FrameworkEntrypoints}");
         sb.AppendLine($"likely dead                  : {summary.LikelyDead}");
         sb.AppendLine();
@@ -427,7 +571,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "explain_reachability", ReadOnly = true, Idempotent = true)]
-    [Description("Explain why a symbol appears reachable or dead-candidate (direct calls, framework roots, DI/interface dispatch heuristics).")]
+    [Description("Explain why a method counts as reachable or as a dead-code candidate: direct callers, framework entry point, or an interface/base member it implements or overrides that has callers.")]
     public string ExplainReachability([Description("Node id from find_symbol")] string id)
     {
         var node = store.GetNode(id);
@@ -485,17 +629,13 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         var node = store.GetNode(id);
         if (node is null) return NotFound(id);
 
-        var referrers = store.EdgesTo(id)
-            .Where(e => e.Kind == EdgeKind.References)
-            .Select(e => e.Source)
-            .ToList();
-        if (referrers.Count == 0)
+        var shown = store.ReferencesTo(id, Math.Clamp(limit, 1, 1000));
+        if (shown.Total == 0)
             return $"{node.FullName}: no references in the indexed source";
 
-        var shown = referrers.Take(Math.Clamp(limit, 1, 1000)).ToList();
         var sb = new StringBuilder();
-        sb.AppendLine($"{referrers.Count} reference(s) to {node.FullName}{(shown.Count < referrers.Count ? $", showing {shown.Count}" : "")}:");
-        sb.Append(Format(shown.Select(n => (n, n.Signature))));
+        sb.AppendLine($"{shown.Total} reference(s) to {node.FullName}{(shown.Nodes.Count < shown.Total ? $", showing {shown.Nodes.Count}" : "")}:");
+        sb.Append(Format(shown.Nodes.Select(n => (n, n.Signature))));
         return sb.ToString();
     }
 
@@ -510,14 +650,14 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [Description("Projects (and their transitive dependencies) that this project references.")]
     public string DependsOn(
         [Description("Node id from find_symbol (a Project node)")] string id,
-        [Description("Max hops, 1-20, default 5")] int depth = 5) =>
+        [Description("Max hops, 1-10, default 5")] int depth = 5) =>
         Traversal(id, store.Walk(id, [nameof(EdgeKind.DependsOn)], inbound: false, Math.Clamp(depth, 1, 10)), "dependencies");
 
     [McpServerTool(Name = "dependents_of", ReadOnly = true, Idempotent = true)]
     [Description("Projects that depend on this project, directly or transitively.")]
     public string DependentsOf(
         [Description("Node id from find_symbol (a Project node)")] string id,
-        [Description("Max hops, 1-20, default 5")] int depth = 5) =>
+        [Description("Max hops, 1-10, default 5")] int depth = 5) =>
         Traversal(id, store.Walk(id, [nameof(EdgeKind.DependsOn)], inbound: true, Math.Clamp(depth, 1, 10)), "dependents");
 
     [McpServerTool(Name = "neighbors", ReadOnly = true, Idempotent = true)]

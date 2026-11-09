@@ -61,6 +61,12 @@ public sealed class GraphStore : IDisposable
     /// </summary>
     public static GraphStore Open(string dbPath, bool readOnly, TimeSpan wait)
     {
+        // A missing file is not a lock: fail now instead of spinning out the whole wait.
+        if (readOnly && !File.Exists(dbPath))
+        {
+            throw new FileNotFoundException("No code graph at this path; run codegraph-index first.", dbPath);
+        }
+
         var deadline = DateTime.UtcNow + wait;
         while (true)
         {
@@ -163,6 +169,10 @@ public sealed class GraphStore : IDisposable
         }
 
         transaction.Commit();
+
+        // Every re-index deletes and re-inserts rows; without a checkpoint the freed blocks stay in the write-ahead
+        // log's shadow and the file grows by a few MB per run, for as long as a --watch session lasts.
+        Execute("CHECKPOINT;");
     }
 
     /// <summary>Index metadata: schema version, solution, git commit, time. Empty for a database from before metadata existed.</summary>
@@ -511,18 +521,20 @@ public sealed class GraphStore : IDisposable
         string nameMatch = "Contains",
         int offset = 0)
     {
+        // `_` and `%` are wildcards to ILIKE but ordinary characters in identifiers (Save_works, <Main>$).
+        var literal = EscapeLike(query);
         var pattern = nameMatch.ToLowerInvariant() switch
         {
-            "startswith" => $"{query}%",
-            "endswith"   => $"%{query}",
-            "exact"      => query,
-            _            => $"%{query}%",  // contains
+            "startswith" => $"{literal}%",
+            "endswith"   => $"%{literal}",
+            "exact"      => literal,
+            _            => $"%{literal}%",  // contains
         };
         using var command = _connection.CreateCommand();
         command.CommandText =
             $"""
              SELECT {NodeColumns} FROM nodes
-             WHERE (name ILIKE $pattern OR full_name ILIKE $pattern)
+             WHERE (name ILIKE $pattern ESCAPE '\' OR full_name ILIKE $pattern ESCAPE '\')
                AND ($kind IS NULL OR kind = $kind)
                AND ($type_kind IS NULL OR type_kind = $type_kind)
                AND ($accessibility IS NULL OR accessibility = $accessibility)
@@ -673,6 +685,37 @@ public sealed class GraphStore : IDisposable
         return ReadEdgeNodes(command);
     }
 
+    /// <summary>
+    /// Members and types that mention type <paramref name="id"/>, nearest file first, with the total before the
+    /// cap so the caller can say "showing n of m" without pulling every row of a widely used type.
+    /// </summary>
+    public (IReadOnlyList<GraphNode> Nodes, int Total) ReferencesTo(string id, int limit)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT {QualifiedNodeColumns}, COUNT(*) OVER () AS total
+             FROM edges e
+             JOIN nodes n ON n.id = e.from_id
+             WHERE e.to_id = $id AND e.kind = 'References'
+             ORDER BY n.file_path, n.start_line, n.full_name
+             LIMIT $limit;
+             """;
+        command.Parameters.Add(P("id", id));
+        command.Parameters.Add(P("limit", Math.Max(1, limit)));
+
+        var nodes = new List<GraphNode>();
+        var total = 0;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            nodes.Add(ReadNode(reader));
+            total = reader.GetInt32(reader.FieldCount - 1);
+        }
+
+        return (nodes, total);
+    }
+
     /// <summary>All edges arriving at <paramref name="id"/>, with the source node resolved.</summary>
     public IReadOnlyList<(EdgeKind Kind, GraphNode Source)> EdgesTo(string id)
     {
@@ -744,19 +787,19 @@ public sealed class GraphStore : IDisposable
         return (reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2));
     }
 
-    /// <summary>All methods ranked by direct caller count, paged.</summary>
+    /// <summary>All methods ranked by direct caller count, paged. Ties break by name so pages are stable.</summary>
     public IReadOnlyList<(GraphNode Method, int CallerCount)> MostCalled(int limit, int minCallers, int offset)
     {
         using var command = _connection.CreateCommand();
         command.CommandText =
             $"""
-             SELECT {NodeColumns}, COUNT(e.from_id) AS caller_count
-             FROM nodes
-             LEFT JOIN edges e ON e.to_id = id AND e.kind = 'Calls'
-             WHERE kind = 'Method'
-             GROUP BY {NodeColumns}
+             SELECT {QualifiedNodeColumns}, COUNT(e.from_id) AS caller_count
+             FROM nodes n
+             LEFT JOIN edges e ON e.to_id = n.id AND e.kind = 'Calls'
+             WHERE n.kind = 'Method'
+             GROUP BY {GroupByNodeColumns}
              HAVING COUNT(e.from_id) >= $min_callers
-             ORDER BY caller_count DESC
+             ORDER BY caller_count DESC, n.full_name
              LIMIT $limit OFFSET $offset;
              """;
         command.Parameters.Add(P("min_callers", minCallers));
@@ -837,7 +880,10 @@ public sealed class GraphStore : IDisposable
     }
 
     /// <summary>
-    /// Methods that appear never called in source, adjusted for interface dispatch and framework entrypoints.
+    /// Methods that appear never called in source, adjusted for dispatch and framework entrypoints. A member
+    /// that implements or overrides a called member counts as called (the indexer's member-level Implements
+    /// and Overrides edges, followed transitively), so an explicit interface implementation or an override two
+    /// levels down is not reported just because nothing names it directly.
     /// </summary>
     public (DeadCodeSummary Summary, IReadOnlyList<DeadCodeCandidate> Candidates) DeadCodeReport(
         bool includePublicApi = false,
@@ -850,10 +896,8 @@ public sealed class GraphStore : IDisposable
 
         var baseCte =
             $"""
-             WITH methods AS (
-               SELECT n.id, n.name, n.full_name, n.file_path, n.start_line, n.end_line, n.accessibility,
-                      n.kind, n.is_test, n.member_kind, n.type_kind, n.is_static, n.is_abstract,
-                      n.is_virtual, n.is_sealed, n.is_async, n.is_override
+             WITH RECURSIVE methods AS (
+               SELECT n.id, n.accessibility
                FROM nodes n
                WHERE n.kind = 'Method'
                  AND n.member_kind = 'Ordinary'
@@ -872,32 +916,11 @@ public sealed class GraphStore : IDisposable
                FROM edges
                WHERE kind = 'InvokedByFramework'
              ),
-             impl_pairs AS (
-               SELECT e.from_id AS class_id, e.to_id AS iface_id
-               FROM edges e
-               JOIN nodes c ON c.id = e.from_id AND c.kind = 'Type' AND c.type_kind = 'Class'
-               JOIN nodes i ON i.id = e.to_id AND i.kind = 'Type' AND i.type_kind = 'Interface'
-               WHERE e.kind = 'Implements'
-             ),
-             class_methods AS (
-               SELECT p.class_id, p.iface_id, m.id AS class_method_id, m.name AS method_name
-               FROM impl_pairs p
-               JOIN edges ce ON ce.kind = 'Contains' AND ce.from_id = p.class_id
-               JOIN nodes m ON m.id = ce.to_id AND m.kind = 'Method' AND m.member_kind = 'Ordinary'
-             ),
-             interface_methods AS (
-               SELECT p.iface_id, im.id AS interface_method_id, im.name AS method_name
-               FROM impl_pairs p
-               JOIN edges ce ON ce.kind = 'Contains' AND ce.from_id = p.iface_id
-               JOIN nodes im ON im.id = ce.to_id AND im.kind = 'Method' AND im.member_kind = 'Ordinary'
-             ),
-             di_dispatch_used AS (
-               SELECT DISTINCT cm.class_method_id AS id
-               FROM class_methods cm
-               JOIN interface_methods im
-                 ON im.iface_id = cm.iface_id
-                AND im.method_name = cm.method_name
-               JOIN callers c ON c.id = im.interface_method_id
+             dispatch_used(id) AS (
+               SELECT id FROM callers
+               UNION
+               SELECT s.next FROM dispatch_used d
+               JOIN ({DispatchDown}) s ON s.at = d.id
              )
              """;
 
@@ -913,7 +936,7 @@ public sealed class GraphStore : IDisposable
                SUM(CASE WHEN COALESCE(c.direct_callers, 0) = 0 AND d.id IS NULL AND f.id IS NULL THEN 1 ELSE 0 END) AS likely_dead
              FROM methods m
              LEFT JOIN callers c ON c.id = m.id
-             LEFT JOIN di_dispatch_used d ON d.id = m.id
+             LEFT JOIN dispatch_used d ON d.id = m.id
              LEFT JOIN framework_invoked f ON f.id = m.id;
              """;
 
@@ -936,7 +959,7 @@ public sealed class GraphStore : IDisposable
              SELECT {QualifiedNodeColumns}
              FROM methods m
              LEFT JOIN callers c ON c.id = m.id
-             LEFT JOIN di_dispatch_used d ON d.id = m.id
+             LEFT JOIN dispatch_used d ON d.id = m.id
              LEFT JOIN framework_invoked f ON f.id = m.id
              JOIN nodes n ON n.id = m.id
              WHERE COALESCE(c.direct_callers, 0) = 0
@@ -958,7 +981,7 @@ public sealed class GraphStore : IDisposable
                 candidates.Add(new DeadCodeCandidate(
                     Method: method,
                     Confidence: confidence,
-                    Reason: "no direct callers, no interface-dispatch evidence, and no framework-entrypoint edge"));
+                    Reason: "no direct callers, implements or overrides nothing that is called, and no framework-entrypoint edge"));
             }
         }
 
@@ -997,14 +1020,14 @@ public sealed class GraphStore : IDisposable
         if (HasInboundEdge(id, nameof(EdgeKind.InvokedByFramework)))
             return "reachable: marked as framework/runtime entrypoint";
 
-        if (IsLikelyInterfaceDispatchTarget(id))
-            return "likely reachable via interface dispatch (interface method has callers)";
+        if (DispatchedThrough(id) is { } via)
+            return $"likely reachable via dispatch: implements or overrides {via.FullName}, which has {via.Callers} caller(s)";
 
         var overrides = CountInboundEdges(id, nameof(EdgeKind.Overrides));
         if (overrides > 0)
             return $"possibly reachable via polymorphism: {overrides} override(s) in source";
 
-        return "no direct callers and no DI/framework reachability evidence found";
+        return "no direct callers and no dispatch/framework reachability evidence found";
     }
 
     private int CountInboundEdges(string id, string kind)
@@ -1019,38 +1042,34 @@ public sealed class GraphStore : IDisposable
 
     private bool HasInboundEdge(string id, string kind) => CountInboundEdges(id, kind) > 0;
 
-    private bool IsLikelyInterfaceDispatchTarget(string methodId)
+    /// <summary>
+    /// The nearest interface or base member that <paramref name="memberId"/> implements or overrides (transitively)
+    /// and that something calls, with its caller count; null when there is none.
+    /// </summary>
+    private (string FullName, int Callers)? DispatchedThrough(string memberId)
     {
         using var command = _connection.CreateCommand();
         command.CommandText =
-            """
-            WITH containing_type AS (
-                SELECT e.from_id AS class_id, m.name AS method_name
-                FROM edges e
-                JOIN nodes m ON m.id = e.to_id
-                WHERE e.kind = 'Contains'
-                  AND e.to_id = $id
-                  AND m.kind = 'Method'
-            ),
-            class_ifaces AS (
-                SELECT c.class_id, e.to_id AS iface_id, c.method_name
-                FROM containing_type c
-                JOIN edges e ON e.kind = 'Implements' AND e.from_id = c.class_id
-            ),
-            iface_methods AS (
-                SELECT ci.class_id, im.id AS iface_method_id
-                FROM class_ifaces ci
-                JOIN edges ce ON ce.kind = 'Contains' AND ce.from_id = ci.iface_id
-                JOIN nodes im ON im.id = ce.to_id
-                WHERE im.kind = 'Method' AND im.name = ci.method_name
-            )
-            SELECT COUNT(*)
-            FROM iface_methods im
-            JOIN edges calls ON calls.kind = 'Calls' AND calls.to_id = im.iface_method_id;
-            """;
-        command.Parameters.Add(P("id", methodId));
-        var value = command.ExecuteScalar();
-        return value is not null and not DBNull && Convert.ToInt32(value) > 0;
+            $"""
+             WITH RECURSIVE up(id, depth) AS (
+                 SELECT $id, 0
+                 UNION
+                 SELECT e.to_id, up.depth + 1 FROM edges e
+                 JOIN up ON e.from_id = up.id
+                 WHERE e.kind IN ('Implements', 'Overrides') AND up.depth < 10
+             )
+             SELECT n.full_name, COUNT(c.from_id) AS callers
+             FROM up
+             JOIN nodes n ON n.id = up.id
+             JOIN edges c ON c.to_id = up.id AND c.kind = 'Calls'
+             WHERE up.depth > 0
+             GROUP BY n.full_name, up.depth
+             ORDER BY up.depth
+             LIMIT 1;
+             """;
+        command.Parameters.Add(P("id", memberId));
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? (reader.GetString(0), reader.GetInt32(1)) : null;
     }
 
     /// <summary>
@@ -1160,10 +1179,11 @@ public sealed class GraphStore : IDisposable
         var inHits  = Walk(id, Math.Clamp(maxDepth, 1, 5), inbound: true,  edgeKinds);
         var center  = GetNode(id);
 
-        var allNodes = outHits.Select(h => h.Node)
-            .Concat(inHits.Select(h => h.Node))
-            .Append(center)
+        // The centre goes first so the cap never drops it; the nearest neighbours follow, since each walk
+        // comes back ordered by depth.
+        var allNodes = new[] { center }
             .OfType<GraphNode>()
+            .Concat(outHits.Concat(inHits).OrderBy(h => h.Depth).Select(h => h.Node))
             .DistinctBy(n => n.Id)
             .Take(150)
             .ToList();
@@ -1422,6 +1442,11 @@ public sealed class GraphStore : IDisposable
         """;
 
     private static string Lines(IEnumerable<string> paths) => string.Join('\n', paths);
+
+    private static string EscapeLike(string text) =>
+        text.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
 
     private static DuckDBParameter P(string name, object? value) =>
         new() { ParameterName = name, Value = value };

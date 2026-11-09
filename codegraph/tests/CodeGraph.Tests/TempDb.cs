@@ -24,7 +24,7 @@ internal sealed class TempDb : IDisposable
     }
 
     /// <summary>
-    /// Removes a temp directory, tolerating the pooled SQLite handle that can outlive Dispose on Windows.
+    /// Removes a temp directory, tolerating a DuckDB file handle that can outlive Dispose on Windows.
     /// A leftover temp file is not worth failing a test over.
     /// </summary>
     public static void TryDelete(string directory)

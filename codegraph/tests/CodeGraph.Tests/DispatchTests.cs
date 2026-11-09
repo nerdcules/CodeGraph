@@ -219,3 +219,110 @@ public sealed class DispatchTests
         return Indexed.From(indexer);
     }
 }
+
+/// <summary>
+/// Calls the source never spells out: <c>using</c> disposes, <c>foreach</c> enumerates, <c>await</c> asks an
+/// awaiter. Each becomes a Calls edge when the member it binds to is in the indexed source.
+/// </summary>
+public sealed class ImplicitCallTests
+{
+    [Fact]
+    public async Task Using_calls_Dispose_on_the_resource_type()
+    {
+        var graph = await Indexed.OfAsync("""
+            namespace N;
+            public sealed class Res : System.IDisposable { public void Dispose() { } }
+            public sealed class AsyncRes : System.IAsyncDisposable { public System.Threading.Tasks.ValueTask DisposeAsync() => default; }
+            public ref struct Pattern { public void Dispose() { } }
+            public class C
+            {
+                public void Declaration() { using var r = new Res(); }
+                public void Block() { using (new Res()) { } }
+                public void Explicit() { using (Res r = new Res()) { } }
+                public async System.Threading.Tasks.Task Async() { await using var r = new AsyncRes(); }
+                public void RefStruct() { using var p = new Pattern(); }
+                public void Framework() { using var s = new System.IO.MemoryStream(); }
+            }
+            """);
+
+        foreach (var caller in new[] { "Declaration", "Block", "Explicit" })
+        {
+            Assert.True(graph.HasEdge($"M:N.C.{caller}", "M:N.Res.Dispose", EdgeKind.Calls), caller);
+        }
+
+        Assert.True(graph.HasEdge("M:N.C.Async", "M:N.AsyncRes.DisposeAsync", EdgeKind.Calls));
+        Assert.True(graph.HasEdge("M:N.C.RefStruct", "M:N.Pattern.Dispose", EdgeKind.Calls));
+        Assert.Equal(["M:N.Pattern.#ctor"], graph.TargetsOf("M:N.C.RefStruct", EdgeKind.Calls).Where(t => !t.EndsWith("Dispose")));
+        Assert.Empty(graph.TargetsOf("M:N.C.Framework", EdgeKind.Calls));
+    }
+
+    [Fact]
+    public async Task Using_an_interface_typed_resource_calls_the_interface_Dispose_it_declares()
+    {
+        var graph = await Indexed.OfAsync("""
+            namespace N;
+            public interface IRes { void Dispose(); }
+            public sealed class Res : IRes { public void Dispose() { } }
+            public class C { public void M(IRes r) { using (r) { } } }
+            """);
+
+        // IRes.Dispose is the binding; Res.Dispose is reached through its Implements edge by the dispatch walks.
+        Assert.True(graph.HasEdge("M:N.C.M(N.IRes)", "M:N.IRes.Dispose", EdgeKind.Calls));
+        Assert.True(graph.HasEdge("M:N.Res.Dispose", "M:N.IRes.Dispose", EdgeKind.Implements));
+    }
+
+    [Fact]
+    public async Task Foreach_calls_the_enumerator_pattern_members()
+    {
+        var graph = await Indexed.OfAsync("""
+            namespace N;
+            public sealed class Bag
+            {
+                public Cursor GetEnumerator() => new();
+                public sealed class Cursor { public bool MoveNext() => false; public int Current => 0; }
+            }
+            public class C { public void M() { foreach (var x in new Bag()) { _ = x; } } }
+            """);
+
+        var targets = graph.TargetsOf("M:N.C.M", EdgeKind.Calls).ToList();
+        Assert.Contains("M:N.Bag.GetEnumerator", targets);
+        Assert.Contains("M:N.Bag.Cursor.MoveNext", targets);
+        Assert.Contains("P:N.Bag.Cursor.Current", targets);
+    }
+
+    [Fact]
+    public async Task Await_calls_a_custom_awaiter()
+    {
+        var graph = await Indexed.OfAsync("""
+            namespace N;
+            public sealed class Later
+            {
+                public Awaiter GetAwaiter() => new();
+                public sealed class Awaiter : System.Runtime.CompilerServices.INotifyCompletion
+                {
+                    public bool IsCompleted => true;
+                    public int GetResult() => 1;
+                    public void OnCompleted(System.Action c) { }
+                }
+            }
+            public class C { public async System.Threading.Tasks.Task M() { _ = await new Later(); } }
+            """);
+
+        var targets = graph.TargetsOf("M:N.C.M", EdgeKind.Calls).ToList();
+        Assert.Contains("M:N.Later.GetAwaiter", targets);
+        Assert.Contains("P:N.Later.Awaiter.IsCompleted", targets);
+        Assert.Contains("M:N.Later.Awaiter.GetResult", targets);
+    }
+
+    [Fact]
+    public async Task A_test_that_disposes_a_resource_covers_its_Dispose()
+    {
+        var graph = await Indexed.OfAsync("""
+            namespace N;
+            public sealed class Res : System.IDisposable { public void Dispose() { } }
+            public class Tests { [Xunit.Fact] public void Uses_it() { using var r = new Res(); } }
+            """);
+
+        Assert.True(graph.HasEdge("M:N.Res.Dispose", "M:N.Tests.Uses_it", EdgeKind.TestedBy));
+    }
+}

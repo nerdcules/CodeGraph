@@ -357,3 +357,65 @@ public sealed class RoslynIndexerTests
         Assert.Equal(["M:N.Tests.SaveWorks"], db.Store.DirectTests("M:N.Service.Save").Select(n => n.Id));
     }
 }
+
+public sealed class DeclarationShapeTests
+{
+    [Fact]
+    public async Task A_delegate_is_a_type_node_that_members_can_reference()
+    {
+        var indexed = await Indexed.OfAsync(
+            """
+            namespace N;
+            public class Model { }
+            public delegate Model Factory(int seed);
+            public class C { Factory? F; public Model Make(Factory f) => f(1); }
+            """);
+
+        var del = indexed.Node("T:N.Factory");
+        Assert.Equal((NodeKind.Type, TypeKind.Delegate), (del.Kind, del.TypeKind));
+        Assert.True(indexed.HasEdge("T:N.Factory", "T:N.Model", EdgeKind.References), "the delegate's return type");
+        Assert.True(indexed.HasEdge("F:N.C.F", "T:N.Factory", EdgeKind.References));
+        Assert.True(indexed.HasEdge("M:N.C.Make(N.Factory)", "T:N.Factory", EdgeKind.References));
+        Assert.Contains(indexed.Edges, e => e.ToId == "T:N.Factory" && e.Kind == EdgeKind.Contains && e.FromId.StartsWith("F:"));
+    }
+
+    [Fact]
+    public async Task Each_field_in_a_multi_variable_declaration_owns_only_its_own_initializer()
+    {
+        var indexed = await Indexed.OfAsync(
+            """
+            namespace N;
+            public class Model { }
+            public class C
+            {
+                static int Foo() => 1;
+                static int Bar() => 2;
+                Model? a = null, b = null;
+                int x = Foo(), y = Bar();
+            }
+            """);
+
+        Assert.Equal(["M:N.C.Foo"], indexed.TargetsOf("F:N.C.x", EdgeKind.Calls));
+        Assert.Equal(["M:N.C.Bar"], indexed.TargetsOf("F:N.C.y", EdgeKind.Calls));
+        // The shared declared type is a reference from every variable.
+        Assert.True(indexed.HasEdge("F:N.C.a", "T:N.Model", EdgeKind.References));
+        Assert.True(indexed.HasEdge("F:N.C.b", "T:N.Model", EdgeKind.References));
+    }
+
+    [Fact]
+    public async Task A_property_named_after_its_type_yields_both_a_reference_and_an_access()
+    {
+        // One identifier, bound once, serving both prefilters.
+        var indexed = await Indexed.OfAsync(
+            """
+            namespace N;
+            public class Model { }
+            public class Holder { public Model Model { get; } = new(); }
+            public class C { public object Get(Holder h) => h.Model; }
+            """);
+
+        Assert.True(indexed.HasEdge("M:N.C.Get(N.Holder)", "P:N.Holder.Model", EdgeKind.Calls));
+        Assert.True(indexed.HasEdge("P:N.Holder.Model", "T:N.Model", EdgeKind.References));
+        Assert.True(indexed.HasEdge("M:N.C.Get(N.Holder)", "T:N.Holder", EdgeKind.References));
+    }
+}

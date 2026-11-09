@@ -226,7 +226,10 @@ public sealed partial class RoslynIndexer
     {
         IndexTopLevelStatements(root, model, fileId, origin, frameworkRootId, cancellationToken);
 
-        foreach (var typeDeclaration in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
+        // Delegates are types too, but Roslyn files them under MemberDeclarationSyntax rather than
+        // BaseTypeDeclarationSyntax; without them a Func-typed callback field would reference a node-less id.
+        foreach (var typeDeclaration in root.DescendantNodes().OfType<MemberDeclarationSyntax>()
+                     .Where(m => m is BaseTypeDeclarationSyntax or DelegateDeclarationSyntax))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -304,6 +307,14 @@ public sealed partial class RoslynIndexer
                     IndexMember(member, model, typeId, origin, frameworkRootId, cancellationToken);
                 }
             }
+            else if (typeDeclaration is DelegateDeclarationSyntax @delegate)
+            {
+                SyntaxNode?[] headers = [.. @delegate.AttributeLists, @delegate.ReturnType, @delegate.ParameterList, .. @delegate.ConstraintClauses];
+                foreach (var header in headers.OfType<SyntaxNode>())
+                {
+                    IndexTypeReferences(header, model, typeId, origin, supertypes, cancellationToken);
+                }
+            }
         }
     }
 
@@ -352,18 +363,18 @@ public sealed partial class RoslynIndexer
 
     private void IndexMember(MemberDeclarationSyntax member, SemanticModel model, string typeId, string origin, string frameworkRootId, CancellationToken cancellationToken)
     {
-        // Fields and events declare several symbols per syntax node; everything else declares one.
-        IEnumerable<ISymbol?> symbols = member switch
+        // Fields and events declare several symbols per syntax node; everything else declares one. Each
+        // variable owns its own initializer, and all of them share the declared type and attributes, so
+        // `int a = Foo(), b = Bar();` gives a→Foo and b→Bar rather than both calls to both.
+        IEnumerable<(ISymbol? Symbol, SyntaxNode[] Scopes)> symbols = member switch
         {
-            FieldDeclarationSyntax field => field.Declaration.Variables
-                .Select(v => model.GetDeclaredSymbol(v, cancellationToken)),
-            EventFieldDeclarationSyntax @event => @event.Declaration.Variables
-                .Select(v => model.GetDeclaredSymbol(v, cancellationToken)),
-            BaseTypeDeclarationSyntax => [], // nested types are picked up by the DescendantNodes walk
-            _ => [model.GetDeclaredSymbol(member, cancellationToken)],
+            BaseFieldDeclarationSyntax field => field.Declaration.Variables
+                .Select(v => (model.GetDeclaredSymbol(v, cancellationToken), (SyntaxNode[])[.. field.AttributeLists, field.Declaration.Type, v])),
+            BaseTypeDeclarationSyntax or DelegateDeclarationSyntax => [], // nested types are picked up by the DescendantNodes walk
+            _ => [(model.GetDeclaredSymbol(member, cancellationToken), [member])],
         };
 
-        foreach (var symbol in symbols)
+        foreach (var (symbol, scopes) in symbols)
         {
             if (symbol is null || KindOf(symbol) is not { } kind || IdOf(symbol) is not { } memberId)
             {
@@ -398,53 +409,117 @@ public sealed partial class RoslynIndexer
                 AddEdgeTo(memberId, overridden, EdgeKind.Overrides, origin);
             }
 
-            IndexBody(member, model, memberId, isTest, origin, cancellationToken);
+            foreach (var scope in scopes)
+            {
+                IndexBody(scope, model, memberId, isTest, origin, cancellationToken);
+            }
         }
     }
 
-    /// <summary>Calls and type references from one member's declaration, signature and body, in one pass.</summary>
+    /// <summary>Calls, member accesses and type references from one member's declaration, signature and body, in one pass.</summary>
     private void IndexBody(SyntaxNode body, SemanticModel model, string callerId, bool callerIsTest, string origin, CancellationToken cancellationToken)
     {
-        foreach (var node in body.DescendantNodes())
+        foreach (var node in body.DescendantNodesAndSelf())
         {
             if (node is SimpleNameSyntax name)
             {
-                IndexTypeReference(name, model, callerId, origin, skip: null, cancellationToken);
-                IndexMemberAccess(name, model, callerId, callerIsTest, origin, cancellationToken);
+                IndexName(name, model, callerId, origin, skip: null, members: true, callerIsTest, cancellationToken);
                 continue;
             }
 
-            if (node is not (InvocationExpressionSyntax or ObjectCreationExpressionSyntax
-                or ImplicitObjectCreationExpressionSyntax))
+            switch (node)
             {
-                continue;
-            }
+                case InvocationExpressionSyntax or ObjectCreationExpressionSyntax or ImplicitObjectCreationExpressionSyntax:
+                    var info = model.GetSymbolInfo(node, cancellationToken);
+                    AddCall(callerId, info.Symbol ?? Unambiguous(info.CandidateSymbols), callerIsTest, origin);
+                    break;
 
-            var info = model.GetSymbolInfo(node, cancellationToken);
-            var target = info.Symbol ?? Unambiguous(info.CandidateSymbols);
-            if (target is not IMethodSymbol method)
-            {
-                continue;
-            }
+                // The statements below call members the source never names. Without these edges Dispose,
+                // GetEnumerator and a custom awaiter's GetResult look uncalled to every walk and the dead-code report.
+                case CommonForEachStatementSyntax forEach:
+                    var each = model.GetForEachStatementInfo(forEach);
+                    AddCall(callerId, each.GetEnumeratorMethod, callerIsTest, origin);
+                    AddCall(callerId, each.MoveNextMethod, callerIsTest, origin);
+                    AddCall(callerId, each.CurrentProperty, callerIsTest, origin);
+                    AddCall(callerId, each.DisposeMethod, callerIsTest, origin);
+                    break;
 
-            // Collapse generic instantiations and reduced extension methods onto their declaration.
-            method = (method.ReducedFrom ?? method).OriginalDefinition;
-            if (!IsInSource(method))
-            {
-                continue;
-            }
+                case AwaitExpressionSyntax await:
+                    var awaited = model.GetAwaitExpressionInfo(await);
+                    AddCall(callerId, awaited.GetAwaiterMethod, callerIsTest, origin);
+                    AddCall(callerId, awaited.IsCompletedProperty, callerIsTest, origin);
+                    AddCall(callerId, awaited.GetResultMethod, callerIsTest, origin);
+                    break;
 
-            var targetId = IdOf(method);
-            if (targetId is null || targetId == callerId)
-            {
-                continue;
-            }
+                case UsingStatementSyntax { Declaration: { } declared } using1:
+                    AddDispose(callerId, model.GetTypeInfo(declared.Type, cancellationToken).Type, using1.AwaitKeyword != default, model, callerIsTest, origin);
+                    break;
 
-            AddEdge(new GraphEdge(callerId, targetId, EdgeKind.Calls), origin);
-            if (callerIsTest)
-            {
-                AddEdge(new GraphEdge(targetId, callerId, EdgeKind.TestedBy), origin);
+                case UsingStatementSyntax { Expression: { } resource } using2:
+                    AddDispose(callerId, model.GetTypeInfo(resource, cancellationToken).Type, using2.AwaitKeyword != default, model, callerIsTest, origin);
+                    break;
+
+                case LocalDeclarationStatementSyntax { UsingKeyword.RawKind: not 0 } usingLocal:
+                    AddDispose(callerId, model.GetTypeInfo(usingLocal.Declaration.Type, cancellationToken).Type, usingLocal.AwaitKeyword != default, model, callerIsTest, origin);
+                    break;
             }
+        }
+    }
+
+    /// <summary>
+    /// The Dispose (or DisposeAsync) a <c>using</c> ends up calling on <paramref name="type"/>: the interface
+    /// implementation when there is one, else a pattern-based method on a ref struct. Roslyn does not expose
+    /// this binding, so it is resolved the way the compiler would. An interface-typed resource binds to the
+    /// interface's own Dispose when it declares one in source; otherwise the target is in metadata and dropped.
+    /// </summary>
+    private void AddDispose(string callerId, ITypeSymbol? type, bool isAsync, SemanticModel model, bool callerIsTest, string origin)
+    {
+        if (type is null || type.TypeKind == RoslynTypeKind.Error)
+        {
+            return;
+        }
+
+        var name = isAsync ? "DisposeAsync" : "Dispose";
+        var disposable = isAsync
+            ? model.Compilation.GetTypeByMetadataName("System.IAsyncDisposable")
+            : model.Compilation.GetSpecialType(SpecialType.System_IDisposable);
+        var contract = disposable?.GetMembers(name).OfType<IMethodSymbol>().FirstOrDefault();
+
+        ISymbol? target = null;
+        if (contract is not null && type.TypeKind != RoslynTypeKind.Interface)
+        {
+            target = type.FindImplementationForInterfaceMember(contract);
+        }
+
+        target ??= type.AllInterfaces.Prepend(type)
+            .SelectMany(t => t.GetMembers(name))
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(m => m.Parameters.Length == 0 && !m.IsStatic);
+
+        AddCall(callerId, target, callerIsTest, origin);
+    }
+
+    /// <summary>
+    /// A call from <paramref name="callerId"/> to a method or property, collapsed onto its declaration (generic
+    /// instantiations, reduced extension methods), kept only when the target is in the indexed source.
+    /// </summary>
+    private void AddCall(string callerId, ISymbol? target, bool callerIsTest, string origin)
+    {
+        target = target switch
+        {
+            IMethodSymbol method => (method.ReducedFrom ?? method).OriginalDefinition,
+            IPropertySymbol property => property.OriginalDefinition,
+            _ => null,
+        };
+        if (target is null || !IsInSource(target) || IdOf(target) is not { } targetId || targetId == callerId)
+        {
+            return;
+        }
+
+        AddEdge(new GraphEdge(callerId, targetId, EdgeKind.Calls), origin);
+        if (callerIsTest)
+        {
+            AddEdge(new GraphEdge(targetId, callerId, EdgeKind.TestedBy), origin);
         }
     }
 
@@ -460,18 +535,52 @@ public sealed partial class RoslynIndexer
             : null;
 
     /// <summary>
-    /// A read or write of a property, field or event is a dependency as real as a call: without it, "who uses
-    /// IStaging.Enabled" is empty and a test that reads it does not cover it. Recorded as a Calls edge so every
-    /// caller and coverage walk sees it. Only names declared as members somewhere in the solution are bound.
+    /// One identifier, bound at most once. A name can be a type (<c>Model</c> in <c>Model m</c>) or a member
+    /// (<c>Enabled</c> in <c>staging.Enabled</c>), and a property is often named after its type, so both
+    /// prefilters are consulted first and the semantic model is asked a single time when either passes.
+    /// <paramref name="members"/> is false for type headers (attributes, base lists), where only types matter.
     /// </summary>
-    private void IndexMemberAccess(SimpleNameSyntax name, SemanticModel model, string callerId, bool callerIsTest, string origin, CancellationToken cancellationToken)
+    private void IndexName(SimpleNameSyntax name, SemanticModel model, string fromId, string origin, IReadOnlySet<string>? skip, bool members, bool callerIsTest, CancellationToken cancellationToken)
     {
-        if (_sourceMemberNames?.Contains(name.Identifier.ValueText) != true || IsNameOfArgument(name))
+        // `var x = GetFoo()` names no type in syntax; the semantic model knows what it inferred, and that type
+        // (with its generic arguments, e.g. List<Foo>) is as much a dependency as a spelled-out one.
+        if (name is IdentifierNameSyntax { IsVar: true })
+        {
+            if (model.GetTypeInfo(name, cancellationToken).Type is { } inferred)
+            {
+                AddReferences(fromId, inferred, origin, skip);
+            }
+
+            return;
+        }
+
+        var text = name.Identifier.ValueText;
+        var maybeType = _sourceTypeNames?.Contains(text) == true;
+        var maybeMember = members && _sourceMemberNames?.Contains(text) == true && !IsNameOfArgument(name);
+        if (!maybeType && !maybeMember)
         {
             return;
         }
 
-        var symbol = model.GetSymbolInfo(name, cancellationToken).Symbol;
+        var info = model.GetSymbolInfo(name, cancellationToken);
+        if (maybeType)
+        {
+            IndexTypeReference(name, info, fromId, origin, skip);
+        }
+
+        if (maybeMember)
+        {
+            IndexMemberAccess(info.Symbol, fromId, callerIsTest, origin);
+        }
+    }
+
+    /// <summary>
+    /// A read or write of a property, field or event is a dependency as real as a call: without it, "who uses
+    /// IStaging.Enabled" is empty and a test that reads it does not cover it. Recorded as a Calls edge so every
+    /// caller and coverage walk sees it.
+    /// </summary>
+    private void IndexMemberAccess(ISymbol? symbol, string callerId, bool callerIsTest, string origin)
+    {
         if (symbol is not (IPropertySymbol or IEventSymbol or IFieldSymbol { ContainingType.TypeKind: not RoslynTypeKind.Enum }))
         {
             return;
@@ -499,30 +608,12 @@ public sealed partial class RoslynIndexer
     {
         foreach (var name in scope.DescendantNodesAndSelf().OfType<SimpleNameSyntax>())
         {
-            IndexTypeReference(name, model, fromId, origin, skip, cancellationToken);
+            IndexName(name, model, fromId, origin, skip, members: false, callerIsTest: false, cancellationToken);
         }
     }
 
-    private void IndexTypeReference(SimpleNameSyntax name, SemanticModel model, string fromId, string origin, IReadOnlySet<string>? skip, CancellationToken cancellationToken)
+    private void IndexTypeReference(SimpleNameSyntax name, SymbolInfo info, string fromId, string origin, IReadOnlySet<string>? skip)
     {
-        // `var x = GetFoo()` names no type in syntax; the semantic model knows what it inferred, and that type
-        // (with its generic arguments, e.g. List<Foo>) is as much a dependency as a spelled-out one.
-        if (name is IdentifierNameSyntax { IsVar: true })
-        {
-            if (model.GetTypeInfo(name, cancellationToken).Type is { } inferred)
-            {
-                AddReferences(fromId, inferred, origin, skip);
-            }
-
-            return;
-        }
-
-        if (_sourceTypeNames?.Contains(name.Identifier.ValueText) != true)
-        {
-            return;
-        }
-
-        var info = model.GetSymbolInfo(name, cancellationToken);
         var symbol = info.Symbol ?? info.CandidateSymbols.FirstOrDefault();
 
         // [Foo] binds to the attribute constructor; the reference is to its type.
@@ -597,8 +688,8 @@ public sealed partial class RoslynIndexer
             {
                 switch (node)
                 {
-                    case BaseTypeDeclarationSyntax declaration:
-                        var name = declaration.Identifier.ValueText;
+                    case BaseTypeDeclarationSyntax or DelegateDeclarationSyntax:
+                        var name = node is BaseTypeDeclarationSyntax declaration ? declaration.Identifier.ValueText : ((DelegateDeclarationSyntax)node).Identifier.ValueText;
                         names.Add(name);
                         if (name.EndsWith("Attribute", StringComparison.Ordinal) && name.Length > "Attribute".Length)
                         {

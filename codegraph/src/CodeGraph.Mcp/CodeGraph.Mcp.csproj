@@ -11,6 +11,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../CodeGraph.Core/CodeGraph.Core.csproj" />
+    <!-- The visualiser's API routes are shared with codegraph-web as a linked source file, not an assembly. -->
+    <Compile Include="../CodeGraph.Web/WebApi.cs" Link="WebApi.cs" />
   </ItemGroup>
   <!-- Copy the shared web UI from the Web project before C# compilation. -->
   <Target Name="CopyWebUI" BeforeTargets="CoreCompile;PrepareForBuild">

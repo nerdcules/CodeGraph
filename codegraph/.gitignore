@@ -3,3 +3,5 @@ obj/
 .codegraph/
 TestResults/
 *.user
+# Build-time copy of src/CodeGraph.Web/wwwroot/index.html (CopyWebUI target in CodeGraph.Mcp.csproj)
+src/CodeGraph.Mcp/wwwroot/

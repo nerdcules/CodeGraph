@@ -81,6 +81,15 @@ public sealed class IndexFreshness(string dbPath, TimeSpan ttl)
 
     public string DbPath => dbPath;
 
+    /// <summary>Forgets the cached report, so the next <see cref="Check"/> re-reads the graph (after a daemon flush rewrote it).</summary>
+    public void Invalidate()
+    {
+        lock (_lock)
+        {
+            _report = null;
+        }
+    }
+
     public FreshnessReport Check()
     {
         lock (_lock)
@@ -138,6 +147,10 @@ public sealed class IndexFreshness(string dbPath, TimeSpan ttl)
         catch (DuckDB.NET.Data.DuckDBException)
         {
             // The indexer is mid-write; keep what we had and try again next time.
+        }
+        catch (FileNotFoundException)
+        {
+            // Nothing indexed yet; the call-tool filter has already said so.
         }
     }
 
