@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
-# Builds, tests, publishes and installs codegraph-index and codegraph-mcp (macOS / Linux).
+# Builds, tests and installs codegraph-index and codegraph-mcp, then sets up repos to use them (macOS / Linux).
 #
-#   ./install.sh [--install-dir DIR] [--skip-tests] [--add-to-path] [--force]
+#   ./install.sh [REPO_OR_SOLUTION]... [--install-dir DIR] [--add-to-path] [--live] [--skip-tests] [--force]
 #
-# Default install dir: ~/.codegraph/bin. Re-run to upgrade; a running codegraph-mcp is stopped only with --force.
+#   REPO_OR_SOLUTION  a repo folder or a .sln / .slnx / .csproj to set up: writes .mcp.json, adds .codegraph/ to
+#                     .gitignore and builds the graph (codegraph-index init). Asked for when none is given.
+#   --install-dir     default ~/.codegraph/bin
+#   --add-to-path     append the install dir to PATH in ~/.bashrc and ~/.zshrc
+#   --live            the MCP server starts the live daemon itself on its first call (CODEGRAPH_DAEMON=auto)
+#   --skip-tests      publish without running the test suite
+#   --force           stop running codegraph processes before overwriting them
+#
+# Re-run to upgrade. Set up another repo later with: codegraph-index init [repo-or-solution]
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,6 +19,8 @@ install_dir="$HOME/.codegraph/bin"
 skip_tests=false
 add_to_path=false
 force=false
+live=false
+repos=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -18,14 +28,17 @@ while [ $# -gt 0 ]; do
         --skip-tests)  skip_tests=true; shift ;;
         --add-to-path) add_to_path=true; shift ;;
         --force)       force=true; shift ;;
-        -h|--help)     sed -n '2,6p' "$0"; exit 0 ;;
-        *) echo "unknown option: $1" >&2; exit 1 ;;
+        --live)        live=true; shift ;;
+        -h|--help)     sed -n '2,15p' "$0"; exit 0 ;;
+        -*) echo "unknown option: $1" >&2; exit 1 ;;
+        *)  repos+=("$1"); shift ;;
     esac
 done
 
 step() { printf '\n\033[36m==> %s\033[0m\n' "$1"; }
 
 command -v dotnet >/dev/null || { echo 'dotnet SDK not found on PATH. Install .NET 10 from https://dotnet.microsoft.com/download' >&2; exit 1; }
+install_dir="$(mkdir -p "$install_dir" && cd "$install_dir" && pwd)"
 
 step 'Building (warnings are errors)'
 dotnet build "$root/CodeGraph.slnx" -c Release -warnaserror --nologo
@@ -48,28 +61,32 @@ if [ -n "$running" ]; then
     fi
 fi
 
-step "Publishing to $install_dir"
-mkdir -p "$install_dir"
+# ReadyToRun precompiles the assemblies for this platform: indexing runs about a quarter faster and the server
+# starts sooner (BENCHMARKS.md, round 8), and only this platform's DuckDB library is copied.
+rid="$(dotnet --info | awk '/^ *RID:/ { print $2; exit }')"
+[ -n "$rid" ] || { echo 'could not read the runtime identifier from dotnet --info' >&2; exit 1; }
+step "Publishing to $install_dir ($rid, ReadyToRun)"
 for project in src/CodeGraph.Indexer src/CodeGraph.Mcp; do
-    dotnet publish "$root/$project" -c Release --no-build -o "$install_dir" --nologo
+    dotnet publish "$root/$project" -c Release -r "$rid" --self-contained false -p:PublishReadyToRun=true -o "$install_dir" --nologo
 done
 chmod +x "$install_dir/codegraph-index" "$install_dir/codegraph-mcp"
 
 # The executables find .NET through DOTNET_ROOT or the machine's default install location, not through PATH.
 # When dotnet comes from a version manager (mise, asdf) or a user-local install, the default location can be
-# missing or hold a runtime without ASP.NET Core, and codegraph-mcp then fails to start. Probe it; when only the
-# runtime of the dotnet on PATH works, the .mcp.json entry carries DOTNET_ROOT.
+# missing or hold a runtime without ASP.NET Core. init writes DOTNET_ROOT into .mcp.json when the server needs
+# it; here the indexer gets it for this script's own runs.
 step 'Checking the executables start'
 dotnet_root="$(cd "$(dirname "$(readlink -f "$(command -v dotnet)")")" && pwd)"
-mcp_dotnet_root=""
-if "$install_dir/codegraph-mcp" --version >/dev/null 2>&1 && "$install_dir/codegraph-index" --version >/dev/null 2>&1; then
+needs_root=false
+if env -u DOTNET_ROOT "$install_dir/codegraph-index" --version >/dev/null 2>&1 && env -u DOTNET_ROOT "$install_dir/codegraph-mcp" --version >/dev/null 2>&1; then
     echo "ok: codegraph $("$install_dir/codegraph-mcp" --version)"
 elif DOTNET_ROOT="$dotnet_root" "$install_dir/codegraph-mcp" --version >/dev/null 2>&1; then
-    mcp_dotnet_root="$dotnet_root"
-    echo "the default .NET location lacks a runtime codegraph needs; using DOTNET_ROOT=$dotnet_root (the dotnet on PATH)"
+    needs_root=true
+    echo "ok with DOTNET_ROOT=$dotnet_root (the default .NET location lacks a runtime codegraph needs)"
 else
     echo "warning: codegraph-mcp does not start, even with DOTNET_ROOT=$dotnet_root. Run it by hand to see why." >&2
 fi
+index() { if [ "$needs_root" = true ]; then DOTNET_ROOT="$dotnet_root" "$install_dir/codegraph-index" "$@"; else "$install_dir/codegraph-index" "$@"; fi; }
 
 if [ "$add_to_path" = true ]; then
     case ":$PATH:" in
@@ -84,30 +101,34 @@ if [ "$add_to_path" = true ]; then
     esac
 fi
 
+if [ ${#repos[@]} -eq 0 ] && [ -t 0 ]; then
+    printf '\nSet up a repo now? Path to a repo folder or solution (Enter to skip): '
+    read -r answer || answer=""
+    [ -n "$answer" ] && repos+=("${answer/#\~/$HOME}")
+fi
+
+init_args=()
+[ "$live" = true ] && init_args+=(--live)
+failed=0
+# The ${a[@]+...} form keeps macOS bash 3.2 from calling an empty array unbound under set -u.
+for repo in ${repos[@]+"${repos[@]}"}; do
+    step "Setting up $repo"
+    index init "$repo" ${init_args[@]+"${init_args[@]}"} || failed=$((failed + 1))
+done
+
+if [ "$needs_root" = true ]; then
+    root_hint="DOTNET_ROOT=\"$dotnet_root\" "
+else
+    root_hint=""
+fi
 step 'Installed'
 echo "  $install_dir/codegraph-index"
 echo "  $install_dir/codegraph-mcp"
-echo
-echo 'Index a solution (writes <worktree>/.codegraph/graph.db; add .codegraph/ to .gitignore):'
-if [ -n "$mcp_dotnet_root" ]; then
-    echo "  export DOTNET_ROOT=\"$mcp_dotnet_root\"   # add to your shell profile; the executables need it"
-fi
-echo "  $install_dir/codegraph-index /path/to/App.sln          # once, then incremental"
-echo "  $install_dir/codegraph-index /path/to/App.sln --watch  # keep it fresh while you work"
-echo
-echo 'Put this .mcp.json in the repo root; the server finds the graph from its working directory:'
-if [ -n "$mcp_dotnet_root" ]; then
-    mcp_env=",
-      \"env\": { \"DOTNET_ROOT\": \"$mcp_dotnet_root\" }"
-else
-    mcp_env=""
-fi
 cat <<EOF
-{
-  "mcpServers": {
-    "codegraph": {
-      "command": "$install_dir/codegraph-mcp"$mcp_env
-    }
-  }
-}
+
+Set up a repo (writes .mcp.json and .gitignore at its root, then builds the graph):
+  ${root_hint}$install_dir/codegraph-index init /path/to/repo-or-solution [--live]
+Keep a graph fresh while you work:
+  ${root_hint}$install_dir/codegraph-index /path/to/App.sln --watch
 EOF
+[ "$failed" -eq 0 ] || { echo "$failed repo setup(s) failed; see above" >&2; exit 1; }

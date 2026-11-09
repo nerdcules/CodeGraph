@@ -8,7 +8,7 @@
     Running codegraph processes keep the executables locked; the script refuses unless -Force stops them.
 
 .PARAMETER InstallDir
-    The folder install.ps1 published into. Default: C:\tools\codegraph.
+    The folder install.ps1 published into. Default: C:\tools\codegraph on Windows, ~/.codegraph/bin elsewhere.
 
 .PARAMETER Repo
     A repo whose .mcp.json loses its `codegraph` entry and whose .codegraph/ folder is deleted. Repeatable.
@@ -25,13 +25,18 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $InstallDir = 'C:\tools\codegraph',
+    [string] $InstallDir,
     [string[]] $Repo = @(),
     [switch] $Force,
     [switch] $Yes
 )
 
 $ErrorActionPreference = 'Stop'
+# $IsWindows does not exist in Windows PowerShell 5.1, which only runs on Windows.
+$onWindows = $PSVersionTable.PSEdition -eq 'Desktop' -or $IsWindows
+if (-not $InstallDir) {
+    $InstallDir = if ($onWindows) { 'C:\tools\codegraph' } else { Join-Path $HOME '.codegraph/bin' }
+}
 $InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
 
 function Step([string] $message) { Write-Host "`n==> $message" -ForegroundColor Cyan }
@@ -71,13 +76,31 @@ if (Test-Path $InstallDir) {
 }
 
 # ---- PATH ---------------------------------------------------------------------------------------------
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-$parts = @($userPath -split ';' | Where-Object { $_ })
-$kept = @($parts | Where-Object { -not $_.Trim('\').Equals($InstallDir.Trim('\'), [System.StringComparison]::OrdinalIgnoreCase) })
-if ($kept.Count -ne $parts.Count) {
-    Step 'Removing from user PATH'
-    [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
-    Write-Host 'Open a new shell for the PATH change to apply elsewhere.'
+if ($onWindows) {
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $parts = @($userPath -split ';' | Where-Object { $_ })
+    $kept = @($parts | Where-Object { -not $_.Trim('\').Equals($InstallDir.Trim('\'), [System.StringComparison]::OrdinalIgnoreCase) })
+    if ($kept.Count -ne $parts.Count) {
+        Step 'Removing from user PATH'
+        [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
+        Write-Host 'Open a new shell for the PATH change to apply elsewhere.'
+    }
+} else {
+    # The "# codegraph" marker and the export line after it, as install.sh and install.ps1 write them.
+    $export = "export PATH=`"`$PATH:$InstallDir`""
+    foreach ($rc in (Join-Path $HOME '.bashrc'), (Join-Path $HOME '.zshrc')) {
+        if (-not (Test-Path $rc)) { continue }
+        $lines = @(Get-Content $rc)
+        if ($lines -notcontains $export) { continue }
+        Step "Removing from $rc"
+        $kept = [System.Collections.Generic.List[string]]::new()
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -eq '# codegraph' -and $i + 1 -lt $lines.Count -and $lines[$i + 1] -eq $export) { $i++; continue }
+            $kept.Add($lines[$i])
+        }
+        Set-Content -Path $rc -Value $kept
+        Write-Host 'Open a new shell for the PATH change to apply.'
+    }
 }
 
 # ---- repos --------------------------------------------------------------------------------------------

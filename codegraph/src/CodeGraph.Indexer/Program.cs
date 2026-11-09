@@ -16,6 +16,13 @@ if (args is ["--version"])
     return 0;
 }
 
+// `codegraph-index init [solution|dir]` wires the repo to codegraph (.mcp.json, .gitignore) and then indexes.
+var init = args is ["init", ..];
+if (init)
+{
+    args = args[1..];
+}
+
 // Flags may come in any order around the one positional argument: `codegraph-index --watch App.sln` works.
 string? targetArg = null;
 string? dbArg = null;
@@ -24,6 +31,8 @@ double? idleExitMinutes = null;
 var forceFull = false;
 var allTargets = false;
 var watch = false;
+var live = false;
+var noIndex = false;
 var usage = false;
 for (var i = 0; i < args.Length; i++)
 {
@@ -40,6 +49,12 @@ for (var i = 0; i < args.Length; i++)
             break;
         case "--watch":
             watch = true;
+            break;
+        case "--live" when init:
+            live = true;
+            break;
+        case "--no-index" when init:
+            noIndex = true;
             break;
         case "--db" when i + 1 < args.Length:
             dbArg = args[++i];
@@ -65,9 +80,20 @@ for (var i = 0; i < args.Length; i++)
     }
 }
 
+if (init && !usage)
+{
+    targetArg = RepoSetup.FindTarget(targetArg ?? ".", out var problem);
+    if (targetArg is null)
+    {
+        Console.Error.WriteLine($"codegraph init: {problem}");
+        return 1;
+    }
+}
+
 if (usage || targetArg is null)
 {
     Console.Error.WriteLine("usage: codegraph-index <solution.sln|.slnx|project.csproj> [--db <path>] [--full] [--watch] [--log <file>]");
+    Console.Error.WriteLine("       codegraph-index init [solution|dir] [--live] [--no-index] [index options]");
     Console.Error.WriteLine("       default db: <git worktree root>/.codegraph/graph.db (solution dir outside a repo)");
     Console.Error.WriteLine("       re-walks only files whose hash changed, plus files that depend on them;");
     Console.Error.WriteLine("       --full rebuilds everything");
@@ -77,6 +103,10 @@ if (usage || targetArg is null)
     Console.Error.WriteLine("               the MCP server's live questions over a local pipe (Ctrl+C to stop)");
     Console.Error.WriteLine("       --log <file>  append the log there instead of stderr (for a daemon started in the background)");
     Console.Error.WriteLine("       --idle-exit <minutes>  with --watch, stop after that long with no save and no live request");
+    Console.Error.WriteLine("       init  sets up the repo: finds the solution (default: the current folder), adds the codegraph");
+    Console.Error.WriteLine("             server to <worktree root>/.mcp.json, adds .codegraph/ to .gitignore, then indexes");
+    Console.Error.WriteLine("             --live      the server starts the live daemon itself on its first call");
+    Console.Error.WriteLine("             --no-index  write the config only");
     return 1;
 }
 
@@ -98,11 +128,39 @@ var dbPath = dbArg is not null
     ? Path.GetFullPath(dbArg)
     : Worktree.DefaultDbPath(Path.GetDirectoryName(target)!);
 
+if (init)
+{
+    if (!RepoSetup.Configure(target, dbArg is null ? null : dbPath, live, Console.Out))
+    {
+        return 1;
+    }
+
+    if (noIndex)
+    {
+        return 0;
+    }
+}
+
 // MSBuildLocator must run before the JIT touches any Microsoft.CodeAnalysis.MSBuild type,
 // which is why the actual work lives in a separate, non-inlined method.
 MSBuildLocator.RegisterDefaults();
 IndexOptions.AllTargets = allTargets;
-return watch ? await WatchAsync(target, dbPath, forceFull, idleExitMinutes) : await RunAsync(target, dbPath, forceFull);
+if (watch)
+{
+    return await WatchAsync(target, dbPath, forceFull, idleExitMinutes);
+}
+
+var exit = await RunAsync(target, dbPath, forceFull);
+if (init && exit == 0)
+{
+    Console.WriteLine($"""
+
+        Ready. Start Claude Code in {RepoSetup.RepoRoot(target)} (or run /mcp in an open session) and approve the codegraph server.
+        Keep the graph fresh while you work:  codegraph-index "{target}" --watch
+        """);
+}
+
+return exit;
 
 [MethodImpl(MethodImplOptions.NoInlining)]
 static async Task<int> RunAsync(string target, string dbPath, bool forceFull)
@@ -371,7 +429,10 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
     (int Nodes, int Edges) counts;
     if (full)
     {
+        // The first index of a repo has no .codegraph/ folder yet, and File.Delete throws for a missing folder.
+        Directory.CreateDirectory(Path.GetDirectoryName(writePath)!);
         File.Delete(writePath);
+        File.Delete(writePath + ".wal");
     }
 
     using (var store = GraphStore.Open(writePath, readOnly: false, TimeSpan.FromSeconds(60)))

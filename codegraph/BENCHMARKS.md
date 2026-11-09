@@ -283,6 +283,30 @@ Two defects surfaced while measuring this round and are fixed: a flush arriving 
 already running waited out the debounce (up to 500 ms), and a test's fake embedder used .NET's per-process string
 hash, which made one ranking test fail about one run in ten.
 
+## Round 8: ReadyToRun publish
+
+The install scripts now publish ReadyToRun for the machine's platform (`-r <rid> -p:PublishReadyToRun=true`)
+instead of a plain framework-dependent build. Native AOT was measured first and rejected. The indexer cannot use
+it: MSBuildLocator loads MSBuild from the SDK at runtime, and Roslyn's workspace services are composed by
+reflection. The server failed to publish: the web routes return anonymous types, and there were 27 trim and AOT
+warnings from reflection-based JSON and tool discovery. AOT would also only shorten start-up, since warm tool calls
+are spent in DuckDB, which is native already.
+
+Same machine, this repo's graph; index times are three runs each.
+
+| measurement | plain publish | ReadyToRun |
+|---|---|---|
+| full index, wall time | 11.3–11.6 s | 8.7–8.8 s |
+| index work inside that | 8.9–9.0 s | 6.5–6.6 s |
+| server start to `initialize` answered | 327 ms | 257 ms |
+| first `find_symbol` after start | 141 ms | 103 ms |
+| first `impact_of` after start | 31 ms | 28 ms |
+| warm `find_symbol` | 6.0 ms | 5.9 ms |
+| server publish folder | 318 MB (DuckDB for every OS) | 75 MB (this platform only) |
+
+Most of the index time is JIT compilation of Roslyn and MSBuild code paths, which ReadyToRun removes; every
+one-shot index and every daemon start pays it. Warm calls are unchanged.
+
 ## Where it ended up
 
 This repo's own graph, first baseline against the final build of this work, same machine and method. The graph

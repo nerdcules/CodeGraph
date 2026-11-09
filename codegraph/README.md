@@ -10,6 +10,26 @@ graph query instead of re-reading source files.
 tool with its arguments, output format, staleness, telemetry and troubleshooting.
 [PROMPTS.md](PROMPTS.md) shows the prompts that drive it.
 
+## Quick start
+
+Needs the .NET 10 SDK and git. From a clone of this repo:
+
+```bash
+./install.sh ~/dev/App --add-to-path              # macOS / Linux
+```
+
+```powershell
+.\install.ps1 C:\dev\App -AddToPath               # Windows (PowerShell 7 also runs it on macOS / Linux)
+```
+
+That builds, tests and installs both executables, then sets up the repo: its `.mcp.json` gets
+the `codegraph` server, `.gitignore` gets `.codegraph/`, and the first graph is built. Start
+Claude Code in the repo and approve the server. Set up more repos later from inside each one:
+
+```bash
+codegraph-index init            # finds the solution from the current folder
+```
+
 ```
 src/CodeGraph.Core      model + DuckDB store + traversals + full-text search + telemetry
 src/CodeGraph.Indexer   codegraph-index: Roslyn extractor → graph.db (one-shot or --watch) + console progress
@@ -17,7 +37,7 @@ src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
 src/CodeGraph.Web       graph visualiser UI and its API routes, embedded into codegraph-mcp --web
 tests/CodeGraph.Tests   store, search, telemetry, indexer extraction, watch-mode sync, live daemon
 tools/CodeGraph.Bench   codegraph-bench: the numbers in BENCHMARKS.md
-install.ps1 / .sh       build, test, publish both executables, print .mcp.json
+install.ps1 / .sh       build, test, publish both executables, set up the repos you name
 setup.ps1 / .sh         pull latest, build, write .mcp.json as `dotnet run`, index (no publish)
 uninstall.ps1 / .sh     remove the install folder, PATH entry, a repo's .mcp.json entry and graph
 nuget.config            nuget.org only, source-mapped, audit on
@@ -200,27 +220,52 @@ The renderer is `ConsoleStatus`; the indexer reports through `IndexProgress` (`P
 ## Install
 
 ```powershell
-.\install.ps1                                   # Windows → C:\tools\codegraph
-.\install.ps1 -InstallDir D:\tools\codegraph -AddToPath
+.\install.ps1                                   # Windows → C:\tools\codegraph; asks which repo to set up
+.\install.ps1 C:\dev\App, C:\dev\Other -AddToPath -Live
 ```
 
 ```bash
-./install.sh                                    # macOS / Linux → ~/.codegraph/bin
-./install.sh --install-dir /opt/codegraph --add-to-path
+./install.sh                                    # macOS / Linux → ~/.codegraph/bin; asks which repo to set up
+./install.sh ~/dev/App ~/dev/Other --install-dir /opt/codegraph --add-to-path --live
 ```
 
 Both scripts build with warnings as errors, run the test suite (`-SkipTests` / `--skip-tests`
-to skip), publish `codegraph-index` and `codegraph-mcp` into the install folder, check that both
-start (`--version`), and print the `.mcp.json` below with the right path filled in. When dotnet
-comes from a version manager such as mise or asdf, the executables cannot find it through `PATH`;
-the scripts detect that and add `"env": { "DOTNET_ROOT": "…" }` to the printed entry. Re-run to upgrade. A running `codegraph-mcp`
-holds its files open, so the script stops rather than overwrite it; close the Claude Code
-sessions using it, or pass `-Force` / `--force` to stop them.
+to skip), and publish `codegraph-index` and `codegraph-mcp` into the install folder. The publish
+is ReadyToRun for this machine's platform, which indexes about a quarter faster than a plain
+build ([BENCHMARKS.md](BENCHMARKS.md#round-8-readytorun-publish)). They check that both
+executables start, then run `codegraph-index init` on each repo or solution you name. With
+none named in an interactive shell, they ask for one. `install.ps1` runs under Windows
+PowerShell 5.1 and under PowerShell 7 on any platform. Re-run either script to upgrade. A running
+`codegraph-mcp` holds its files open, so the script stops rather than overwrite it. Close the
+Claude Code sessions using it, or pass `-Force` / `--force` to stop them.
+
+### Set up a repo: `codegraph-index init`
+
+```bash
+codegraph-index init [repo-folder | App.sln | App.csproj] [--live] [--no-index] [--db PATH]
+```
+
+Run with no argument, it starts from the current folder. It looks for one `.slnx` or `.sln`
+there, then up to three levels below, then at the git worktree root, and last for a single
+`.csproj` in the folder. Two candidates are an error that lists both, so pass the one you mean.
+Then it does four things:
+
+1. Writes the `codegraph` server into `.mcp.json` at the worktree root, keeping other servers
+   and any `env` settings already on the entry. A re-run with nothing new leaves the file untouched.
+2. Starts the server the way an MCP host would, without your shell's `DOTNET_ROOT`. If that
+   fails and the .NET running `init` works, the entry gets `"env": { "DOTNET_ROOT": … }`.
+   This is the usual case with a version-managed dotnet such as mise or asdf.
+3. Adds `.codegraph/` to `.gitignore` unless git already ignores it.
+4. Builds the graph, as `codegraph-index <solution>` would. `--no-index` stops before this step.
+
+`--live` adds `CODEGRAPH_DAEMON=auto` to the entry. The server then starts the
+[live daemon](#live-daemon) itself on its first tool call. `--db` keeps the graph somewhere else
+and passes that path to the server.
 
 ### Uninstall
 
 ```powershell
-.\uninstall.ps1                                  # removes C:\tools\codegraph
+.\uninstall.ps1                                  # removes the default install folder
 .\uninstall.ps1 -InstallDir D:\tools\codegraph -Repo C:\dev\App -Force -Yes
 ```
 
@@ -261,7 +306,7 @@ PowerShell script; the bash one under Git Bash writes `/d/...` paths that other 
 
 ## Wire it into Claude Code
 
-Put one `.mcp.json` in the repo (the install script prints it). Leave out the db path: the
+`codegraph-index init` writes this for you. By hand, put one `.mcp.json` in the repo. Leave out the db path: the
 server looks for `.codegraph/graph.db` from its working directory up to the git worktree root. Claude Code starts it in the project directory, so the same file works in
 every worktree (`C:/dev/sa-1`, `C:/dev/sa-2`, …), each reading its own graph:
 
@@ -284,7 +329,7 @@ A worktree that hasn't been indexed yet still starts. Its tools answer "no code 
 build it with codegraph-index". An explicit path argument or `CODEGRAPH_DB` still wins over
 discovery. Two solutions in one worktree need `--db` to keep separate graphs.
 
-Add `.codegraph/` to `.gitignore`.
+Add `.codegraph/` to `.gitignore`; `init` does this too.
 
 ### Telemetry
 
