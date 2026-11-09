@@ -52,11 +52,23 @@ internal sealed class FakeEmbedder : IDisposable
         foreach (var term in SearchText.Tokenize(text))
         {
             var t = Synonyms.GetValueOrDefault(term, term);
-            v[(int)((uint)StringComparer.Ordinal.GetHashCode(t) % 64)] += 1;
+            v[(int)(Fnv1a(t) % 64)] += 1;
         }
 
         var norm = MathF.Sqrt(v.Sum(x => x * x));
         return norm == 0 ? v : v.Select(x => x / norm).ToArray();
+    }
+
+    // Stable across processes; string.GetHashCode is randomised per run and would reshuffle collisions.
+    private static uint Fnv1a(string text)
+    {
+        var hash = 2166136261u;
+        foreach (var c in text)
+        {
+            hash = (hash ^ c) * 16777619u;
+        }
+
+        return hash;
     }
 
     public void Dispose()

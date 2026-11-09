@@ -197,3 +197,50 @@ public sealed class AnalysisTests
         return db.Store;
     }
 }
+
+public sealed class PathBetweenTests
+{
+    // A → B → D, A → C → D (two shortest), A → X → Y → D (longer), D → A (a cycle back).
+    private static GraphStore Diamond(TempDb db)
+    {
+        string[] ids = ["A", "B", "C", "D", "X", "Y"];
+        db.Store.Write(
+            ids.Select(id => Graph.Node($"M:{id}", NodeKind.Method, id, id)),
+            [
+                new GraphEdge("M:A", "M:B", EdgeKind.Calls), new GraphEdge("M:B", "M:D", EdgeKind.Calls),
+                new GraphEdge("M:A", "M:C", EdgeKind.Calls), new GraphEdge("M:C", "M:D", EdgeKind.Calls),
+                new GraphEdge("M:A", "M:X", EdgeKind.Calls), new GraphEdge("M:X", "M:Y", EdgeKind.Calls), new GraphEdge("M:Y", "M:D", EdgeKind.Calls),
+                new GraphEdge("M:D", "M:A", EdgeKind.Calls),
+            ]);
+        return db.Store;
+    }
+
+    [Fact]
+    public void Returns_every_shortest_path_and_only_shortest_ones()
+    {
+        using var db = new TempDb();
+        var paths = Diamond(db).PathBetween("M:A", "M:D", [nameof(EdgeKind.Calls)]);
+
+        Assert.Equal(["A B D", "A C D"], paths.Select(p => string.Join(' ', p.Select(n => n.Name))).Order());
+    }
+
+    [Fact]
+    public void Honours_the_path_and_depth_limits()
+    {
+        using var db = new TempDb();
+        var store = Diamond(db);
+
+        Assert.Single(store.PathBetween("M:A", "M:D", [nameof(EdgeKind.Calls)], maxPaths: 1));
+        Assert.Empty(store.PathBetween("M:A", "M:D", [nameof(EdgeKind.Calls)], maxDepth: 1));
+    }
+
+    [Fact]
+    public void A_cycle_does_not_trap_the_search_and_other_edge_kinds_are_ignored()
+    {
+        using var db = new TempDb();
+        var store = Diamond(db);
+
+        Assert.Equal(["D", "A", "X"], store.PathBetween("M:D", "M:X", [nameof(EdgeKind.Calls)]).Single().Select(n => n.Name));
+        Assert.Empty(store.PathBetween("M:A", "M:D", [nameof(EdgeKind.Inherits)]));
+    }
+}

@@ -134,6 +134,10 @@ appears when no daemon is running.
 
 ## Tools
 
+Traversal answers (`impact_of`, `callers_of`, `callees_of`, the type and project walks, `traverse`) list the
+nearest 200 rows and, past that, the count at each depth, so a hub's tens of thousands of dependents do not
+flood the context; `impact_of` lists up to 50 guarding tests. `path_between` returns shortest paths only.
+
 All 35 tools are read-only and idempotent. Seven of them (`live_status`, `symbol_at`, `live_references`,
 `diagnostics`, `check_change`, `rename_preview`, `data_flow`) answer from the live Roslyn solution and need the [daemon](#live-daemon).
 `id` always means a node id from `find_symbol` or
@@ -161,7 +165,7 @@ and override.
 | `callers_of` | `id`, `depth` (1–20, 1) | Who calls or reads this member, transitively. A call to an interface or base member counts for every implementation and override. |
 | `callees_of` | `id`, `depth` (1–20, 1), `includeExternal` (false) | What this member calls; with `includeExternal`, the framework and NuGet members too. |
 | `impact_of` | `id`, `depth` (1–20, 5) | Everything that could break: transitive callers, overriders, implementers, subclasses, and for a type every member that references it. Guarding tests are listed separately. Call before editing anything shared. |
-| `path_between` | `from`, `to`, `edgeKinds` (Calls), `maxDepth` (1–20, 10), `maxPaths` (1–5, 3) | Shortest call chains from one method to another. |
+| `path_between` | `from`, `to`, `edgeKinds` (Calls), `maxDepth` (1–20, 10), `maxPaths` (1–5, 3) | Shortest call chains from one method to another: up to `maxPaths`, all of the shortest length. |
 | `most_called` | `limit` (1–100, 20), `minCallers` (1), `offset`, `includeExternal` (false), `nameFilter?` | Methods ranked by direct caller count. With `includeExternal` and e.g. `nameFilter: "System.IO"`, which framework APIs the solution leans on. |
 | `traverse` | `id`, `edgeKind`, `direction` (inbound / outbound), `depth` (1–10, 1) | Generic walk over one edge kind when no named tool fits. |
 

@@ -1278,49 +1278,92 @@ public sealed class GraphStore : IDisposable
     }
 
     /// <summary>
-    /// BFS shortest paths from <paramref name="fromId"/> to <paramref name="toId"/> via the given edge kinds.
-    /// Returns up to <paramref name="maxPaths"/> paths, each ordered source-to-target.
+    /// Shortest paths from <paramref name="fromId"/> to <paramref name="toId"/> over the given edge kinds, each ordered
+    /// source to target: up to <paramref name="maxPaths"/> of them, all of the shortest length. A breadth-first search
+    /// with one indexed query per level and every node visited once, then a walk back over the recorded parents.
+    /// Enumerating every simple path in SQL took seconds on a 10,000-method graph; this is bounded by the nodes
+    /// within the shortest distance.
     /// </summary>
     public IReadOnlyList<IReadOnlyList<GraphNode>> PathBetween(
         string fromId, string toId, string[] edgeKinds, int maxDepth = 10, int maxPaths = 3)
     {
-        var kindList = string.Join(", ", edgeKinds.Select((_, i) => $"$k{i}"));
-
-        using var command = _connection.CreateCommand();
-        command.CommandText =
-            $"""
-             WITH RECURSIVE bfs(id, path, depth) AS (
-                 SELECT $from, $from, 0
-                 UNION ALL
-                 SELECT e.to_id, b.path || '§' || e.to_id, b.depth + 1
-                 FROM edges e
-                 JOIN bfs b ON e.from_id = b.id
-                 WHERE e.kind IN ({kindList})
-                   AND strpos('§' || b.path || '§', '§' || e.to_id || '§') = 0
-                   AND b.depth < $max
-             )
-             SELECT path, depth FROM bfs
-             WHERE id = $to
-             ORDER BY depth, path
-             LIMIT $limit;
-             """;
-        command.Parameters.Add(P("from", fromId));
-        command.Parameters.Add(P("to", toId));
-        command.Parameters.Add(P("max", maxDepth));
-        command.Parameters.Add(P("limit", maxPaths));
-        for (var i = 0; i < edgeKinds.Length; i++)
-            command.Parameters.Add(P($"k{i}", edgeKinds[i]));
-
-        var results = new List<IReadOnlyList<GraphNode>>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        if (fromId == toId)
         {
-            var ids = reader.GetString(0).Split('§');
-            var nodes = ids.Select(id => GetNode(id)).OfType<GraphNode>().ToList();
-            if (nodes.Count == ids.Length)
-                results.Add(nodes);
+            return GetNode(fromId) is { } self ? [[self]] : [];
         }
-        return results;
+
+        var kindList = string.Join(", ", edgeKinds.Select((_, i) => $"$k{i}"));
+        var parents = new Dictionary<string, List<string>>(StringComparer.Ordinal) { [fromId] = [] };
+        var frontier = new List<string> { fromId };
+        var found = false;
+        for (var depth = 0; depth < maxDepth && frontier.Count > 0 && !found; depth++)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = $"SELECT from_id, to_id FROM edges WHERE kind IN ({kindList}) AND from_id IN ({PathList});";
+            command.Parameters.Add(P("paths", Lines(frontier)));
+            for (var i = 0; i < edgeKinds.Length; i++)
+            {
+                command.Parameters.Add(P($"k{i}", edgeKinds[i]));
+            }
+
+            var level = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    var (from, to) = (reader.GetString(0), reader.GetString(1));
+                    if (parents.ContainsKey(to))
+                    {
+                        continue; // reached at a shorter distance already
+                    }
+
+                    if (!level.TryGetValue(to, out var list))
+                    {
+                        level[to] = list = [];
+                    }
+
+                    list.Add(from);
+                }
+            }
+
+            foreach (var (node, from) in level)
+            {
+                parents[node] = from;
+            }
+
+            found = level.ContainsKey(toId);
+            frontier = [.. level.Keys];
+        }
+
+        if (!found)
+        {
+            return [];
+        }
+
+        // Walk back from the target over every recorded parent, stopping once enough paths are complete.
+        var paths = new List<List<string>>();
+        var stack = new Stack<List<string>>([[toId]]);
+        while (stack.Count > 0 && paths.Count < maxPaths)
+        {
+            var partial = stack.Pop();
+            var head = partial[^1];
+            if (head == fromId)
+            {
+                paths.Add(Enumerable.Reverse(partial).ToList());
+                continue;
+            }
+
+            foreach (var parent in parents[head].OrderByDescending(p => p, StringComparer.Ordinal))
+            {
+                stack.Push([.. partial, parent]);
+            }
+        }
+
+        var nodes = NodesById(paths.SelectMany(p => p).Distinct(StringComparer.Ordinal).ToList());
+        return paths
+            .Where(p => p.All(nodes.ContainsKey))
+            .Select(p => (IReadOnlyList<GraphNode>)p.Select(id => nodes[id]).ToList())
+            .ToList();
     }
 
     /// <summary>

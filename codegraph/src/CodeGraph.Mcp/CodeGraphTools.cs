@@ -527,16 +527,21 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
         var sb = new StringBuilder();
         sb.AppendLine($"impact of {node.FullName}: {others.Count} dependents, {tests.Count} guarding tests");
+        if (others.Count > MaxRows)
+        {
+            sb.AppendLine($"by depth: {ByDepth(others)}");
+        }
+
         if (others.Count > 0)
         {
-            sb.AppendLine("dependents:");
-            sb.Append(Format(others.Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
+            sb.AppendLine(others.Count > MaxRows ? $"dependents (nearest {MaxRows} of {others.Count}):" : "dependents:");
+            sb.Append(Format(others.Take(MaxRows).Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
         }
 
         if (tests.Count > 0)
         {
-            sb.AppendLine("tests:");
-            sb.Append(Format(tests.Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
+            sb.AppendLine(tests.Count > MaxTestRows ? $"tests (nearest {MaxTestRows} of {tests.Count}):" : "tests:");
+            sb.Append(Format(tests.Take(MaxTestRows).Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
         }
         else
         {
@@ -547,7 +552,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "path_between", ReadOnly = true, Idempotent = true)]
-    [Description("Shortest call path(s) between two methods — answers 'how does A end up calling B?'. Returns each node in order with its full name.")]
+    [Description("Shortest call path(s) between two methods — answers 'how does A end up calling B?'. Returns up to maxPaths paths, all of the shortest length, each node in order with its full name.")]
     public string PathBetween(
         [Description("Source node id from find_symbol")] string from,
         [Description("Target node id from find_symbol")] string to,
@@ -942,10 +947,29 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             return NotFound(id);
         }
 
-        return hits.Count == 0
-            ? $"{node.FullName}: no {label} in the indexed source"
-            : $"{label} of {node.FullName}:\n{Format(hits.Select(h => (h.Node, (string?)$"depth {h.Depth}")))}";
+        if (hits.Count == 0)
+        {
+            return $"{node.FullName}: no {label} in the indexed source";
+        }
+
+        if (hits.Count <= MaxRows)
+        {
+            return $"{label} of {node.FullName}:\n{Format(hits.Select(h => (h.Node, (string?)$"depth {h.Depth}")))}";
+        }
+
+        // A hub's transitive callers run to tens of thousands of rows; the nearest ones and the shape are what help.
+        return $"{hits.Count} {label} of {node.FullName}; by depth: {ByDepth(hits)}\nnearest {MaxRows}:\n"
+               + Format(hits.Take(MaxRows).Select(h => (h.Node, (string?)$"depth {h.Depth}")))
+               + "lower the depth, or use path_between for one route, to see the rest\n";
     }
+
+    /// <summary>Rows a traversal answer lists before it summarises; enough to act on, small enough to read.</summary>
+    private const int MaxRows = 200;
+
+    private const int MaxTestRows = 50;
+
+    private static string ByDepth(IEnumerable<GraphHit> hits) =>
+        string.Join(", ", hits.GroupBy(h => h.Depth).OrderBy(g => g.Key).Select(g => $"{g.Key}: {g.Count()}"));
 
     private static string NotFound(string id) =>
         $"no node with id '{id}'. Use find_symbol to look it up; ids look like M:Namespace.Type.Method(System.String)";

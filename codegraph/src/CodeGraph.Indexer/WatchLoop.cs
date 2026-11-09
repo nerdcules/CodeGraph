@@ -26,6 +26,8 @@ public sealed class WatchLoop
     private readonly DateTime _startedAt = DateTime.UtcNow;
     private bool _lostEvents;
     private bool _flushRequested;
+    // Completed by a flush so a debounce already under way ends at once, not after its full wait.
+    private TaskCompletionSource _flushNow = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _indexing;
     private DateTime? _lastIndexedAt;
     private double? _lastIndexSeconds;
@@ -156,6 +158,7 @@ public sealed class WatchLoop
             waiter = new TaskCompletionSource<LiveStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
             _flushWaiters.Add(waiter);
             _flushRequested = true;
+            _flushNow.TrySetResult();
         }
 
         _wake.Release();
@@ -188,15 +191,27 @@ public sealed class WatchLoop
             // Debounce: editors and git touch files in bursts; wait for a quiet moment before walking.
             // Anything that lands during the walk wakes the loop again. A flush skips the wait.
             bool urgent;
+            Task flushNow;
             lock (_lock)
             {
                 urgent = _flushRequested;
-                _flushRequested = false;
+                flushNow = _flushNow.Task;
             }
 
             if (!urgent)
             {
-                await Task.Delay(_debounce, cancellationToken);
+                // A flush that arrives during the wait cuts it short.
+                await Task.WhenAny(Task.Delay(_debounce, cancellationToken), flushNow);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            lock (_lock)
+            {
+                _flushRequested = false;
+                if (_flushNow.Task.IsCompleted)
+                {
+                    _flushNow = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                }
             }
 
             List<string> batch;

@@ -72,6 +72,22 @@ public sealed class WatchLoopTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_flush_cuts_short_a_debounce_already_under_way()
+    {
+        var loop = Start(debounce: TimeSpan.FromSeconds(30));
+        await loop.Ready.WaitAsync(Timeout, TestContext.Current.CancellationToken);
+
+        _disk[A] = "class A { int G; }";
+        loop.Enqueue(A);
+        await Task.Delay(100, TestContext.Current.CancellationToken); // the loop wakes and starts its 30 s wait first
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await loop.FlushAsync(TestContext.Current.CancellationToken).WaitAsync(Timeout, TestContext.Current.CancellationToken);
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(2), $"flush waited {clock.Elapsed}");
+        Assert.Equal("class A { int G; }", _passes.Last().Text);
+    }
+
+    [Fact]
     public async Task A_flush_with_nothing_pending_returns_at_once()
     {
         var loop = Start();

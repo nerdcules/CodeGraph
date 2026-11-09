@@ -234,3 +234,51 @@ hardest case for ranking because their cosines bunch together:
 
 A first quantiser scaled every unit vector by a fixed 127, which left 768-dimension components about a dozen
 levels; a test comparing against exact cosine caught it at 179 / 200 agreement, and per-vector scaling fixed it.
+
+## Round 7: large graphs (synthetic, up to 165,000 methods)
+
+Synthetic call graphs shaped like layered application code: 12 layers, each method calling five in the next
+layers, 10% of calls going to 20 hub methods per layer, and tests calling into random layers.
+
+**Store queries before this round:**
+
+| query | 11k nodes, 49k edges | 55k nodes, 244k edges | 165k nodes, 732k edges |
+|---|---|---|---|
+| callers depth 1 (hub) | 9 ms | 23 ms | 48 ms |
+| impact depth 5 | 19 ms | 50 ms | 95 ms |
+| impact depth 20 (hub) | 70 ms | 242 ms | 662 ms |
+| covered_by depth 30 (hub) | 44 ms | 142 ms | 330 ms |
+| callees depth 10 | 58 ms | 149 ms | 298 ms |
+| coverage_stats | 21 ms | 68 ms | 164 ms |
+| path_between depth 10 | 2,368 ms | 1,553 ms | 1,061 ms |
+
+**DuckDB `USING KEY` recursion** (keeps one row per node instead of one per node and depth) was the planned
+fix for the walks. On the 150k graph it was slower, 426 ms against 251 ms for the same walk, because the
+duplicate rows it removes are only 3.3 per node; most of the walk's cost is the 105,000 nodes a hub genuinely
+reaches. It is not adopted.
+
+**What was slow instead** was `path_between`, which enumerated every simple path up to the depth limit before
+keeping three. It is now a breadth-first search, one indexed query per level and each node visited once, then
+a walk back over parents. It returns up to `maxPaths` paths of the shortest length only.
+
+| path_between | 11k nodes | 55k nodes | 165k nodes |
+|---|---|---|---|
+| before | 2,368 ms | 1,553 ms | 1,061 ms |
+| after | 38 ms | 105 ms | 60 ms |
+| after, no path exists | 1.9 ms | 3.9 ms | 4.9 ms |
+
+**And the answers were too big.** On a hub, `impact_of` and `callers_of` printed every reachable node. Traversal
+tools now list the nearest 200 rows (50 for guarding tests) and summarise the rest as counts per depth.
+Through the server on the 55k graph:
+
+| tool call | before: latency, answer | after: latency, answer |
+|---|---|---|
+| `impact_of` hub, depth 20 | 452 ms, 2,473,442 chars (~618,000 tokens) | 334 ms, 16,231 chars (~4,100 tokens) |
+| `callers_of` hub, depth 5 | 124 ms, 1,379,921 chars (~345,000 tokens) | 139 ms, 13,151 chars (~3,300 tokens) |
+| `path_between` | 1,685 ms, 709 chars | 84 ms, 711 chars |
+
+The old `impact_of` answer would not fit in any model's context window.
+
+Two defects surfaced while measuring this round and are fixed: a flush arriving while the daemon's debounce was
+already running waited out the debounce (up to 500 ms), and a test's fake embedder used .NET's per-process string
+hash, which made one ranking test fail about one run in ten.
