@@ -95,12 +95,20 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         }, cancellationToken);
 
     [McpServerTool(Name = "check_change", ReadOnly = true, Idempotent = true)]
-    [Description("What-if compile: the full new text of one file is applied to the live Roslyn solution in memory, the file's project and everything depending on it are compiled, and the new and fixed errors are reported. Nothing is written to disk. Use before editing a shared file. Needs the live daemon.")]
+    [Description("What-if compile: the proposed full text of one or more files is applied to the live Roslyn solution in memory, their projects and everything depending on them are compiled, and the new and fixed errors are reported. Also lists the declarations the edit adds, removes or changes, with the graph's dependents and guarding tests for each changed one. Nothing is written to disk. Use before editing a shared file. Needs the live daemon.")]
     public Task<string> CheckChange(
-        [Description("Absolute path of the file (existing, or new inside a project directory)")] string file,
-        [Description("The complete proposed contents of the file")] string text,
-        CancellationToken cancellationToken = default) =>
-        Live("check_change", new { file = Path.GetFullPath(file), text }, (LiveCheck c) =>
+        [Description("Absolute path of the file (existing, or new inside a project directory); or use files")] string? file = null,
+        [Description("The complete proposed contents of that file")] string? text = null,
+        [Description("Several files at once, each {file, text} with the complete proposed contents; use when an edit spans files")] LiveFileText[]? files = null,
+        CancellationToken cancellationToken = default)
+    {
+        var edits = files is { Length: > 0 }
+            ? files.Select(f => new LiveFileText(Path.GetFullPath(f.File), f.Text)).ToArray()
+            : file is not null && text is not null ? [new LiveFileText(Path.GetFullPath(file), text)] : null;
+        if (edits is null)
+            return Task.FromResult("pass file and text, or files: [{file, text}, …]");
+
+        return Live("check_change", new { files = edits }, (LiveCheck c) =>
         {
             var sb = new StringBuilder();
             sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
@@ -122,8 +130,42 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
                 foreach (var e in c.FixedErrors) sb.AppendLine(Format(e));
             }
 
+            AppendDeclarationImpact(sb, c.Declarations ?? []);
             return sb.ToString();
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// The graph half of a what-if: for each removed, re-signed or re-implemented declaration the graph knows,
+    /// how many members depend on it and which tests guard it. Compile errors say what breaks now; this says
+    /// what behaves differently. Bounded so a large edit stays a cheap answer.
+    /// </summary>
+    private void AppendDeclarationImpact(StringBuilder sb, IReadOnlyList<LiveDeclarationChange> declarations)
+    {
+        if (declarations.Count == 0)
+        {
+            return;
+        }
+
+        const int MaxImpact = 15;
+        sb.AppendLine($"declarations changed ({declarations.Count}):");
+        var analysed = 0;
+        foreach (var d in declarations.OrderBy(d => d.Change switch { "removed" => 0, "signature" => 1, "body" => 2, _ => 3 }))
+        {
+            sb.Append("  ").Append(d.Change).Append("  ").Append(d.Display).Append("  [").Append(d.Id).Append(']');
+            if (d.Change != "added" && analysed < MaxImpact && store.GetNode(d.Id) is not null)
+            {
+                analysed++;
+                var hits = store.Impact(d.Id, 3);
+                var tests = hits.Count(h => h.Node.IsTest);
+                sb.Append($"  → {hits.Count - tests} dependent(s) within 3 hops, {tests} test(s)");
+                var direct = hits.Where(h => h.Depth == 1 && !h.Node.IsTest).Take(3).Select(h => h.Node.FullName).ToList();
+                if (direct.Count > 0) sb.Append(": ").Append(string.Join(", ", direct));
+            }
+
+            sb.AppendLine();
+        }
+    }
 
     [McpServerTool(Name = "rename_preview", ReadOnly = true, Idempotent = true)]
     [Description("Preview a rename with Roslyn's renamer: every line that would change across the solution (declarations, references, interface implementations, overrides), plus any compile errors the rename would cause (name clashes). Nothing is written; apply the edits yourself. Needs the live daemon.")]

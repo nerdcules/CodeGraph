@@ -33,7 +33,10 @@ public sealed class LiveService(Func<Solution?> snapshot, Func<LiveStatus> statu
                 return LiveResponse.Ok(await LiveQueries.DiagnosticsAsync(solution, d.File, d.IncludeWarnings, d.Limit, cancellationToken));
             case "check_change":
                 var c = Params<CheckChangeParams>(request);
-                return LiveResponse.Ok(await LiveQueries.CheckChangeAsync(solution, c.File, c.Text, cancellationToken));
+                IReadOnlyList<LiveFileText> files = c.Files is { Count: > 0 } many ? many
+                    : c.File is not null && c.Text is not null ? [new LiveFileText(c.File, c.Text)]
+                    : throw new LiveException("check_change: pass file and text, or files");
+                return LiveResponse.Ok(await LiveQueries.CheckChangeAsync(solution, files, cancellationToken));
             case "rename_preview":
                 var n = Params<RenameParams>(request);
                 return LiveResponse.Ok(await LiveQueries.RenamePreviewAsync(solution, n.Symbol, n.NewName, n.Overloads, cancellationToken));
@@ -51,7 +54,7 @@ public sealed class LiveService(Func<Solution?> snapshot, Func<LiveStatus> statu
 
     public sealed record DiagnosticsParams(string? File = null, bool IncludeWarnings = false, int Limit = 30);
 
-    public sealed record CheckChangeParams(string File, string Text);
+    public sealed record CheckChangeParams(string? File = null, string? Text = null, IReadOnlyList<LiveFileText>? Files = null);
 
     public sealed record RenameParams(string Symbol, string NewName, bool Overloads = false);
 }

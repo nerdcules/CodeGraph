@@ -167,17 +167,30 @@ public static class LiveQueries
     /// own project(s) and everything that depends on them. Roslyn forks the snapshot for free and re-binds only
     /// what changed, so this is the cost of an incremental build, with nothing written to disk.
     /// </summary>
-    public static async Task<LiveCheck> CheckChangeAsync(Solution solution, string file, string text, CancellationToken cancellationToken)
+    public static Task<LiveCheck> CheckChangeAsync(Solution solution, string file, string text, CancellationToken cancellationToken) =>
+        CheckChangeAsync(solution, [new LiveFileText(file, text)], cancellationToken);
+
+    /// <summary>
+    /// Several files at once: a change that moves a member from one file to another, or edits a declaration and
+    /// its callers together, only compiles as a whole. Every file's project and every dependent is compiled once.
+    /// </summary>
+    public static async Task<LiveCheck> CheckChangeAsync(Solution solution, IReadOnlyList<LiveFileText> files, CancellationToken cancellationToken)
     {
         var clock = Stopwatch.StartNew();
-        var path = Path.GetFullPath(file);
-        var forked = WorkspaceSync.Apply(solution, [path], _ => text);
-        if (forked == solution)
+        if (files.Count == 0)
         {
-            throw new LiveException($"{file} is not inside any project of the loaded solution");
+            throw new LiveException("no files to check");
         }
 
-        var changed = forked.GetDocumentIdsWithFilePath(path).Select(d => d.ProjectId).Distinct().ToList();
+        var texts = files.ToDictionary(f => Path.GetFullPath(f.File), f => f.Text, StringComparer.OrdinalIgnoreCase);
+        var forked = WorkspaceSync.Apply(solution, texts.Keys, path => texts[path]);
+        var outside = texts.Keys.Where(p => forked.GetDocumentIdsWithFilePath(p).IsEmpty).ToList();
+        if (outside.Count > 0)
+        {
+            throw new LiveException($"{string.Join(", ", outside)} is not inside any project of the loaded solution");
+        }
+
+        var changed = texts.Keys.SelectMany(p => forked.GetDocumentIdsWithFilePath(p)).Select(d => d.ProjectId).Distinct().ToList();
         var graph = forked.GetProjectDependencyGraph();
         var affected = changed
             .Concat(changed.SelectMany(graph.GetProjectsThatTransitivelyDependOnThisProject))
@@ -189,13 +202,76 @@ public static class LiveQueries
         var before = await ErrorsAsync(affected.Select(p => solution.GetProject(p.Id)).OfType<Project>(), cancellationToken);
         var after = await ErrorsAsync(affected, cancellationToken);
 
+        var declarations = new List<LiveDeclarationChange>();
+        foreach (var path in texts.Keys)
+        {
+            var old = await DeclarationsAsync(DocumentsAt(solution, path).FirstOrDefault(), cancellationToken);
+            var now = await DeclarationsAsync(DocumentsAt(forked, path).FirstOrDefault(), cancellationToken);
+            foreach (var (id, was) in old)
+            {
+                if (!now.TryGetValue(id, out var isNow))
+                {
+                    declarations.Add(new LiveDeclarationChange(id, "removed", was.Display));
+                }
+                else if (was.Display != isNow.Display)
+                {
+                    declarations.Add(new LiveDeclarationChange(id, "signature", isNow.Display));
+                }
+                else if (was.Body != isNow.Body)
+                {
+                    declarations.Add(new LiveDeclarationChange(id, "body", isNow.Display));
+                }
+            }
+
+            declarations.AddRange(now.Where(d => !old.ContainsKey(d.Key)).Select(d => new LiveDeclarationChange(d.Key, "added", d.Value.Display)));
+        }
+
         return new LiveCheck(
             affected.Select(p => p.Name).Distinct().Order(StringComparer.Ordinal).ToList(),
             after.Except(before).ToList(),
             before.Except(after).ToList(),
             before.Count,
             after.Count,
-            Math.Round(clock.Elapsed.TotalSeconds, 2));
+            Math.Round(clock.Elapsed.TotalSeconds, 2),
+            declarations.DistinctBy(d => d.Id).ToList());
+    }
+
+    private static readonly SymbolDisplayFormat DeclarationFormat = SymbolDisplayFormat.CSharpErrorMessageFormat
+        .AddMemberOptions(SymbolDisplayMemberOptions.IncludeAccessibility | SymbolDisplayMemberOptions.IncludeModifiers | SymbolDisplayMemberOptions.IncludeType);
+
+    /// <summary>
+    /// Every member a document declares, by graph id: its signature as displayed, and its body text so an edit
+    /// inside an implementation is told apart from one to the signature. Types report signatures only; their
+    /// "body" is every member and would always differ.
+    /// </summary>
+    private static async Task<Dictionary<string, (string Display, string? Body)>> DeclarationsAsync(Document? document, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, (string, string?)>(StringComparer.Ordinal);
+        if (document is null
+            || await document.GetSyntaxRootAsync(cancellationToken) is not { } root
+            || await document.GetSemanticModelAsync(cancellationToken) is not { } model)
+        {
+            return result;
+        }
+
+        foreach (var node in root.DescendantNodes(n => n is CompilationUnitSyntax or BaseNamespaceDeclarationSyntax or TypeDeclarationSyntax
+                     or FieldDeclarationSyntax or EventFieldDeclarationSyntax or VariableDeclarationSyntax))
+        {
+            if (node is not (MemberDeclarationSyntax or VariableDeclaratorSyntax) || node is BaseNamespaceDeclarationSyntax or BaseFieldDeclarationSyntax or GlobalStatementSyntax)
+            {
+                continue;
+            }
+
+            if (model.GetDeclaredSymbol(node, cancellationToken) is not { } symbol || IdOf(symbol) is not { } id)
+            {
+                continue;
+            }
+
+            var body = symbol is INamedTypeSymbol ? null : (node is VariableDeclaratorSyntax ? node.Parent!.Parent! : node).ToString();
+            result.TryAdd(id, (symbol.ToDisplayString(DeclarationFormat), body));
+        }
+
+        return result;
     }
 
     /// <summary>

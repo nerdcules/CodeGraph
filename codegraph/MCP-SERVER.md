@@ -132,8 +132,8 @@ appears when no daemon is running.
 
 ## Tools
 
-All 33 tools are read-only and idempotent. Five of them (`live_status`, `symbol_at`, `live_references`,
-`diagnostics`, `check_change`) answer from the live Roslyn solution and need the [daemon](#live-daemon).
+All 34 tools are read-only and idempotent. Six of them (`live_status`, `symbol_at`, `live_references`,
+`diagnostics`, `check_change`, `rename_preview`) answer from the live Roslyn solution and need the [daemon](#live-daemon).
 `id` always means a node id from `find_symbol` or
 `search_code`. Depth and limit arguments are clamped to the ranges shown. `Calls` edges cover
 method calls, constructions, property, field and event accesses, and the members a `using`,
@@ -204,7 +204,8 @@ and override.
 | `symbol_at` | `file`, `line`, `column` | The symbol under a position: its graph id, the enclosing member, the type of the expression there. Metadata symbols are reported as not in the graph. |
 | `live_references` | `symbol` (id or dotted name), `limit` (1–200, 50) | Every use of a symbol in the solution, including framework and NuGet members the graph does not hold ("who calls `File.Delete`"). Each row names the enclosing member and shows the line. |
 | `diagnostics` | `file?`, `includeWarnings` (false), `limit` (1–100, 30) | Compiler errors (and warnings) for one file or the whole solution as it is on disk. |
-| `check_change` | `file`, `text` | What-if compile: the proposed full text of a file is applied in memory, its project and every dependent are compiled, and the new and fixed errors come back. Nothing is written. |
+| `check_change` | `file` + `text`, or `files` (`[{file, text}]`) | What-if compile: the proposed full text of one or more files is applied in memory, their projects and every dependent are compiled, and the new and fixed errors come back. Each declaration the edit removes, re-signs or re-implements is listed with its dependents and guarding tests from the graph. Nothing is written. |
+| `rename_preview` | `symbol`, `newName`, `overloads` (false), `limit` (200) | Roslyn's rename on a fork: every line that would change across the solution, through interfaces and overrides, and any compile errors the rename would cause. Nothing is written. |
 
 ### The server itself
 
@@ -243,7 +244,7 @@ never leaves the machine; `CODEGRAPH_TELEMETRY=off` disables it.
 ## Live daemon
 
 `codegraph-index <solution> --watch` is the daemon. Besides re-indexing on every save, it keeps the loaded
-Roslyn solution and answers the five live tools over a named pipe (a Unix domain socket on Linux and macOS, a
+Roslyn solution and answers the six live tools over a named pipe (a Unix domain socket on Linux and macOS, a
 real pipe on Windows) whose name is derived from the graph's path, so no port or discovery file is involved and
 one daemon serves every MCP server reading that graph. A request is one JSON line each way over a fresh
 connection; a daemon that is not running fails in microseconds, so the server probes it before every call.

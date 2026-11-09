@@ -262,3 +262,63 @@ public sealed class LiveQueriesTests
         return projectId;
     }
 }
+
+public sealed class CheckChangeDeclarationTests
+{
+    [Fact]
+    public async Task Classifies_removed_added_signature_and_body_changes()
+    {
+        var solution = Solution("namespace N; public class C { public int A() => 1; public int B() => 2; public void D() { } int F; }");
+
+        var check = await LiveQueries.CheckChangeAsync(solution, Indexed.PathOf("C.cs"),
+            "namespace N; public class C { public int A() => 10; internal int B() => 2; public void E() { } int F; }",
+            TestContext.Current.CancellationToken);
+
+        var byId = check.Declarations!.ToDictionary(d => d.Id, d => d.Change);
+        Assert.Equal("body", byId["M:N.C.A"]);
+        Assert.Equal("signature", byId["M:N.C.B"]);
+        Assert.Equal("removed", byId["M:N.C.D"]);
+        Assert.Equal("added", byId["M:N.C.E"]);
+        Assert.False(byId.ContainsKey("F:N.C.F"), "an untouched field is not a change");
+        Assert.False(byId.ContainsKey("T:N.C"), "the type's own signature did not change");
+    }
+
+    [Fact]
+    public async Task Several_files_compile_together()
+    {
+        // Moving Helper from one file to another breaks either file alone and compiles as a pair.
+        var solution = Solution(
+            ("A.cs", "namespace N; public static class A { public static int Helper() => 1; }"),
+            ("B.cs", "namespace N; public static class B { public static int Use() => A.Helper(); }"));
+
+        var alone = await LiveQueries.CheckChangeAsync(solution, Indexed.PathOf("A.cs"), "namespace N; public static class A { }", TestContext.Current.CancellationToken);
+        var both = await LiveQueries.CheckChangeAsync(solution,
+            [
+                new LiveFileText(Indexed.PathOf("A.cs"), "namespace N; public static class A { }"),
+                new LiveFileText(Indexed.PathOf("B.cs"), "namespace N; public static class B { public static int Helper() => 1; public static int Use() => Helper(); }"),
+            ], TestContext.Current.CancellationToken);
+
+        Assert.NotEmpty(alone.NewErrors);
+        Assert.Empty(both.NewErrors);
+        Assert.Contains(both.Declarations!, d => d is { Id: "M:N.A.Helper", Change: "removed" });
+        Assert.Contains(both.Declarations!, d => d is { Id: "M:N.B.Helper", Change: "added" });
+        Assert.Contains(both.Declarations!, d => d is { Id: "M:N.B.Use", Change: "body" });
+    }
+
+    private static Solution Solution(string source) => Solution(("C.cs", source));
+
+    private static Solution Solution(params (string Name, string Source)[] files)
+    {
+        var workspace = new AdhocWorkspace();
+        var projectId = ProjectId.CreateNewId();
+        workspace.AddProject(ProjectInfo.Create(
+            projectId, VersionStamp.Default, "Demo", "Demo", LanguageNames.CSharp,
+            filePath: Indexed.PathOf("Demo.csproj"),
+            documents: files.Select(f => DocumentInfo.Create(DocumentId.CreateNewId(projectId), f.Name,
+                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(f.Source), VersionStamp.Default)),
+                filePath: Indexed.PathOf(f.Name))),
+            metadataReferences: Indexed.FrameworkReferences,
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)));
+        return workspace.CurrentSolution;
+    }
+}

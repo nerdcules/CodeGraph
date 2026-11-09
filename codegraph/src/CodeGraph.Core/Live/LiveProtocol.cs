@@ -78,14 +78,28 @@ public sealed record LiveDiagnostic(string Severity, string Id, string Message, 
 
 public sealed record LiveDiagnostics(int Errors, int Warnings, IReadOnlyList<LiveDiagnostic> Items);
 
-/// <summary>The outcome of compiling a hypothetical edit: what it breaks and what it fixes, nothing written to disk.</summary>
+/// <summary>One file's proposed full contents, for a multi-file what-if compile.</summary>
+public sealed record LiveFileText(string File, string Text);
+
+/// <summary>
+/// How one declaration differs between the current file and the proposed one. <see cref="Change"/> is
+/// <c>removed</c>, <c>added</c>, <c>signature</c> (same id, different modifiers, return type or accessibility)
+/// or <c>body</c> (same signature, different implementation).
+/// </summary>
+public sealed record LiveDeclarationChange(string Id, string Change, string Display);
+
+/// <summary>
+/// The outcome of compiling a hypothetical edit: what it breaks and what it fixes, and which declarations it
+/// touches (so the graph can say who depends on them), nothing written to disk.
+/// </summary>
 public sealed record LiveCheck(
     IReadOnlyList<string> ProjectsCompiled,
     IReadOnlyList<LiveDiagnostic> NewErrors,
     IReadOnlyList<LiveDiagnostic> FixedErrors,
     int ErrorsBefore,
     int ErrorsAfter,
-    double Seconds);
+    double Seconds,
+    IReadOnlyList<LiveDeclarationChange>? Declarations = null);
 
 /// <summary>One changed line of a previewed edit, one-based.</summary>
 public sealed record LiveLineEdit(int Line, string Before, string After);
