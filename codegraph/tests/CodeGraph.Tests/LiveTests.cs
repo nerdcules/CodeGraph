@@ -192,6 +192,50 @@ public sealed class LiveQueriesTests
         Assert.Contains("not inside any project", error.Message);
     }
 
+    [Fact]
+    public async Task RenamePreview_edits_declaration_and_references_across_projects_without_conflicts()
+    {
+        var rename = await LiveQueries.RenamePreviewAsync(Solution(), "M:N.Files.Clean(System.String)", "Scrub", overloads: false, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["App.cs", "Lib.cs"], rename.Files.Select(f => Path.GetFileName(f.File)));
+        Assert.Equal(2, rename.Edits);
+        var call = Assert.Single(rename.Files[0].Lines);
+        Assert.Equal(4, call.Line);
+        Assert.Contains("Files.Scrub(\"a\")", call.After);
+        Assert.Contains("Files.Clean(\"a\")", call.Before);
+        Assert.Empty(rename.Conflicts);
+    }
+
+    [Fact]
+    public async Task RenamePreview_follows_an_interface_member_to_its_implementation()
+    {
+        var workspace = new AdhocWorkspace();
+        Add(workspace, "Lib", "Lib", [("Lib.cs", "namespace N; public interface IRun { void Go(); } public class R : IRun { public void Go() { } } public class U { void M(IRun r) => r.Go(); }")], [], OutputKind.DynamicallyLinkedLibrary);
+
+        var rename = await LiveQueries.RenamePreviewAsync(workspace.CurrentSolution, "M:N.IRun.Go", "Start", overloads: false, TestContext.Current.CancellationToken);
+
+        // One line holds the interface member, the implementation and the call: all three are renamed.
+        var line = Assert.Single(Assert.Single(rename.Files).Lines);
+        Assert.Equal(3, line.After.Split("Start(").Length - 1);
+        Assert.DoesNotContain("Go(", line.After);
+    }
+
+    [Fact]
+    public async Task RenamePreview_reports_a_clash_as_a_conflict()
+    {
+        // Load already exists on Files, so renaming Clean to Load makes App's call ambiguous or mistyped.
+        var rename = await LiveQueries.RenamePreviewAsync(Solution(), "M:N.Files.Clean(System.String)", "Load", overloads: false, TestContext.Current.CancellationToken);
+
+        Assert.NotEmpty(rename.Conflicts);
+    }
+
+    [Fact]
+    public async Task RenamePreview_rejects_metadata_symbols_and_bad_names()
+    {
+        await Assert.ThrowsAsync<LiveException>(() => LiveQueries.RenamePreviewAsync(Solution(), "System.IO.File.Delete", "Remove", false, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<LiveException>(() => LiveQueries.RenamePreviewAsync(Solution(), "M:N.Files.Clean(System.String)", "not valid", false, TestContext.Current.CancellationToken));
+    }
+
     /// <summary>Lib (Lib.cs) referenced by App (App.cs), both in the adhoc root so WorkspaceSync can place new files.</summary>
     private static Solution Solution(string? app = null)
     {

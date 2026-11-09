@@ -86,3 +86,21 @@ public sealed record LiveCheck(
     int ErrorsBefore,
     int ErrorsAfter,
     double Seconds);
+
+/// <summary>One changed line of a previewed edit, one-based.</summary>
+public sealed record LiveLineEdit(int Line, string Before, string After);
+
+public sealed record LiveFileEdit(string File, IReadOnlyList<LiveLineEdit> Lines);
+
+/// <summary>
+/// What renaming a symbol would change, computed by Roslyn's renamer on a fork of the solution: every edited line,
+/// plus the compile errors the renamed solution would have that the current one does not (name clashes, hidden members).
+/// </summary>
+public sealed record LiveRename(
+    string Symbol,
+    string? SymbolId,
+    string NewName,
+    int Edits,
+    IReadOnlyList<LiveFileEdit> Files,
+    IReadOnlyList<LiveDiagnostic> Conflicts,
+    double Seconds);

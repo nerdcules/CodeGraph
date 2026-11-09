@@ -125,6 +125,45 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             return sb.ToString();
         }, cancellationToken);
 
+    [McpServerTool(Name = "rename_preview", ReadOnly = true, Idempotent = true)]
+    [Description("Preview a rename with Roslyn's renamer: every line that would change across the solution (declarations, references, interface implementations, overrides), plus any compile errors the rename would cause (name clashes). Nothing is written; apply the edits yourself. Needs the live daemon.")]
+    public Task<string> RenamePreview(
+        [Description("Graph id (M:N.Type.Method(System.String)) or dotted name of a source symbol")] string symbol,
+        [Description("The new name, a plain identifier")] string newName,
+        [Description("Rename every overload of a method too, default false")] bool overloads = false,
+        [Description("Max changed lines to show, default 200")] int limit = 200,
+        CancellationToken cancellationToken = default) =>
+        Live("rename_preview", new { symbol, newName, overloads }, (LiveRename r) =>
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"rename {r.Symbol} → {r.NewName}: {r.Edits} line(s) in {r.Files.Count} file(s), computed in {r.Seconds}s"));
+            if (r.Conflicts.Count > 0)
+            {
+                sb.AppendLine($"CONFLICTS ({r.Conflicts.Count}) — the renamed solution would not compile:");
+                foreach (var e in r.Conflicts) sb.AppendLine(Format(e));
+            }
+
+            var shown = 0;
+            foreach (var file in r.Files)
+            {
+                sb.AppendLine(file.File);
+                foreach (var line in file.Lines)
+                {
+                    if (shown++ >= Math.Clamp(limit, 1, 2000))
+                    {
+                        sb.AppendLine($"… {r.Edits - limit} more line(s); raise limit to see them");
+                        return sb.ToString();
+                    }
+
+                    sb.Append("  ").Append(line.Line).Append(": - ").AppendLine(line.Before.Trim());
+                    sb.Append("  ").Append(' ', line.Line.ToString(CultureInfo.InvariantCulture).Length).Append(": + ").AppendLine(line.After.Trim());
+                }
+            }
+
+            return sb.ToString();
+        }, cancellationToken);
+
     private async Task<string> Live<T>(string method, object parameters, Func<T, string> render, CancellationToken cancellationToken)
     {
         try

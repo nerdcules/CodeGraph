@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
+using Microsoft.CodeAnalysis.Rename;
 using Microsoft.CodeAnalysis.Text;
 
 namespace CodeGraph.Indexer;
@@ -195,6 +196,97 @@ public static class LiveQueries
             before.Count,
             after.Count,
             Math.Round(clock.Elapsed.TotalSeconds, 2));
+    }
+
+    /// <summary>
+    /// Renames a source symbol on a fork of the solution and reports every line that would change, the way the
+    /// IDE's rename does: overloads optionally, interface members with their implementations, overrides with their
+    /// bases. The fork is then compiled, and errors it has that the current solution does not are reported as
+    /// conflicts. Nothing is written; the caller applies the edits.
+    /// </summary>
+    public static async Task<LiveRename> RenamePreviewAsync(Solution solution, string symbolIdOrName, string newName, bool overloads, CancellationToken cancellationToken)
+    {
+        var clock = Stopwatch.StartNew();
+        if (!SyntaxFacts.IsValidIdentifier(newName))
+        {
+            throw new LiveException($"'{newName}' is not a valid C# identifier");
+        }
+
+        var symbol = (await ResolveAsync(solution, symbolIdOrName, cancellationToken)).FirstOrDefault()
+                     ?? throw new LiveException($"no symbol matches '{symbolIdOrName}'");
+        if (!symbol.Locations.Any(l => l.IsInSource))
+        {
+            throw new LiveException($"{symbol.ToDisplayString()} is declared in metadata and cannot be renamed");
+        }
+
+        var options = new SymbolRenameOptions(RenameOverloads: overloads);
+        var renamed = await Renamer.RenameSymbolAsync(solution, symbol, options, newName, cancellationToken);
+
+        var files = new List<LiveFileEdit>();
+        var changedProjects = new HashSet<ProjectId>();
+        foreach (var projectChange in renamed.GetChanges(solution).GetProjectChanges())
+        {
+            foreach (var id in projectChange.GetChangedDocuments(onlyGetDocumentsWithTextChanges: true))
+            {
+                changedProjects.Add(id.ProjectId);
+                var before = await solution.GetDocument(id)!.GetTextAsync(cancellationToken);
+                var after = await renamed.GetDocument(id)!.GetTextAsync(cancellationToken);
+                var path = solution.GetDocument(id)!.FilePath ?? solution.GetDocument(id)!.Name;
+                if (files.Any(f => f.File == path))
+                {
+                    continue; // a multi-target project holds the same file once per target
+                }
+
+                files.Add(new LiveFileEdit(path, LineEdits(before, after)));
+            }
+        }
+
+        files.Sort((a, b) => string.CompareOrdinal(a.File, b.File));
+        var graph = renamed.GetProjectDependencyGraph();
+        var affected = changedProjects
+            .Concat(changedProjects.SelectMany(graph.GetProjectsThatTransitivelyDependOnThisProject))
+            .Distinct()
+            .ToList();
+        var errorsBefore = await ErrorsAsync(affected.Select(solution.GetProject).OfType<Project>(), cancellationToken);
+        var errorsAfter = await ErrorsAsync(affected.Select(renamed.GetProject).OfType<Project>(), cancellationToken);
+
+        return new LiveRename(
+            symbol.ToDisplayString(),
+            IdOf(symbol),
+            newName,
+            files.Sum(f => f.Lines.Count),
+            files,
+            errorsAfter.Except(errorsBefore).ToList(),
+            Math.Round(clock.Elapsed.TotalSeconds, 2));
+    }
+
+    /// <summary>Changed lines between two texts. A rename never adds or removes a line, so lines pair up one to one.</summary>
+    private static IReadOnlyList<LiveLineEdit> LineEdits(SourceText before, SourceText after)
+    {
+        var edits = new List<LiveLineEdit>();
+        if (before.Lines.Count == after.Lines.Count)
+        {
+            for (var i = 0; i < before.Lines.Count; i++)
+            {
+                var old = before.Lines[i].ToString();
+                var now = after.Lines[i].ToString();
+                if (!string.Equals(old, now, StringComparison.Ordinal))
+                {
+                    edits.Add(new LiveLineEdit(i + 1, old, now));
+                }
+            }
+
+            return edits;
+        }
+
+        // Defensive: report each change against the old line it starts on.
+        foreach (var change in after.GetTextChanges(before))
+        {
+            var line = before.Lines.GetLineFromPosition(change.Span.Start);
+            edits.Add(new LiveLineEdit(line.LineNumber + 1, line.ToString(), change.NewText ?? ""));
+        }
+
+        return edits;
     }
 
     private static async Task<HashSet<LiveDiagnostic>> ErrorsAsync(IEnumerable<Project> projects, CancellationToken cancellationToken)

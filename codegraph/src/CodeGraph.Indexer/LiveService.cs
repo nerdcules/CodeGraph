@@ -34,6 +34,9 @@ public sealed class LiveService(Func<Solution?> snapshot, Func<LiveStatus> statu
             case "check_change":
                 var c = Params<CheckChangeParams>(request);
                 return LiveResponse.Ok(await LiveQueries.CheckChangeAsync(solution, c.File, c.Text, cancellationToken));
+            case "rename_preview":
+                var n = Params<RenameParams>(request);
+                return LiveResponse.Ok(await LiveQueries.RenamePreviewAsync(solution, n.Symbol, n.NewName, n.Overloads, cancellationToken));
             default:
                 throw new LiveException($"unknown method '{request.Method}'");
         }
@@ -49,4 +52,6 @@ public sealed class LiveService(Func<Solution?> snapshot, Func<LiveStatus> statu
     public sealed record DiagnosticsParams(string? File = null, bool IncludeWarnings = false, int Limit = 30);
 
     public sealed record CheckChangeParams(string File, string Text);
+
+    public sealed record RenameParams(string Symbol, string NewName, bool Overloads = false);
 }
