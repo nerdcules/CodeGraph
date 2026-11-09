@@ -90,6 +90,7 @@ void AddGraph(IServiceCollection services)
     services.AddSingleton(freshness);
     services.AddSingleton(telemetry);
     services.AddSingleton(live);
+    services.AddSingleton(new SemanticSearch(EmbeddingSettings.FromEnvironment()));
     services.AddSingleton(anchor);
     services.AddScoped(_ => anchor.Acquire());
     services.AddScoped(sp =>

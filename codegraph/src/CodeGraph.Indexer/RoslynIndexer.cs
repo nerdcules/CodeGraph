@@ -80,6 +80,11 @@ public sealed partial class RoslynIndexer
     /// <summary>Full-text documents for every type and member node that was walked.</summary>
     public IReadOnlyCollection<SearchDocument> SearchDocuments => _search.Values;
 
+    /// <summary>The text to embed for every type and member node that was walked, for semantic search.</summary>
+    public IReadOnlyDictionary<string, string> EmbeddingTexts => _embeddingTexts;
+
+    private readonly Dictionary<string, string> _embeddingTexts = new(StringComparer.Ordinal);
+
     /// <summary>Every C# source file in the solution, walked or not.</summary>
     public IReadOnlyCollection<string> DocumentPaths => _documentPaths;
 
@@ -800,13 +805,30 @@ public sealed partial class RoslynIndexer
         return (names, members);
     }
 
-    private void AddSearchDocument(string nodeId, IEnumerable<(string? Text, int Weight)> parts)
+    private void AddSearchDocument(string nodeId, IReadOnlyList<(string? Text, int Weight)> parts)
     {
         // Partial types and multi-target projects produce the same id more than once; first one wins, as for nodes.
         if (!_search.ContainsKey(nodeId) && SearchText.Document(nodeId, parts) is { } document)
         {
             _search[nodeId] = document;
+            _embeddingTexts[nodeId] = EmbeddingText(parts);
         }
+    }
+
+    /// <summary>
+    /// What a declaration says about itself, for an embedding model: name, container, doc comment, signature and
+    /// the start of the body, each part capped so a long body cannot crowd out the doc comment.
+    /// </summary>
+    private static string EmbeddingText(IReadOnlyList<(string? Text, int Weight)> parts)
+    {
+        const int PartLimit = 400;
+        const int TotalLimit = 1200;
+        var text = string.Join('\n', parts
+            .Select(p => p.Text?.Trim())
+            .Where(t => !string.IsNullOrEmpty(t))
+            .Select(t => System.Text.RegularExpressions.Regex.Replace(t!, @"\s+", " "))
+            .Select(t => t.Length <= PartLimit ? t : t[..PartLimit]));
+        return text.Length <= TotalLimit ? text : text[..TotalLimit];
     }
 
     /// <summary>The comment text in <paramref name="trivia"/>, XML tags stripped. Doc comments survive even with documentation parsing off, as plain comments.</summary>

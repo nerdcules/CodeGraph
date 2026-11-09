@@ -79,6 +79,7 @@ codegraph-mcp [path-to-graph.db] [--web PORT]
 | `--web PORT` | also serve the graph visualiser on `http://localhost:PORT` |
 | `CODEGRAPH_TELEMETRY=off` | keep usage counts in memory only; see [Telemetry](#telemetry) |
 | `CODEGRAPH_INDEXER` | path of `codegraph-index` for `live_status start=true`, when it is not next to the server; see [Live daemon](#live-daemon) |
+| `CODEGRAPH_EMBEDDINGS_URL`, `CODEGRAPH_EMBEDDINGS_MODEL`, `CODEGRAPH_EMBEDDINGS_KEY` | an OpenAI-compatible embeddings endpoint for semantic search; set the same values for `codegraph-index`. See [Semantic search](#semantic-search) |
 | `CODEGRAPH_DAEMON=auto` | start the live daemon on the first tool call when none runs; it stops itself after 120 min unused |
 
 ### What clients show for the server
@@ -147,7 +148,7 @@ and override.
 | tool | arguments | answers |
 |---|---|---|
 | `find_symbol` | `query`, `kind?`, `limit` (1–100, 20), `typeKind?`, `accessibility?`, `isStatic?`, `isAbstract?`, `isVirtual?`, `isAsync?`, `isOverride?`, `memberKind?`, `nameMatch` (Contains / StartsWith / EndsWith / Exact), `offset` | Types and members by name, case-insensitive. Exact name matches first, then shorter names. |
-| `search_code` | `query`, `kind?`, `file?`, `limit` (1–100, 20) | "Where's the code that does X": BM25 full-text over names, signatures, comments, string literals and body identifiers. Each hit shows how many query terms it matched. |
+| `search_code` | `query`, `kind?`, `file?`, `limit` (1–100, 20), `mode` (auto / lexical / semantic / hybrid) | "Where's the code that does X": BM25 full-text over names, signatures, comments, string literals and body identifiers, fused with vector similarity when the graph has [embeddings](#semantic-search). Each hit shows its rank by words and by meaning. |
 | `outline` | `id` | Direct children, no bodies: members of a type, types in a file, files in a project. |
 | `members_of` | `id`, `kind?`, `accessibility?`, `isStatic?`, `isAbstract?`, `isAsync?`, `isVirtual?`, `isOverride?`, `limit` (500), `offset` | Members of a type filtered by kind and modifiers. |
 | `snippet` | `id`, `context` (0–50 extra lines) | The declaration span from source, line-numbered. Read this instead of the file. |
@@ -248,6 +249,32 @@ Each call is appended as one JSON line to `.codegraph/telemetry.jsonl` beside th
 `source_chars` is the total size of the files the answer pointed at, which is what reading
 them instead would have cost. `usage_stats` turns the file into per-tool totals. The file
 never leaves the machine; `CODEGRAPH_TELEMETRY=off` disables it.
+
+## Semantic search
+
+`search_code` is lexical by default: BM25 over the words in names, comments and bodies. With an embeddings
+endpoint it also ranks by meaning, so "remove a cached entry" finds `Purge` even though no word matches.
+
+```bash
+export CODEGRAPH_EMBEDDINGS_URL=http://localhost:11434/v1/embeddings   # Ollama, after `ollama pull nomic-embed-text`
+export CODEGRAPH_EMBEDDINGS_MODEL=nomic-embed-text
+codegraph-index path/to/App.sln
+```
+
+Give the server the same two variables (in `.mcp.json` under `"env"`). Any OpenAI-compatible
+`/v1/embeddings` endpoint works; `CODEGRAPH_EMBEDDINGS_KEY` is sent as a bearer token.
+
+- **What is embedded.** Each type and member's name, container, doc comment, signature and the first
+  400 characters of its body, capped at 1,200 characters. A remote endpoint therefore receives that text;
+  the log line says so. With a local endpoint nothing leaves the machine.
+- **Cost.** Vectors live in the graph file beside the full-text tables, one signed byte per component, and
+  the server searches them in memory: 8 ms over 40,000 768-dimension vectors. An index pass embeds only
+  declarations whose text changed (by hash), so a no-op re-index sends nothing. Changing the model, or
+  turning embeddings on or off, rebuilds the graph once so vectors from different models never mix.
+- **Ranking.** `mode=auto` is `hybrid` when the graph has vectors: the top 50 by BM25 and the top 50 by
+  cosine similarity are merged by reciprocal rank fusion. `semantic` and `lexical` use one ranking only.
+- **Failure.** An unreachable endpoint never fails an index or a search: indexing logs it and writes the
+  graph without new vectors, and `search_code` answers lexically with a note.
 
 ## Live daemon
 

@@ -62,6 +62,7 @@ public static class MetaKeys
     public const string Commit = "commit";
     public const string IndexedAt = "indexed_at";
     public const string Mode = "mode";
+    public const string EmbeddingsModel = "embeddings_model";
 }
 
 /// <summary>

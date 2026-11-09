@@ -36,9 +36,11 @@ public sealed class GraphStore : IDisposable
     public const string SchemaVersion = "5";
 
     private readonly DuckDBConnection _connection;
+    private readonly string _dbPath;
 
     public GraphStore(string dbPath, bool readOnly = false)
     {
+        _dbPath = Path.GetFullPath(dbPath);
         var directory = Path.GetDirectoryName(Path.GetFullPath(dbPath));
         if (!string.IsNullOrEmpty(directory))
         {
@@ -91,6 +93,7 @@ public sealed class GraphStore : IDisposable
     {
         Execute("DELETE FROM search_terms;");
         Execute("DELETE FROM search_docs;");
+        Execute("DELETE FROM embeddings;");
         Execute("DELETE FROM edge_origins;");
         Execute("DELETE FROM edges;");
         Execute("DELETE FROM nodes;");
@@ -119,13 +122,14 @@ public sealed class GraphStore : IDisposable
         IEnumerable<EdgeOrigin> origins,
         IEnumerable<FileStamp> files,
         IReadOnlyDictionary<string, string> meta,
-        IEnumerable<SearchDocument>? search = null)
+        IEnumerable<SearchDocument>? search = null,
+        IEnumerable<NodeEmbedding>? embeddings = null)
     {
         using var transaction = _connection.BeginTransaction();
 
         if (full)
         {
-            foreach (var table in new[] { "search_terms", "search_docs", "edge_origins", "edges", "nodes", "files" })
+            foreach (var table in new[] { "search_terms", "search_docs", "embeddings", "edge_origins", "edges", "nodes", "files" })
             {
                 Execute($"DELETE FROM {table};", transaction);
             }
@@ -135,6 +139,7 @@ public sealed class GraphStore : IDisposable
             var removed = Lines(removedFiles);
             Execute($"DELETE FROM search_terms WHERE node_id IN (SELECT id FROM nodes WHERE file_path IN ({PathList}));", transaction, removed);
             Execute($"DELETE FROM search_docs WHERE node_id IN (SELECT id FROM nodes WHERE file_path IN ({PathList}));", transaction, removed);
+            Execute($"DELETE FROM embeddings WHERE node_id IN (SELECT id FROM nodes WHERE file_path IN ({PathList}));", transaction, removed);
             Execute(
                 $"""
                  DELETE FROM edges e
@@ -167,6 +172,11 @@ public sealed class GraphStore : IDisposable
         if (search is not null)
         {
             WriteSearch(transaction, search);
+        }
+
+        if (embeddings is not null)
+        {
+            WriteEmbeddings(transaction, embeddings);
         }
 
         WriteFiles(transaction, files);
@@ -429,6 +439,119 @@ public sealed class GraphStore : IDisposable
                 }
             }
         }
+    }
+
+    private void WriteEmbeddings(DuckDBTransaction transaction, IEnumerable<NodeEmbedding> embeddings)
+    {
+        var list = embeddings as IReadOnlyCollection<NodeEmbedding> ?? embeddings.ToList();
+        if (list.Count == 0)
+        {
+            return;
+        }
+
+        Execute($"DELETE FROM embeddings WHERE node_id IN ({PathList});", transaction, Lines(list.Select(e => e.NodeId)));
+        using var appender = _connection.CreateAppender("embeddings");
+        foreach (var embedding in list.DistinctBy(e => e.NodeId))
+        {
+            appender.CreateRow().AppendValue(embedding.NodeId).AppendValue(embedding.TextHash).AppendValue(embedding.Vector.ToBytes()).EndRow();
+        }
+    }
+
+    /// <summary>Number of nodes with a vector; zero when embeddings were never configured.</summary>
+    public int EmbeddingCount()
+    {
+        if (!TableExists("embeddings"))
+        {
+            return 0;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM embeddings;";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    /// <summary>Every stored vector by the hash of its text, so a re-index embeds only declarations whose text changed.</summary>
+    public IReadOnlyDictionary<string, QuantizedVector> EmbeddingCache()
+    {
+        var cache = new Dictionary<string, QuantizedVector>(StringComparer.Ordinal);
+        if (!TableExists("embeddings"))
+        {
+            return cache;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT text_hash, vector FROM embeddings;";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            cache.TryAdd(reader.GetString(0), QuantizedVector.FromBytes(ReadBlob(reader, 1)));
+        }
+
+        return cache;
+    }
+
+    /// <summary>
+    /// The nodes whose vectors are closest to <paramref name="query"/> by cosine similarity. Scoring runs in memory
+    /// over all vectors (<see cref="VectorIndex"/>, loaded once per graph file); the kind and file filters apply to
+    /// an over-fetched candidate list, which widens until enough survive or every vector has been considered.
+    /// </summary>
+    public IReadOnlyList<(GraphNode Node, double Similarity)> VectorSearch(float[] query, NodeKind? kind = null, string? filePattern = null, int limit = 20)
+    {
+        if (!TableExists("embeddings"))
+        {
+            return [];
+        }
+
+        limit = Math.Clamp(limit, 1, 200);
+        var index = VectorIndex.For(_dbPath, LoadVectorIndex);
+        var quantized = VectorQuantizer.Quantize(query);
+        var filtered = kind is not null || filePattern is not null;
+        for (var fetch = filtered ? limit * 8 : limit; ; fetch *= 4)
+        {
+            var top = index.Top(quantized, Math.Min(fetch, index.Count));
+            var nodes = NodesById(top.Select(t => t.Id).ToList());
+            var hits = top
+                .Where(t => nodes.ContainsKey(t.Id))
+                .Select(t => (Node: nodes[t.Id], t.Similarity))
+                .Where(h => kind is null || h.Node.Kind == kind)
+                .Where(h => filePattern is null || h.Node.FilePath?.Contains(filePattern, StringComparison.OrdinalIgnoreCase) == true)
+                .Take(limit)
+                .ToList();
+            if (hits.Count >= limit || fetch >= index.Count)
+            {
+                return hits;
+            }
+        }
+    }
+
+    private VectorIndex LoadVectorIndex()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT node_id, vector FROM embeddings;";
+        var rows = new List<(string, QuantizedVector)>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add((reader.GetString(0), QuantizedVector.FromBytes(ReadBlob(reader, 1))));
+        }
+
+        return new VectorIndex(rows);
+    }
+
+    private Dictionary<string, GraphNode> NodesById(IReadOnlyList<string> ids)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = $"SELECT {NodeColumns} FROM nodes WHERE id IN ({PathList});";
+        command.Parameters.Add(P("paths", Lines(ids)));
+        return ReadNodes(command).ToDictionary(n => n.Id, StringComparer.Ordinal);
+    }
+
+    private static byte[] ReadBlob(System.Data.Common.DbDataReader reader, int ordinal)
+    {
+        using var stream = reader.GetStream(ordinal);
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
     }
 
     /// <summary>Number of nodes with a full-text document; zero for a graph built before search existed.</summary>
@@ -1406,6 +1529,14 @@ public sealed class GraphStore : IDisposable
             )
             """);
         Execute("CREATE INDEX IF NOT EXISTS ix_search_terms_term ON search_terms (term)");
+        Execute(
+            """
+            CREATE TABLE IF NOT EXISTS embeddings (
+                node_id   VARCHAR PRIMARY KEY,
+                text_hash VARCHAR NOT NULL,
+                vector    BLOB NOT NULL
+            )
+            """);
 
         // Idempotent column additions for databases created before this schema version.
         EnsureColumn("nodes", "type_kind",    "VARCHAR DEFAULT 'None'");

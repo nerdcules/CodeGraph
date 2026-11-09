@@ -290,10 +290,11 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
     var stopwatch = Stopwatch.StartNew();
     var root = Worktree.RootOf(Path.GetDirectoryName(target)!);
 
-    var previous = forceFull ? null : PreviousIndex.Load(dbPath, target);
+    var embeddingSettings = EmbeddingSettings.FromEnvironment();
+    var previous = forceFull ? null : PreviousIndex.Load(dbPath, target, embeddingSettings?.Model);
     if (!forceFull && previous is null && File.Exists(dbPath))
     {
-        Log("existing graph is from another solution or schema version; rebuilding");
+        Log("existing graph is from another solution, schema version or embedding model; rebuilding");
     }
 
     var full = previous is null;
@@ -341,6 +342,17 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
         [MetaKeys.IndexedAt] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
         [MetaKeys.Mode] = full ? "full" : "incremental",
     };
+
+    IReadOnlyList<NodeEmbedding>? embeddings = null;
+    if (embeddingSettings is not null)
+    {
+        ConsoleStatus.Phase("embedding", $"{indexer.EmbeddingTexts.Count} declarations");
+        embeddings = await EmbeddingStep.RunAsync(new EmbeddingClient(embeddingSettings), indexer.EmbeddingTexts, dbPath, Log, cancellationToken);
+        if (embeddings is not null)
+        {
+            meta[MetaKeys.EmbeddingsModel] = embeddingSettings.Model;
+        }
+    }
     if (root is not null)
     {
         meta[MetaKeys.WorktreeRoot] = root;
@@ -364,7 +376,7 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
 
     using (var store = GraphStore.Open(writePath, readOnly: false, TimeSpan.FromSeconds(60)))
     {
-        store.Replace(full, removed, indexer.Nodes, indexer.Edges, indexer.Origins, stamps.Values, meta, indexer.SearchDocuments);
+        store.Replace(full, removed, indexer.Nodes, indexer.Edges, indexer.Origins, stamps.Values, meta, indexer.SearchDocuments, embeddings);
         counts = store.Count();
     }
 
@@ -434,7 +446,7 @@ internal sealed class PreviousIndex
     public IReadOnlyList<string> ProjectPaths { get; }
 
     /// <summary>Null when there is nothing usable to build on, which means a full rebuild.</summary>
-    public static PreviousIndex? Load(string dbPath, string solution)
+    public static PreviousIndex? Load(string dbPath, string solution, string? embeddingModel = null)
     {
         if (!File.Exists(dbPath))
         {
@@ -444,7 +456,9 @@ internal sealed class PreviousIndex
         using var store = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(30));
         var meta = store.ReadMeta();
         if (meta.GetValueOrDefault(MetaKeys.SchemaVersion) != GraphStore.SchemaVersion
-            || !string.Equals(meta.GetValueOrDefault(MetaKeys.Solution), solution, StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(meta.GetValueOrDefault(MetaKeys.Solution), solution, StringComparison.OrdinalIgnoreCase)
+            // Vectors from two models are not comparable; turning embeddings on, off or to another model re-embeds all.
+            || meta.GetValueOrDefault(MetaKeys.EmbeddingsModel) != embeddingModel)
         {
             return null;
         }

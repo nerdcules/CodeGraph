@@ -351,11 +351,11 @@ plurals and tenses on both sides. Queries are ranked by BM25 in plain SQL over t
 same DuckDB file, so there is no extension to install and read-only queries work as for every
 other tool. Results show how many of the query's terms each hit matched.
 
-This is lexical search: it finds code that uses the same words, not code that means the same
-thing. Embeddings would close that gap and are the natural next step.
+That is lexical search: it finds code that uses the same words. With an OpenAI-compatible embeddings
+endpoint (a local Ollama, say) it also ranks by meaning and fuses the two rankings; see
+[MCP-SERVER.md](MCP-SERVER.md#semantic-search). It is off unless `CODEGRAPH_EMBEDDINGS_URL` is set.
 
 ## Not yet
 
-- Embeddings for semantic "where's the code that does X" search; `search_code` is lexical.
 - `--watch` re-reads a project's globs only on a project-file change, so a new file in a
   directory no project covers is picked up by the next cold run.

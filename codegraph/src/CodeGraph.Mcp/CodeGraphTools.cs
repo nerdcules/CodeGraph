@@ -13,7 +13,7 @@ namespace CodeGraph.Mcp;
 /// Rows whose file was edited since indexing end in <c>STALE</c>; the call-tool filter in Program adds the summary line.
 /// </summary>
 [McpServerToolType]
-public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live)
+public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live, SemanticSearch semantic)
 {
     // ── Live tools: answered by the Roslyn solution held by codegraph-index --watch, not by the graph ──────────
 
@@ -274,12 +274,14 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
     // ── Graph tools: answered from the DuckDB graph ────────────────────────────────────────────────────────
     [McpServerTool(Name = "search_code", ReadOnly = true, Idempotent = true)]
-    [Description("Where's the code that does X: full-text search over names, signatures, comments, string literals and body identifiers of every type and member. Use for intent-style questions ('retry failed uploads', 'parse the config file') when you don't know a symbol name; use find_symbol when you do.")]
-    public string SearchCode(
+    [Description("Where's the code that does X: search over names, signatures, comments, string literals and body identifiers of every type and member. Use for intent-style questions ('retry failed uploads', 'parse the config file') when you don't know a symbol name; use find_symbol when you do. Lexical (BM25) by default; when the graph has embeddings, results also rank by meaning, so 'remove a file' finds Delete.")]
+    public async Task<string> SearchCode(
         [Description("Words describing what the code does, e.g. 'send welcome email' or 'validate jwt token'")] string query,
         [Description("Optional kind filter: Type, Method, Property, Field, Event")] string? kind = null,
         [Description("Optional substring to filter by file path, e.g. 'Services' or 'GymX.Core'")] string? file = null,
-        [Description("Max results, default 20, max 100")] int limit = 20)
+        [Description("Max results, default 20, max 100")] int limit = 20,
+        [Description("auto (hybrid when the graph has embeddings, else lexical), lexical, semantic, or hybrid")] string mode = "auto",
+        CancellationToken cancellationToken = default)
     {
         NodeKind? kindFilter = null;
         if (kind is not null)
@@ -289,20 +291,63 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             kindFilter = parsed;
         }
 
+        mode = mode.Trim().ToLowerInvariant();
+        if (mode is not ("auto" or "lexical" or "semantic" or "hybrid"))
+            return $"unknown mode '{mode}'. Use auto, lexical, semantic or hybrid";
+
+        limit = Math.Clamp(limit, 1, 100);
         var terms = SearchText.QueryTerms(query);
-        if (terms.Count == 0)
+        var embedded = store.EmbeddingCount();
+        var wantsVectors = mode is "semantic" or "hybrid" || (mode == "auto" && embedded > 0);
+        string? note = null;
+        float[]? vector = null;
+        if (wantsVectors)
+        {
+            if (embedded == 0)
+            {
+                note = $"this graph has no embeddings (set {EmbeddingSettings.UrlVariable} for codegraph-index and re-index); lexical results only";
+            }
+            else
+            {
+                (vector, var problem) = await semantic.EmbedAsync(query, freshness.Check().Meta.GetValueOrDefault(MetaKeys.EmbeddingsModel), cancellationToken);
+                if (problem is not null) note = problem + "; lexical results only";
+            }
+        }
+
+        if (vector is null && mode == "semantic")
+            return note ?? "semantic search is unavailable";
+
+        if (vector is null && terms.Count == 0)
             return $"'{query}' has no searchable words (stop words and single characters are ignored)";
 
-        if (store.SearchDocumentCount() == 0)
+        if (vector is null && store.SearchDocumentCount() == 0)
             return "this graph has no full-text index; rebuild it with codegraph-index --full";
 
-        var hits = store.Search(query, kindFilter, file, Math.Clamp(limit, 1, 100));
-        if (hits.Count == 0)
-            return $"nothing matches [{string.Join(", ", terms)}]. Try other words for the same idea, or find_symbol if you know part of a name.";
-
         var sb = new StringBuilder();
-        sb.AppendLine($"{hits.Count} result(s) for [{string.Join(", ", terms)}], best first:");
-        sb.Append(Format(hits.Select(h => (h.Node, (string?)$"{h.MatchedTerms}/{h.QueryTerms} terms, score {h.Score:F1}"))));
+        if (note is not null) sb.AppendLine(note);
+        if (vector is null)
+        {
+            var hits = store.Search(query, kindFilter, file, limit);
+            if (hits.Count == 0)
+                return sb + $"nothing matches [{string.Join(", ", terms)}]. Try other words for the same idea, or find_symbol if you know part of a name.";
+
+            sb.AppendLine($"{hits.Count} result(s) for [{string.Join(", ", terms)}], best first:");
+            sb.Append(Format(hits.Select(h => (h.Node, (string?)$"{h.MatchedTerms}/{h.QueryTerms} terms, score {h.Score:F1}"))));
+            return sb.ToString();
+        }
+
+        var similar = store.VectorSearch(vector, kindFilter, file, mode == "semantic" ? limit : 50);
+        if (mode == "semantic")
+        {
+            sb.AppendLine($"{similar.Count} result(s) by meaning, best first:");
+            sb.Append(Format(similar.Select(h => (h.Node, (string?)string.Create(CultureInfo.InvariantCulture, $"similarity {h.Similarity:F2}")))));
+            return sb.ToString();
+        }
+
+        var lexical = terms.Count == 0 ? [] : store.Search(query, kindFilter, file, 50).Select(h => h.Node).ToList();
+        var fused = SearchFusion.Fuse(lexical, similar.Select(h => h.Node).ToList(), limit);
+        sb.AppendLine($"{fused.Count} result(s) for '{query}', by words and meaning, best first:");
+        sb.Append(Format(fused.Select(f => (f.Node, (string?)$"words #{f.LexicalRank?.ToString(CultureInfo.InvariantCulture) ?? "-"}, meaning #{f.SemanticRank?.ToString(CultureInfo.InvariantCulture) ?? "-"}"))));
         return sb.ToString();
     }
 

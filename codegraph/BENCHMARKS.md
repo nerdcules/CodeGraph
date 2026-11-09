@@ -198,3 +198,39 @@ The trade-off: code that differs between targets under `#if` is indexed as the f
 (7 runs). The same daemon's other live calls in that run: ping 0.25 ms, symbol_at 0.31 ms, source references
 7.1 ms, metadata references 4.3 ms, one-file diagnostics 0.39 ms, whole-solution diagnostics 37 ms,
 check_change 0.4–0.5 s.
+
+## Round 6: semantic search plumbing
+
+No embedding model runs on this machine, so these numbers use a local stand-in endpoint (a Python HTTP server
+that hashes words into 256 dimensions). They measure what CodeGraph adds: request batching, storage, cache
+reuse and the vector query. A real model adds its own inference time on top, once per changed declaration at
+index time and once per distinct query at search time. Ranking quality with a real model is not measured here.
+
+| measurement | without embeddings | with embeddings |
+|---|---|---|
+| full index (2 runs) | 10.2 s, 10.1 s | 10.3 s, 10.4 s |
+| embedding step inside it | | 0.2 s for 839 declarations |
+| no-op incremental index | 2.5 s | 2.5 s (0 declarations sent) |
+
+| `search_code` through the server, median of 20 queries | latency |
+|---|---|
+| `mode=lexical` | 11.1 ms |
+| `mode=semantic` | 4.5 ms |
+| `mode=hybrid` (the default when vectors exist) | 14.2 ms |
+
+**Storage and scale.** A first version stored float lists in DuckDB and searched with `list_cosine_similarity`.
+Measured at a larger scale it did not hold up, so vectors are now quantised to one signed byte per component
+(scaled per vector so each uses the full range, with the scale stored beside it) and searched in memory with
+SIMD dot products; the server loads them once per graph file. Synthetic random 768-dimension vectors, the
+hardest case for ranking because their cosines bunch together:
+
+| vectors × 768 | design | write | search | file | top-10 agreement with exact cosine |
+|---|---|---|---|---|---|
+| 839 | float list in DuckDB | 0.1 s | 7.7 ms | 3 MB | exact |
+| 839 | 8-bit, in memory | 0.1 s | 2.9 ms (43 ms first, loading) | 2 MB | 100 / 100 |
+| 40,000 | float list in DuckDB | 2.4 s | 197 ms | 195 MB | exact |
+| 40,000 | fixed `FLOAT[768]` in DuckDB | 2.0 s | 123 ms | 189 MB | exact |
+| 40,000 | 8-bit, in memory | 0.5 s | 8.0 ms (131 ms first, loading) | 37 MB | 100 / 100 |
+
+A first quantiser scaled every unit vector by a fixed 127, which left 768-dimension components about a dozen
+levels; a test comparing against exact cosine caught it at 179 / 200 agreement, and per-vector scaling fixed it.

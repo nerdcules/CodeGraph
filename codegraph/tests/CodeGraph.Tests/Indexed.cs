@@ -28,6 +28,7 @@ internal sealed class Indexed
         Edges = indexer.Edges;
         Origins = indexer.Origins;
         SearchDocuments = indexer.SearchDocuments;
+        EmbeddingTexts = indexer.EmbeddingTexts;
     }
 
     /// <summary>Wraps an indexer another harness has already driven.</summary>
@@ -40,6 +41,8 @@ internal sealed class Indexed
     public IReadOnlyCollection<EdgeOrigin> Origins { get; }
 
     public IReadOnlyCollection<SearchDocument> SearchDocuments { get; }
+
+    public IReadOnlyDictionary<string, string> EmbeddingTexts { get; }
 
     /// <summary>The path a source file named <paramref name="name"/> gets in the adhoc project.</summary>
     public static string PathOf(string name) => Path.Combine(Root, name);
