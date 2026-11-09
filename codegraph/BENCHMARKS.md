@@ -282,3 +282,26 @@ The old `impact_of` answer would not fit in any model's context window.
 Two defects surfaced while measuring this round and are fixed: a flush arriving while the daemon's debounce was
 already running waited out the debounce (up to 500 ms), and a test's fake embedder used .NET's per-process string
 hash, which made one ranking test fail about one run in ten.
+
+## Where it ended up
+
+This repo's own graph, first baseline against the final build of this work, same machine and method. The graph
+is 2.5 times larger now: the repo grew, and framework calls are External nodes.
+
+| measurement | first baseline | final |
+|---|---|---|
+| graph | 595 nodes, 3,558 edges | 1,583 nodes, 8,784 edges |
+| full index | 11.5 s | 10.5 s |
+| no-op incremental index | 3.5 s | 2.5 s |
+| graph file after 3 more full rebuilds | 15,884 KB (and growing) | 12,556 KB (flat) |
+| open per tool call | 11 ms | 0.024 ms while the anchor holds the graph |
+| impact_of depth 20 | 7.9 ms | 8.6 ms |
+| path_between depth 10 | 11 ms | 3.9 ms |
+| coverage_stats | 9.9 ms | 11 ms |
+| dead_code_report | 12 ms | 11 ms |
+| `find_symbol` through the server | 15.7 ms | 4.7 ms |
+| `impact_of` through the server | 27.7 ms | 15.1 ms |
+| `graph_stats` through the server | 12.1 ms | 1.3 ms |
+
+Store queries held steady while the graph grew 2.5 times; tool calls through the server got 2 to 9 times faster;
+and on large solutions `path_between` is 15 to 60 times faster and traversal answers are about 150 times smaller.

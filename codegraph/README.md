@@ -158,10 +158,13 @@ must equal v2 full (`IncrementalIndexTests`).
 
 The watch process is also a daemon. The Roslyn solution it holds answers questions the graph cannot, over a
 local pipe named after the graph file, and the MCP server asks it before every answer whether saves are
-pending so that `STALE` all but disappears while it runs. Five tools use it: `symbol_at` (a file position to
-a graph id), `live_references` (every use of a symbol, including framework and NuGet members the graph does
-not hold), `diagnostics` (compiler errors for the working tree), `check_change` (a what-if compile of a
-proposed file, in memory, reporting what it would break) and `live_status` (which can also start the daemon).
+pending so that `STALE` all but disappears while it runs. Seven tools use it: `symbol_at` (a file position
+to a graph id), `live_references` (every use of a symbol, including framework property reads the graph does
+not hold), `diagnostics` (compiler errors for the working tree), `check_change` (a what-if compile of one or
+more proposed files, in memory, reporting what it would break and who depends on each changed declaration),
+`rename_preview` (Roslyn's rename on a fork, every changed line plus conflicts), `data_flow` (where each
+parameter of a method goes) and `live_status` (which can also start the daemon; `CODEGRAPH_DAEMON=auto`
+starts it on the first tool call).
 The graph stays the system of record for transitive and aggregate questions, where it is orders of magnitude
 faster than asking Roslyn repeatedly; see [MCP-SERVER.md](MCP-SERVER.md#live-daemon) and
 [BENCHMARKS.md](BENCHMARKS.md).
