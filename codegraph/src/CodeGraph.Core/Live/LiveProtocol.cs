@@ -21,6 +21,33 @@ public static class LivePipe
         return "codegraph-" + Convert.ToHexStringLower(hash.AsSpan(0, 10));
     }
 
+    /// <summary>
+    /// Whether a daemon's endpoint exists, without connecting. A connect to a missing pipe does not fail fast:
+    /// .NET retries until its timeout on every platform, which would add that timeout to every tool call when no
+    /// daemon runs. On Unix the endpoint is a socket file in the temp directory; on Windows it is listed under
+    /// <c>\\.\pipe\</c>. A socket left by a killed daemon still exists; <see cref="LiveClient"/> handles that.
+    /// </summary>
+    public static bool Exists(string pipeName)
+    {
+        try
+        {
+            return OperatingSystem.IsWindows()
+                ? Directory.EnumerateFiles(@"\\.\pipe\", pipeName).Any()
+                : File.Exists(SocketPath(pipeName));
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Where .NET puts a named pipe's Unix domain socket.</summary>
+    public static string SocketPath(string pipeName) => Path.Combine(Path.GetTempPath(), "CoreFxPipe_" + pipeName);
+
     public static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

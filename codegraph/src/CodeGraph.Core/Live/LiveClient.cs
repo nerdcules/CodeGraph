@@ -5,11 +5,17 @@ namespace CodeGraph.Core.Live;
 
 /// <summary>
 /// Calls the daemon for one graph. Every call opens its own connection, which on a local pipe costs well under
-/// a millisecond, and a daemon that is not running fails in microseconds, so callers can probe freely.
+/// a millisecond. Absence is checked without connecting (see <see cref="LivePipe.Exists"/>), and an endpoint that
+/// exists but refuses (a socket left by a killed daemon) is remembered as dead for <see cref="DeadFor"/>, so a
+/// burst of tool calls pays the short connect timeout at most once.
 /// </summary>
 public sealed class LiveClient(string dbPath)
 {
-    public static readonly TimeSpan ConnectTimeout = TimeSpan.FromMilliseconds(500);
+    public static readonly TimeSpan ConnectTimeout = TimeSpan.FromMilliseconds(150);
+
+    public static readonly TimeSpan DeadFor = TimeSpan.FromSeconds(3);
+
+    private long _deadUntilTicks;
 
     public string PipeName { get; } = LivePipe.NameFor(dbPath);
 
@@ -47,8 +53,23 @@ public sealed class LiveClient(string dbPath)
     /// <summary>One request, one response. Throws <see cref="LiveException"/> for a daemon-side error and IO exceptions when it is not running.</summary>
     public async Task<T> CallAsync<T>(string method, object? parameters, CancellationToken cancellationToken = default)
     {
+        if (DateTime.UtcNow.Ticks < Interlocked.Read(ref _deadUntilTicks) || !LivePipe.Exists(PipeName))
+        {
+            throw new IOException($"no live daemon on pipe {PipeName}");
+        }
+
         await using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        await pipe.ConnectAsync((int)ConnectTimeout.TotalMilliseconds, cancellationToken);
+        try
+        {
+            await pipe.ConnectAsync((int)ConnectTimeout.TotalMilliseconds, cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            Interlocked.Exchange(ref _deadUntilTicks, (DateTime.UtcNow + DeadFor).Ticks);
+            throw;
+        }
+
+        Interlocked.Exchange(ref _deadUntilTicks, 0);
 
         var request = new LiveRequest(method, parameters is null ? null : JsonSerializer.SerializeToElement(parameters, LivePipe.Json));
         var writer = new StreamWriter(pipe) { AutoFlush = true };

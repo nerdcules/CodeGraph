@@ -47,6 +47,14 @@ if (solution is not null && indexer is not null)
 }
 
 rows.Add(("open read-only (per tool call)", Median(() => { using var s = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5)); })));
+using (var anchor = new GraphAnchor(dbPath, idleRelease: TimeSpan.FromMinutes(1)))
+using (anchor.Acquire())
+{
+    rows.Add(("open read-only with the anchor held", Median(() => { using var s = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5)); })));
+}
+
+var probe = new LiveClient(dbPath);
+rows.Add(("daemon probe when none runs", Median(() => probe.PingAsync().GetAwaiter().GetResult())));
 
 using var store = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5));
 var (nodes, edges) = store.Count();
@@ -113,7 +121,7 @@ string Median(Action action, int? warmups = null, int? count = null)
     return Ms(samples[samples.Count / 2]);
 }
 
-static string Ms(double ms) => ms < 10 ? $"{ms:F1} ms" : $"{ms:F0} ms";
+static string Ms(double ms) => ms < 1 ? $"{ms:F3} ms" : ms < 10 ? $"{ms:F1} ms" : $"{ms:F0} ms";
 
 static string Seconds(TimeSpan t) => $"{t.TotalSeconds:F1} s";
 

@@ -35,15 +35,56 @@ public sealed class LivePipeTests
     }
 
     [Fact]
-    public async Task Pinging_a_graph_with_no_daemon_returns_null_quickly()
+    public async Task Pinging_a_graph_with_no_daemon_returns_null_without_waiting_for_a_connect_timeout()
     {
+        // The server pings before every tool call, so this is on every call's path when no daemon runs.
         var client = new LiveClient(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"), "graph.db"));
-        var clock = Stopwatch.StartNew();
-
         Assert.Null(await client.PingAsync(TestContext.Current.CancellationToken));
-        Assert.Null(await client.FlushAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken));
 
-        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(2), $"took {clock.Elapsed}");
+        var clock = Stopwatch.StartNew();
+        for (var i = 0; i < 20; i++)
+        {
+            Assert.Null(await client.PingAsync(TestContext.Current.CancellationToken));
+        }
+
+        Assert.Null(await client.FlushAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken));
+        Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(50), $"21 probes took {clock.Elapsed.TotalMilliseconds:F1} ms");
+    }
+
+    [Fact]
+    public async Task A_socket_left_by_a_dead_daemon_costs_one_short_timeout_then_is_remembered()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return; // Windows pipes vanish with their process; there is no file to leave behind
+        }
+
+        var dbPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"), "graph.db");
+        var socket = LivePipe.SocketPath(LivePipe.NameFor(dbPath));
+        using (var orphan = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.Unix, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Unspecified))
+        {
+            orphan.Bind(new System.Net.Sockets.UnixDomainSocketEndPoint(socket)); // bound, never listening: what a kill -9 leaves
+        }
+
+        try
+        {
+            var client = new LiveClient(dbPath);
+            var first = Stopwatch.StartNew();
+            Assert.Null(await client.PingAsync(TestContext.Current.CancellationToken));
+            Assert.True(first.Elapsed < TimeSpan.FromSeconds(1), $"first probe took {first.Elapsed}");
+
+            var rest = Stopwatch.StartNew();
+            for (var i = 0; i < 10; i++)
+            {
+                Assert.Null(await client.PingAsync(TestContext.Current.CancellationToken));
+            }
+
+            Assert.True(rest.Elapsed < TimeSpan.FromMilliseconds(20), $"remembered probes took {rest.Elapsed.TotalMilliseconds:F1} ms");
+        }
+        finally
+        {
+            File.Delete(socket);
+        }
     }
 
     [Fact]

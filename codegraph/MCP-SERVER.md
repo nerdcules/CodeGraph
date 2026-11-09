@@ -247,7 +247,9 @@ never leaves the machine; `CODEGRAPH_TELEMETRY=off` disables it.
 Roslyn solution and answers the six live tools over a named pipe (a Unix domain socket on Linux and macOS, a
 real pipe on Windows) whose name is derived from the graph's path, so no port or discovery file is involved and
 one daemon serves every MCP server reading that graph. A request is one JSON line each way over a fresh
-connection; a daemon that is not running fails in microseconds, so the server probes it before every call.
+connection. The server probes for the daemon before every call by checking that the pipe exists, without
+connecting (a connect to a missing pipe would wait out its timeout), so the probe costs microseconds when
+none runs; a socket left by a killed daemon costs one 150 ms timeout and is then remembered for 3 s.
 
 Start it in a terminal, or let the server start it: `live_status` with `start=true` launches `codegraph-index`
 from next to the server executable (or `CODEGRAPH_INDEXER`), with `--log .codegraph/daemon.log` so nothing it
@@ -261,10 +263,14 @@ reflect the working tree within one debounce of a save. [BENCHMARKS.md](BENCHMAR
 
 ## Concurrency
 
-DuckDB allows one writer or many readers per file. The server opens the graph read-only for
-the duration of each tool call and closes it again, so `codegraph-index` (including `--watch`)
-can swap in a new graph while Claude sessions are open. Each side retries briefly if it meets
-the other's lock. The freshness check reloads its file list when the database's mtime changes.
+DuckDB allows one writer or many readers per file. Each tool call opens its own read-only connection.
+Between calls the server keeps one extra read-only connection, the anchor, which keeps the database
+instance loaded so a call's open costs about 1 ms instead of 11. The anchor blocks a writer, so it lets
+go after 1.5 s without a call, after 10 s however busy the server is, and immediately when the daemon
+reports pending saves. A full rebuild writes a new file and swaps it in; the server notices the new file
+on its next call and reloads. `codegraph-index` (including `--watch`) therefore writes while Claude
+sessions are open, waiting at most a couple of seconds for the anchor. The freshness check reloads its
+file list whenever the database's mtime changes, regardless of its 3 s cache.
 
 ## Troubleshooting
 

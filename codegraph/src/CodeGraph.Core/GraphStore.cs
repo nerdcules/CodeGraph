@@ -44,9 +44,7 @@ public sealed class GraphStore : IDisposable
             Directory.CreateDirectory(directory);
         }
 
-        var connStr = readOnly
-            ? $"Data Source={dbPath};ACCESS_MODE=READ_ONLY"
-            : $"Data Source={dbPath}";
+        var connStr = readOnly ? ReadOnlyConnectionString(dbPath) : $"Data Source={dbPath}";
         _connection = new DuckDBConnection(connStr);
         _connection.Open();
         if (!readOnly)
@@ -54,6 +52,12 @@ public sealed class GraphStore : IDisposable
     }
 
     public void Dispose() => _connection.Dispose();
+
+    /// <summary>
+    /// The connection string of every read-only open. DuckDB.NET shares one database instance between connections
+    /// with the same string, which is what lets <see cref="GraphAnchor"/> make later opens cheap.
+    /// </summary>
+    internal static string ReadOnlyConnectionString(string dbPath) => $"Data Source={dbPath};ACCESS_MODE=READ_ONLY";
 
     /// <summary>
     /// Opens a store, retrying while another process holds the DuckDB file lock. DuckDB allows one writer

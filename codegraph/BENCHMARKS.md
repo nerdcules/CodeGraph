@@ -112,3 +112,40 @@ The staleness story changed shape. Before, a save made within the 3-second fresh
 the cache expired, and any save at all meant `⚠ STALE INDEX` until someone re-ran the indexer. Now the server
 asks the daemon first (a 0.1 ms pipe call), and when a save is pending or being indexed it waits for that pass,
 so the answer reflects the working tree. `STALE` remains only for the case where no daemon is running.
+
+## Round 2: held reader, and a probe regression found and fixed
+
+Measured 2026-11-09 on a 758-node, 4,397-edge graph of this repo. Tool-call latency is the median wall time of
+a `tools/call` round trip over stdio against the published server, driven by a script, with no daemon running.
+Three builds were measured on the same graph: the original server before any of this work (`1dfea57`), the
+server after the live-daemon round (`c60a16b`), and this round.
+
+| tool call, back-to-back | original `1dfea57` | after daemon round `c60a16b` | now |
+|---|---|---|---|
+| `graph_stats` | 12.1 ms | 513 ms | 1.3 ms |
+| `find_symbol 'Dispose'` | 15.7 ms | 517 ms | 4.0 ms |
+| `impact_of` depth 5 | 27.7 ms | 530 ms | 12.9 ms |
+
+| tool call, 0.5 s apart (a model's pace) | original `1dfea57` | after daemon round `c60a16b` | now |
+|---|---|---|---|
+| `graph_stats` | 13.3 ms | 514 ms | 2.2 ms |
+| `find_symbol 'Dispose'` | 17.9 ms | 519 ms | 5.6 ms |
+| `impact_of` depth 5 | 31.4 ms | 532 ms | 17.2 ms |
+
+| component | value |
+|---|---|
+| open read-only, nothing holding the database | 9.9 ms |
+| open read-only with the anchor held | 0.025 ms |
+| daemon probe when none runs | 0.012 ms |
+| full index while the server answers a call every 0.2 s | completes, 9.4 s wall; the server sees the new graph on its next call |
+
+**The regression.** The daemon round added a probe before every tool call. On Linux a named-pipe connect to
+a socket that does not exist does not fail; .NET retries until the connect timeout, which was 500 ms. So
+every tool call without a daemon cost half a second, and the round's own benchmark missed it because it timed
+store queries, not tool calls through the server. The probe now checks that the endpoint exists before
+connecting, uses a 150 ms timeout for a socket left by a killed daemon, and remembers a dead socket for 3 s.
+
+**The anchor.** One read-only connection held between calls keeps DuckDB's instance loaded, so each call's
+own open drops from about 10 ms to 25 µs. It is released after 1.5 s idle, after 10 s of continuous use, and
+whenever the daemon reports pending saves, so the indexer's write lock waits at most a couple of seconds.
+Net against the original server: a cheap call is about 10× faster and `impact_of` about 2× faster.

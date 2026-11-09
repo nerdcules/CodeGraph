@@ -68,6 +68,10 @@ var telemetry = new Telemetry(telemetryOff ? null : Path.Combine(Path.GetDirecto
 var live = new LiveClient(dbPath);
 var flushWait = TimeSpan.FromSeconds(8);
 
+// Keeps the DuckDB instance loaded between calls (a 1 ms open instead of 11 ms), letting go when idle or
+// when the daemon is about to write.
+var anchor = new GraphAnchor(dbPath);
+
 void AddGraph(IServiceCollection services)
 {
     // Read-only and per request: DuckDB lets one process write or many read, so a store held open for the
@@ -75,7 +79,13 @@ void AddGraph(IServiceCollection services)
     services.AddSingleton(freshness);
     services.AddSingleton(telemetry);
     services.AddSingleton(live);
-    services.AddScoped(_ => GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(15)));
+    services.AddSingleton(anchor);
+    services.AddScoped(_ => anchor.Acquire());
+    services.AddScoped(sp =>
+    {
+        sp.GetRequiredService<GraphAnchor.Lease>(); // held until the call's scope ends, after the store is disposed
+        return GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(15));
+    });
     services
         .AddMcpServer(options =>
         {
@@ -118,13 +128,18 @@ void AddGraph(IServiceCollection services)
             }
 
             var scope = telemetry.Begin(context.Params?.Name ?? "?");
+            anchor.ReleaseIfSwapped();
             // The daemon hears every save the moment it lands, before the (cached) freshness check would notice
             // it, so ask it first; its idle answer costs a fifth of a millisecond.
             if (await live.PingAsync(cancellationToken) is { } daemon
-                && (daemon.Pending > 0 || daemon.Indexing || freshness.Check().IsStale)
-                && await live.FlushAsync(flushWait, cancellationToken) is not null)
+                && (daemon.Pending > 0 || daemon.Indexing || freshness.Check().IsStale))
             {
-                freshness.Invalidate();
+                // The daemon's write needs the file to itself; holding the anchor through the flush would deadlock it.
+                anchor.Release();
+                if (await live.FlushAsync(flushWait, cancellationToken) is not null)
+                {
+                    freshness.Invalidate();
+                }
             }
 
             CallToolResult result;

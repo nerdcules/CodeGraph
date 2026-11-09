@@ -94,7 +94,8 @@ public sealed class IndexFreshness(string dbPath, TimeSpan ttl)
     {
         lock (_lock)
         {
-            if (_report is not null && DateTime.UtcNow - _checkedAt < ttl)
+            // The TTL spares the working-tree scan, not the graph: a new graph file (one stat) always reloads.
+            if (_report is not null && DateTime.UtcNow - _checkedAt < ttl && File.GetLastWriteTimeUtc(dbPath) == _loadedDbWrite)
             {
                 return _report;
             }

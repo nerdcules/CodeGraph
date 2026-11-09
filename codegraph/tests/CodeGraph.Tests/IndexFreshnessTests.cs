@@ -73,3 +73,35 @@ public sealed class IndexFreshnessTests : IDisposable
         Assert.Contains("HEAD is bbbbbbb but the graph was built at aaaaaaa", report.Warning());
     }
 }
+
+public sealed class IndexFreshnessCacheTests : IDisposable
+{
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
+
+    public void Dispose() => TempDb.TryDelete(_dir);
+
+    [Fact]
+    public void A_rewritten_graph_bypasses_the_cache()
+    {
+        Directory.CreateDirectory(_dir);
+        var db = Path.Combine(_dir, "graph.db");
+        var source = Path.Combine(_dir, "A.cs");
+        File.WriteAllText(source, "class A { }");
+        using (var store = new GraphStore(db))
+        {
+            store.Replace(true, [], [], [], [], [new FileStamp(source, "not-the-hash", 1, 1)], new Dictionary<string, string>());
+        }
+
+        var freshness = new IndexFreshness(db, TimeSpan.FromMinutes(5));
+        Assert.True(freshness.Check().IsStale);
+
+        // A re-index records the real stamp; within the TTL the answer must still follow the new graph.
+        using (var store = new GraphStore(db))
+        {
+            store.Replace(true, [], [], [], [], [FileStamp.Of(source)], new Dictionary<string, string>());
+        }
+
+        File.SetLastWriteTimeUtc(db, DateTime.UtcNow.AddSeconds(2));
+        Assert.False(freshness.Check().IsStale);
+    }
+}
