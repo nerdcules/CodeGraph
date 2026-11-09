@@ -80,7 +80,8 @@ public sealed record LiveStatus(
     DateTime? LastIndexedAt,
     double? LastIndexSeconds,
     int Pending,
-    bool Indexing);
+    bool Indexing,
+    bool Loading = false);
 
 /// <summary>A source position, one-based like editors show it.</summary>
 public sealed record LivePosition(string File, int Line, int Column);

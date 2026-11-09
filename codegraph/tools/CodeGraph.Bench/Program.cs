@@ -163,6 +163,12 @@ static async Task LiveRows(List<(string, string)> rows, string dbPath, GraphStor
         return;
     }
 
+    if (status.Loading)
+    {
+        rows.Add(("live daemon", "running, still loading the solution; rerun when live_status says idle"));
+        return;
+    }
+
     rows.Add(("live daemon", $"{status.Projects} project(s), {status.Documents} document(s)"));
     rows.Add(("live ping (pipe round trip)", await MedianAsync(() => live.CallAsync<LiveStatus>("ping", null), runs)));
     rows.Add(("live flush when idle", await MedianAsync(() => live.CallAsync<LiveStatus>("flush", null), runs)));

@@ -35,6 +35,33 @@ public sealed class LivePipeTests
     }
 
     [Fact]
+    public async Task The_endpoint_stays_visible_between_accepts_under_rapid_calls()
+    {
+        // The client trusts LivePipe.Exists; a listener that blinks out after each accept would read as "no daemon".
+        var dbPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"), "graph.db");
+        using var stop = new CancellationTokenSource();
+        var server = new LiveServer(LivePipe.NameFor(dbPath), (_, _) =>
+            Task.FromResult(LiveResponse.Ok(new LiveStatus(1, "s", "g", 0, 0, DateTime.UnixEpoch, null, null, 0, false))));
+        var serving = server.RunAsync(stop.Token);
+        var client = new LiveClient(dbPath);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        var missing = 0;
+        for (var i = 0; i < 200; i++)
+        {
+            if (await client.PingAsync(TestContext.Current.CancellationToken) is null)
+            {
+                missing++;
+            }
+        }
+
+        stop.Cancel();
+        await serving;
+        Assert.Equal(0, missing);
+        Assert.False(LivePipe.Exists(LivePipe.NameFor(dbPath)), "the endpoint goes when the server stops");
+    }
+
+    [Fact]
     public async Task Pinging_a_graph_with_no_daemon_returns_null_without_waiting_for_a_connect_timeout()
     {
         // The server pings before every tool call, so this is on every call's path when no daemon runs.

@@ -15,10 +15,13 @@ public sealed class LiveServer(string pipeName, Func<LiveRequest, CancellationTo
     /// <summary>Accepts connections until <paramref name="cancellationToken"/> fires.</summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        // On Unix every server instance shares one listening socket, which .NET closes and unlinks whenever no
+        // unconnected instance exists: briefly after each accept. Clients check the socket file exists before
+        // connecting, so that gap read as "no daemon". This instance never accepts and holds the listener open.
+        await using var keeper = Create();
         while (!cancellationToken.IsCancellationRequested)
         {
-            var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
-                PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            var pipe = Create();
             try
             {
                 await pipe.WaitForConnectionAsync(cancellationToken);
@@ -38,6 +41,9 @@ public sealed class LiveServer(string pipeName, Func<LiveRequest, CancellationTo
             _ = ServeAsync(pipe, cancellationToken);
         }
     }
+
+    private NamedPipeServerStream Create() =>
+        new(pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
     private async Task ServeAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
     {

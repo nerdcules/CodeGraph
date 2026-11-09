@@ -108,7 +108,8 @@ static async Task<MSBuildWorkspace> OpenAsync(string target, CancellationToken c
 
 /// <summary>
 /// Pays the MSBuild load once, then re-indexes on every change to the working tree, applying edits to the loaded
-/// solution in memory. A change to a project or build file is the one thing that forces a reload.
+/// solution in memory, and answers the MCP server's live questions over a pipe. The state machine is
+/// <see cref="WatchLoop"/>; this wires it to the file watcher, MSBuild, the console and the pipe.
 /// </summary>
 [MethodImpl(MethodImplOptions.NoInlining)]
 static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
@@ -121,66 +122,28 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
     };
 
     var root = Worktree.RootOf(Path.GetDirectoryName(target)!) ?? Path.GetDirectoryName(target)!;
-    var pending = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var pendingLock = new Lock();
-    var wake = new SemaphoreSlim(0);
-    // Set when the watcher's buffer overflowed: some saves were never reported, so the in-memory solution
-    // can no longer be trusted and the next batch reloads it from disk.
-    var lostEvents = false;
-    // Flush requests from the MCP server: skip the debounce and complete these once pending is empty again.
-    var flushRequested = false;
-    var flushWaiters = new List<TaskCompletionSource<LiveStatus>>();
-    var state = new WatchState(target, dbPath);
-    Solution? current = null;
+    MSBuildWorkspace? workspace = null;
 
-    LiveStatus Status()
+    async Task<Solution> Load(CancellationToken cancellationToken)
     {
-        lock (pendingLock)
+        workspace?.Dispose();
+        workspace = await OpenAsync(target, cancellationToken);
+        return workspace.CurrentSolution;
+    }
+
+    async Task Index(Solution solution, bool full, CancellationToken cancellationToken)
+    {
+        try
         {
-            return state.Snapshot(current, pending.Count);
+            await IndexAsync(solution, target, dbPath, full, cancellationToken);
+        }
+        finally
+        {
+            ConsoleStatus.Clear();
         }
     }
 
-    Task<LiveStatus> Flush(CancellationToken cancellationToken)
-    {
-        TaskCompletionSource<LiveStatus> waiter;
-        lock (pendingLock)
-        {
-            if (pending.Count == 0 && !state.Indexing)
-            {
-                return Task.FromResult(state.Snapshot(current, 0));
-            }
-
-            waiter = new TaskCompletionSource<LiveStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
-            flushWaiters.Add(waiter);
-            flushRequested = true;
-        }
-
-        wake.Release();
-        cancellationToken.Register(() => waiter.TrySetCanceled(cancellationToken));
-        return waiter.Task;
-    }
-
-    void PassCompleted()
-    {
-        List<TaskCompletionSource<LiveStatus>> done;
-        lock (pendingLock)
-        {
-            if (pending.Count > 0)
-            {
-                return; // more arrived during the walk; the loop goes round again and they wait for that
-            }
-
-            done = [.. flushWaiters];
-            flushWaiters.Clear();
-        }
-
-        var status = Status();
-        foreach (var waiter in done)
-        {
-            waiter.TrySetResult(status);
-        }
-    }
+    var loop = new WatchLoop(Load, Index, ReadOrNull, Log, target, dbPath);
 
     using var watcher = new FileSystemWatcher(root)
     {
@@ -188,144 +151,31 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
         NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.DirectoryName,
         InternalBufferSize = 64 * 1024,
     };
-
-    void Enqueue(string path)
-    {
-        if (!WorkspaceSync.IsSourceFile(path) && !WorkspaceSync.IsProjectFile(path))
-        {
-            return;
-        }
-
-        lock (pendingLock)
-        {
-            pending.Add(Path.GetFullPath(path));
-        }
-
-        wake.Release();
-    }
-
-    watcher.Changed += (_, e) => Enqueue(e.FullPath);
-    watcher.Created += (_, e) => Enqueue(e.FullPath);
-    watcher.Deleted += (_, e) => Enqueue(e.FullPath);
+    watcher.Changed += (_, e) => loop.Enqueue(e.FullPath);
+    watcher.Created += (_, e) => loop.Enqueue(e.FullPath);
+    watcher.Deleted += (_, e) => loop.Enqueue(e.FullPath);
     watcher.Renamed += (_, e) =>
     {
-        Enqueue(e.OldFullPath);
-        Enqueue(e.FullPath);
+        loop.Enqueue(e.OldFullPath);
+        loop.Enqueue(e.FullPath);
     };
     watcher.Error += (_, e) =>
     {
         Log($"watcher: {e.GetException().Message}; the next change reloads the solution");
-        lock (pendingLock)
-        {
-            lostEvents = true;
-        }
-
-        wake.Release();
+        loop.LostEvents();
     };
 
-    MSBuildWorkspace? workspace = null;
-    Solution? solution = null;
+    // The pipe answers from the first moment, so live_status can say "loading" during the MSBuild load.
+    var live = new LiveServer(LivePipe.NameFor(dbPath), new LiveService(() => loop.Current, loop.Status, loop.FlushAsync).HandleAsync, Log);
+    var serving = live.RunAsync(stopping.Token);
+    Log($"live: answering on pipe {live.PipeName}");
+
+    // Watch from before the load: a save during it lands in the first incremental pass instead of being lost.
+    watcher.EnableRaisingEvents = true;
+    _ = loop.Ready.ContinueWith(_ => Log($"watching {root} (Ctrl+C to stop)"), TaskContinuationOptions.OnlyOnRanToCompletion);
     try
     {
-        workspace = await OpenAsync(target, stopping.Token);
-        solution = workspace.CurrentSolution;
-        state.Indexing = true;
-        await IndexAsync(solution, target, dbPath, forceFull, stopping.Token);
-        state.Indexed(stopwatchSeconds: null);
-        current = solution;
-        watcher.EnableRaisingEvents = true;
-        ConsoleStatus.Clear();
-        Log($"watching {root} (Ctrl+C to stop)");
-
-        // The loaded solution now answers the MCP server's live questions until this process ends.
-        var live = new LiveServer(LivePipe.NameFor(dbPath), new LiveService(() => current, Status, Flush).HandleAsync, Log);
-        _ = live.RunAsync(stopping.Token);
-        Log($"live: answering on pipe {live.PipeName}");
-
-        while (!stopping.IsCancellationRequested)
-        {
-            await wake.WaitAsync(stopping.Token);
-
-            // Debounce: editors and git touch files in bursts; wait for a quiet half second before walking.
-            // Anything that lands during the walk wakes the loop again. A flush skips the wait.
-            bool urgent;
-            lock (pendingLock)
-            {
-                urgent = flushRequested;
-                flushRequested = false;
-            }
-
-            if (!urgent)
-            {
-                await Task.Delay(500, stopping.Token);
-            }
-
-            List<string> batch;
-            bool reload;
-            lock (pendingLock)
-            {
-                batch = [.. pending];
-                pending.Clear();
-                reload = lostEvents;
-                lostEvents = false;
-                state.Indexing = batch.Count > 0 || reload;
-            }
-
-            while (wake.CurrentCount > 0)
-            {
-                wake.Wait(0);
-            }
-
-            if (batch.Count == 0 && !reload)
-            {
-                PassCompleted();
-                continue;
-            }
-
-            var clock = Stopwatch.StartNew();
-            try
-            {
-                if (reload || batch.Any(WorkspaceSync.IsProjectFile))
-                {
-                    Log(reload ? "watcher events were lost; reloading the solution" : "project file changed; reloading the solution");
-                    workspace.Dispose();
-                    workspace = await OpenAsync(target, stopping.Token);
-                    solution = workspace.CurrentSolution;
-                }
-                else
-                {
-                    solution = WorkspaceSync.Apply(solution, batch, ReadOrNull);
-                }
-
-                await IndexAsync(solution, target, dbPath, forceFull: false, stopping.Token);
-                current = solution;
-                state.Indexed(clock.Elapsed.TotalSeconds);
-                ConsoleStatus.Clear();
-            }
-            catch (OperationCanceledException) when (stopping.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                // One bad batch (a file locked mid-save, a db lock held too long) must not end the watch.
-                ConsoleStatus.Clear();
-                Log($"re-index failed: {exception.Message}; will retry on the next change");
-                foreach (var path in batch)
-                {
-                    Enqueue(path);
-                }
-            }
-            finally
-            {
-                lock (pendingLock)
-                {
-                    state.Indexing = false;
-                }
-
-                PassCompleted();
-            }
-        }
+        await loop.RunAsync(forceFull, stopping.Token);
     }
     catch (OperationCanceledException)
     {
@@ -334,6 +184,8 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull)
     finally
     {
         ConsoleStatus.Clear();
+        await stopping.CancelAsync();
+        await serving;
         workspace?.Dispose();
     }
 
@@ -488,34 +340,6 @@ static bool SameStat(FileStamp stamp, string path)
 {
     var info = new FileInfo(path);
     return info.Exists && info.Length == stamp.Size && info.LastWriteTimeUtc.Ticks == stamp.MtimeTicks;
-}
-
-/// <summary>What the watch loop reports over the pipe: how long it has run, when it last indexed, whether it is busy.</summary>
-internal sealed class WatchState(string solution, string dbPath)
-{
-    private readonly DateTime _startedAt = DateTime.UtcNow;
-    private DateTime? _lastIndexedAt;
-    private double? _lastSeconds;
-
-    public bool Indexing { get; set; }
-
-    public void Indexed(double? stopwatchSeconds)
-    {
-        _lastIndexedAt = DateTime.UtcNow;
-        _lastSeconds = stopwatchSeconds is { } s ? Math.Round(s, 2) : null;
-    }
-
-    public LiveStatus Snapshot(Solution? current, int pending) => new(
-        Environment.ProcessId,
-        solution,
-        dbPath,
-        current?.Projects.Count(p => p.Language == LanguageNames.CSharp) ?? 0,
-        current?.Projects.Where(p => p.Language == LanguageNames.CSharp).Sum(p => p.DocumentIds.Count) ?? 0,
-        _startedAt,
-        _lastIndexedAt,
-        _lastSeconds,
-        pending,
-        Indexing);
 }
 
 /// <summary>What the last run left behind, read through a short-lived read-only connection.</summary>
