@@ -2,6 +2,7 @@
 bin/
 obj/
 out/
+.artifacts/
 
 # Test results and coverage
 TestResults/
