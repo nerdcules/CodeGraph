@@ -108,18 +108,22 @@ $entry = [ordered]@{
 }
 
 Step "MCP config: $configPath"
-$config = [ordered]@{ mcpServers = [ordered]@{} }
+# Objects, not -AsHashtable: Windows PowerShell 5.1 does not have that parameter.
+$config = [pscustomobject]@{ mcpServers = [pscustomobject]@{} }
 if (Test-Path $configPath) {
-    $existing = Get-Content $configPath -Raw | ConvertFrom-Json -AsHashtable
+    $existing = Get-Content $configPath -Raw | ConvertFrom-Json
     if ($existing) { $config = $existing }
-    if (-not $config.ContainsKey('mcpServers')) { $config['mcpServers'] = @{} }
+    if (-not $config.PSObject.Properties['mcpServers']) {
+        $config | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
+    }
 }
-$current = $config['mcpServers']['codegraph']
-$changed = -not $current -or ($current | ConvertTo-Json -Compress) -ne ($entry | ConvertTo-Json -Compress)
+$current = $config.mcpServers.PSObject.Properties['codegraph']
+$current = if ($current) { $current.Value } else { $null }
+$changed = -not $current -or ($current | ConvertTo-Json -Compress -Depth 10) -ne ($entry | ConvertTo-Json -Compress -Depth 10)
 if (-not $changed) {
     Write-Host 'codegraph server entry already up to date'
 } elseif (Confirm-Step "$(if ($current) { 'Replace' } else { 'Add' }) the codegraph server entry in $configPath?") {
-    $config['mcpServers']['codegraph'] = $entry
+    $config.mcpServers | Add-Member -NotePropertyName codegraph -NotePropertyValue $entry -Force
     $json = $config | ConvertTo-Json -Depth 10
     [System.IO.File]::WriteAllText($configPath, $json + "`n", [System.Text.UTF8Encoding]::new($false))
     Write-Host $json

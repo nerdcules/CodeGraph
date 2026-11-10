@@ -18,7 +18,9 @@ public sealed class LiveServer(string pipeName, Func<LiveRequest, CancellationTo
         // On Unix every server instance shares one listening socket, which .NET closes and unlinks whenever no
         // unconnected instance exists: briefly after each accept. Clients check the socket file exists before
         // connecting, so that gap read as "no daemon". This instance never accepts and holds the listener open.
-        await using var keeper = Create();
+        // Windows needs no keeper: the pipe stays listed while any instance exists. A keeper there also takes
+        // connections, because a Windows client can connect to an instance that is not waiting, and nobody reads them.
+        await using var keeper = OperatingSystem.IsWindows() ? null : Create();
         while (!cancellationToken.IsCancellationRequested)
         {
             var pipe = Create();

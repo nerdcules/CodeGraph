@@ -74,7 +74,7 @@ if ($LASTEXITCODE -ne 0) { throw 'build failed' }
 
 if (-not $SkipTests) {
     Step 'Running tests'
-    dotnet test (Join-Path $root 'CodeGraph.slnx') -c Release --no-build --nologo
+    dotnet test (Join-Path $root 'CodeGraph.slnx') -c Release --no-build
     if ($LASTEXITCODE -ne 0) { throw 'tests failed; nothing installed' }
 }
 

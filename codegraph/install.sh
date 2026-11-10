@@ -45,7 +45,7 @@ dotnet build "$root/CodeGraph.slnx" -c Release -warnaserror --nologo
 
 if [ "$skip_tests" = false ]; then
     step 'Running tests'
-    dotnet test "$root/CodeGraph.slnx" -c Release --no-build --nologo
+    dotnet test "$root/CodeGraph.slnx" -c Release --no-build
 fi
 
 # A running server keeps its files open; overwriting them under it is undefined.

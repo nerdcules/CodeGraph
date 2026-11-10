@@ -110,10 +110,12 @@ foreach ($dir in $Repo) {
 
     $configPath = Join-Path $dir '.mcp.json'
     if (Test-Path $configPath) {
-        $config = Get-Content $configPath -Raw | ConvertFrom-Json -AsHashtable
-        if ($config -and $config.ContainsKey('mcpServers') -and $config['mcpServers'].ContainsKey('codegraph')) {
+        # Objects, not -AsHashtable: Windows PowerShell 5.1 does not have that parameter.
+        $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        $servers = if ($config) { $config.PSObject.Properties['mcpServers'] } else { $null }
+        if ($servers -and $servers.Value.PSObject.Properties['codegraph']) {
             if (Confirm-Step "Remove the codegraph server entry from $configPath?") {
-                $config['mcpServers'].Remove('codegraph')
+                $servers.Value.PSObject.Properties.Remove('codegraph')
                 $json = $config | ConvertTo-Json -Depth 10
                 [System.IO.File]::WriteAllText($configPath, $json + "`n", [System.Text.UTF8Encoding]::new($false))
                 Write-Host 'entry removed'
