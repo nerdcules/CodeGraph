@@ -12,10 +12,10 @@ namespace CodeGraph.Indexer;
 /// </summary>
 internal sealed class GraphBatch
 {
-    public string Language { get; private set; } = "";
-    public string? Tool { get; private set; }
-    public string? Target { get; private set; }
-    public string? Root { get; private set; }
+    public string Language { get; internal set; } = "";
+    public string? Tool { get; internal set; }
+    public string? Target { get; internal set; }
+    public string? Root { get; internal set; }
     public List<GraphNode> Nodes { get; } = [];
     public List<GraphEdge> Edges { get; } = [];
     public List<EdgeOrigin> Origins { get; } = [];
@@ -191,7 +191,11 @@ internal static class GraphImport
         if (File.Exists(dbPath))
         {
             using var old = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(30));
-            removed.UnionWith(old.LanguagePaths(batch.Language));
+            // Every language the batch carries: a SCIP index of a Kotlin and Java project replaces both.
+            foreach (var language in batch.Nodes.Select(n => n.Language).Append(batch.Language).Distinct(StringComparer.Ordinal))
+            {
+                removed.UnionWith(old.LanguagePaths(language));
+            }
             previousMeta = old.ReadMeta();
         }
 
@@ -271,7 +275,7 @@ internal static class ImportCommand
                     db = args[++i];
                     break;
                 case "-h" or "--help":
-                    Console.Error.WriteLine("usage: codegraph-index import [records.ndjson | -] [--db <path>]");
+                    Console.Error.WriteLine("usage: codegraph-index import [records.ndjson | index.scip | -] [--db <path>]");
                     Console.Error.WriteLine("       reads an extractor's newline-delimited JSON (EXTRACTORS.md) from the file or stdin and");
                     Console.Error.WriteLine("       replaces that language's part of the graph; other languages are kept");
                     return 1;
@@ -286,7 +290,11 @@ internal static class ImportCommand
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
         GraphBatch batch;
-        if (source is null or "-")
+        if (source is not null && source.EndsWith(".scip", StringComparison.OrdinalIgnoreCase))
+        {
+            batch = ScipImport.Read(source, log);
+        }
+        else if (source is null or "-")
         {
             batch = GraphBatch.Read(stdin);
         }

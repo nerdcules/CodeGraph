@@ -98,7 +98,11 @@ if (init && !usage)
 
 if (usage || targetArg is null)
 {
-    Console.Error.WriteLine("usage: codegraph-index <solution.sln|.slnx|project.csproj> [--db <path>] [--full] [--watch] [--log <file>]");
+    Console.Error.WriteLine("usage: codegraph-index <target> [--db <path>] [--full] [--watch] [--log <file>]");
+    Console.Error.WriteLine("       target: a .sln, .slnx or .csproj (Roslyn); a tsconfig.json, angular.json, nx.json or package.json");
+    Console.Error.WriteLine("               (TypeScript and Angular, needs Node.js); a pom.xml, build.gradle, pyproject.toml, go.mod or");
+    Console.Error.WriteLine("               Cargo.toml (through that language's SCIP indexer); or a folder holding one of them");
+    Console.Error.WriteLine("       codegraph-index import <records.ndjson | index.scip | -> [--db <path>]");
     Console.Error.WriteLine("       codegraph-index init [solution|dir] [--live] [--no-index] [index options]");
     Console.Error.WriteLine("       default db: <git worktree root>/.codegraph/graph.db (solution dir outside a repo)");
     Console.Error.WriteLine("       re-walks only files whose hash changed, plus files that depend on them;");
@@ -123,7 +127,8 @@ if (logArg is not null)
     Console.SetError(new StreamWriter(new FileStream(logArg, FileMode.Append, FileAccess.Write, FileShare.ReadWrite)) { AutoFlush = true });
 }
 
-var target = TypeScriptExtractor.WorkspaceFile(Path.GetFullPath(targetArg));
+var target = Path.GetFullPath(targetArg);
+target = TypeScriptExtractor.IsTarget(target) ? TypeScriptExtractor.WorkspaceFile(target) : ScipIndexers.For(target)?.Marker ?? target;
 if (!File.Exists(target))
 {
     Console.Error.WriteLine($"not found: {target}");
@@ -159,6 +164,26 @@ if (TypeScriptExtractor.IsTarget(target))
     var code = watch
         ? await TypeScriptExtractor.WatchAsync(target, dbPath, Log, stopping.Token)
         : await TypeScriptExtractor.IndexAsync(target, dbPath, Log, stopping.Token);
+    if (init && code == 0)
+    {
+        Console.WriteLine(ReadyMessage(target));
+    }
+
+    return code;
+}
+
+if (ScipIndexers.For(target) is { } scip)
+{
+    // Java, Kotlin, Scala, Python, Go, Rust: the language's SCIP indexer writes an index, the importer reads it.
+    using var stopping = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        stopping.Cancel();
+    };
+    var code = watch
+        ? await ScipIndexers.WatchAsync(scip.Indexer, scip.Marker, dbPath, Log, stopping.Token)
+        : await ScipIndexers.IndexAsync(scip.Indexer, scip.Marker, dbPath, Log, stopping.Token);
     if (init && code == 0)
     {
         Console.WriteLine(ReadyMessage(target));

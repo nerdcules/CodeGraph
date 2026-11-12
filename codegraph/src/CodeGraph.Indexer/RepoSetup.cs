@@ -56,6 +56,8 @@ internal static class RepoSetup
         candidates.Add(() => Directory.GetFiles(full, "*.csproj").Order(StringComparer.Ordinal).ToList());
         // No C#: a TypeScript or Angular workspace (angular.json, nx.json, tsconfig.json) here or below.
         candidates.Add(() => TypeScriptExtractor.IsTarget(full) ? [TypeScriptExtractor.WorkspaceFile(full)] : TypeScriptExtractor.WorkspacesUnder(full).ToList());
+        // Then a project a SCIP indexer handles: Maven or Gradle, Python, Go, Rust.
+        candidates.Add(() => ScipIndexers.For(full) is { } scip ? [scip.Marker] : []);
         foreach (var search in candidates)
         {
             var found = search();
@@ -71,7 +73,7 @@ internal static class RepoSetup
             }
         }
 
-        problem = $"no .slnx, .sln, .csproj, angular.json or tsconfig.json in {full}; pass what to index";
+        problem = $"no .slnx, .sln, .csproj, angular.json, tsconfig.json, pom.xml, build.gradle, pyproject.toml, go.mod or Cargo.toml in {full}; pass what to index";
         return null;
     }
 

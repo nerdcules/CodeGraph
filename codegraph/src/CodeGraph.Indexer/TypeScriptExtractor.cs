@@ -170,60 +170,17 @@ internal static class TypeScriptExtractor
         }
     }
 
-    /// <summary>
-    /// <c>--watch</c> for a TypeScript workspace: index, then re-index on every save, debounced. There is no live
-    /// daemon for TypeScript yet, so the MCP server's live tools say so; graph answers stay fresh.
-    /// </summary>
-    public static async Task<int> WatchAsync(string target, string dbPath, Action<string> log, CancellationToken cancellationToken)
+    private static readonly HashSet<string> SourceExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".html", ".json",
+    };
+
+    /// <summary><c>--watch</c> for a TypeScript workspace: re-index on every save.</summary>
+    public static Task<int> WatchAsync(string target, string dbPath, Action<string> log, CancellationToken cancellationToken)
     {
         var root = Directory.Exists(target) ? Path.GetFullPath(target) : Path.GetDirectoryName(Path.GetFullPath(target))!;
-        var exit = await IndexAsync(target, dbPath, log, cancellationToken);
-        using var watcher = new FileSystemWatcher(root) { IncludeSubdirectories = true, NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.DirectoryName };
-        var changed = new SemaphoreSlim(0);
-        void OnChange(object _, FileSystemEventArgs e)
-        {
-            if (Relevant(e.FullPath))
-            {
-                changed.Release();
-            }
-        }
-
-        watcher.Changed += OnChange;
-        watcher.Created += OnChange;
-        watcher.Deleted += OnChange;
-        watcher.Renamed += (s, e) => OnChange(s, e);
-        watcher.EnableRaisingEvents = true;
-        log($"watching {root} (Ctrl+C to stop)");
-        try
-        {
-            while (true)
-            {
-                await changed.WaitAsync(cancellationToken);
-                // Debounce: a save often arrives as several events, and editors save several files at once.
-                await Task.Delay(500, cancellationToken);
-                while (changed.CurrentCount > 0)
-                {
-                    await changed.WaitAsync(cancellationToken);
-                }
-
-                exit = await IndexAsync(target, dbPath, log, cancellationToken);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            return exit;
-        }
+        return ReindexWatch.RunAsync(root, SourceExtensions, token => IndexAsync(target, dbPath, log, token), log, cancellationToken);
     }
 
-    internal static bool Relevant(string path)
-    {
-        var segments = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (segments.Any(s => s is "node_modules" or ".git" or ".codegraph" or "dist" or ".angular" or ".nx" or "coverage"))
-        {
-            return false;
-        }
-
-        var extension = Path.GetExtension(path).ToLowerInvariant();
-        return extension is ".ts" or ".tsx" or ".mts" or ".cts" or ".js" or ".jsx" or ".mjs" or ".cjs" or ".html" or ".json";
-    }
+    internal static bool Relevant(string path) => ReindexWatch.Relevant(path, SourceExtensions);
 }

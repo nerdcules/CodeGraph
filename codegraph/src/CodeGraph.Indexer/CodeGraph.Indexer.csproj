@@ -4,6 +4,7 @@
     <AssemblyName>codegraph-index</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.36.2" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.11.2" />
     <!-- Locator loads MSBuild from the installed SDK; the package copy must not ship at runtime (MSBL001). -->
     <PackageReference Include="Microsoft.Build.Framework" Version="17.11.48" ExcludeAssets="runtime" PrivateAssets="all" />
