@@ -3,7 +3,7 @@
 Synthetic codebases with a known answer key, to test each extractor against. `gen.py` builds one seeded model
 (modules, classes, interfaces, inheritance, overrides, overloads, generics, nested types, statics, lambdas, tests,
 an entry point, planted dead code, and Angular components, services and templates) and writes it out as one
-language, in one construction. `expected.json` lists every method, type and edge the graph should hold.
+language (C#, Java, TypeScript, JavaScript, Angular, Go or Rust), in one construction. `expected.json` lists every method, type and edge the graph should hold.
 `check.py` indexes the codebase, exports the graph (`codegraph-index export --dead-code`) and scores it.
 
 ```bash
@@ -15,7 +15,8 @@ python3 tools/corpus/gen.py --lang csharp --profile collisions --out /tmp/c && \
 
 `run.py` publishes `codegraph-index`, builds the image from `Dockerfile` and runs one container per language,
 profile and seed, `--jobs` at a time. With `--base`, the host's JDK, Maven, scip-java and their caches are mounted
-read-only and the containers run with `--network none`. Results go to `artifacts/corpus/`: one JSON per run,
+read-only, along with the host's Go toolchain and scip-go and its Rust toolchain with rust-analyzer, and the
+containers run with `--network none`. Go and Rust have no inheritance, so they skip `deep-hierarchy`. Results go to `artifacts/corpus/`: one JSON per run,
 `summary.md` and `summary.json`.
 
 | profile | construction |
@@ -26,9 +27,9 @@ read-only and the containers run with `--network none`. Results go to `artifacts
 | `wide-fanout` | a hub every method calls, and one method calling everything |
 | `generics-nested` | mostly generic and nested types, lambdas |
 | `collisions` | the same type, interface and method names in every module |
-| `single-file` | every module in one file (C#, TypeScript) |
+| `single-file` | every module in one file (C#, TypeScript, Rust) |
 | `per-module` | one file per module (a holder class with nested types in Java) |
-| `multi-project` | a project per module: C# projects in a `.slnx`, Maven modules, TypeScript project references, Angular libraries |
+| `multi-project` | a project per module: C# projects in a `.slnx`, Maven modules, TypeScript project references, Angular libraries, a `go.work`, a Cargo workspace |
 | `large` | 20 modules, 500+ types, about 6,000 methods |
 
 What is scored, per edge kind: precision (recorded edges that are in the key) and recall (key edges that were

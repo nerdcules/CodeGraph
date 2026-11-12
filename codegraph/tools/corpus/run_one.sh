@@ -1,11 +1,15 @@
 #!/bin/sh
 # Inside the container: run_one.sh <language> <profile> [seed]
 # Expects codegraph-index at /opt/codegraph/index, the TypeScript extractor at /opt/codegraph/extractors/typescript
-# and, for Java, a JDK at /opt/jdk, Maven at /opt/maven and scip-java at /opt/coursier/bin (or on PATH).
+# and, for Java, a JDK at /opt/jdk, Maven at /opt/maven and scip-java at /opt/coursier/bin; for Go, a GOROOT at
+# /opt/go and scip-go in /opt/gobin; for Rust, a toolchain (with rust-analyzer) at /opt/rust. Or all on PATH.
 set -eu
 lang=$1 profile=$2 seed=${3:-1}
 name="$lang-$profile-s$seed"
-export PATH="/opt/jdk/bin:/opt/maven/bin:/opt/coursier/bin:$PATH"
+export PATH="/opt/jdk/bin:/opt/maven/bin:/opt/coursier/bin:/opt/go/bin:/opt/gobin:/opt/rust/bin:$PATH"
+# Go and Cargo work offline in a home of their own; the corpora have no third-party dependencies.
+export GOTOOLCHAIN=local GOPATH="$HOME/go" GOCACHE="$HOME/go-build" CARGO_HOME="$HOME/.cargo" CARGO_NET_OFFLINE=true
+[ -d /opt/go ] && export GOROOT=/opt/go
 [ -d /opt/jdk ] && export JAVA_HOME=/opt/jdk
 # The JVM takes its home folder from the user database, not $HOME; coursier and Maven must look in $HOME.
 export JAVA_TOOL_OPTIONS="-Duser.home=$HOME" COURSIER_CACHE="$HOME/.cache/coursier/v1"

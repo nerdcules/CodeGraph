@@ -21,11 +21,14 @@ import random
 import re
 from dataclasses import dataclass, field
 
-LANGS = ["csharp", "java", "typescript", "javascript", "angular"]
+LANGS = ["csharp", "java", "typescript", "javascript", "angular", "go", "rust"]
 
 # Constructions a language cannot express: JavaScript has no namespaces to put several modules in one file, Java
 # allows one package per file, and Angular decorators make a file a module (no global namespaces).
-UNSUPPORTED = {("javascript", "single-file"), ("java", "single-file"), ("angular", "single-file")}
+UNSUPPORTED = {("javascript", "single-file"), ("java", "single-file"), ("angular", "single-file"), ("go", "single-file"),
+               # Go and Rust have no inheritance, so a deep hierarchy has nothing to build.
+               ("go", "deep-hierarchy"), ("rust", "deep-hierarchy")}
+NO_INHERITANCE = {"go", "rust"}
 
 # Size and shape of each profile. Probabilities are per class or per method; counts are per module.
 PROFILES: dict[str, dict] = {
@@ -158,6 +161,8 @@ class Model:
             self.p.update(ifaces=0, generic=0.0, iface_inherit=0.0)
         if lang in ("typescript", "javascript", "angular"):  # one implementation per name: no overloading by arity
             self.p.update(overload=0.0)
+        if lang in NO_INHERITANCE:  # structs and interfaces or traits: no bases, overloads or nested types
+            self.p.update(inherit=0.0, override=0.0, super_=0.0, nested=0.0, overload=0.0, iface_inherit=0.0)
         self.build()
 
     # ---- construction -------------------------------------------------------------------------------------------
@@ -224,7 +229,7 @@ class Model:
             t.generic = True
         elif t.base is None and nested_host and rng.random() < p["nested"] and self.lang != "javascript":
             t.outer = rng.choice(nested_host)
-        if t.base is None and not t.generic and t.outer is None and self.lang != "javascript" and rng.random() < 0.15 and not p.get("chain"):
+        if t.base is None and not t.generic and t.outer is None and self.lang not in ("javascript", *NO_INHERITANCE) and rng.random() < 0.15 and not p.get("chain"):
             t.abstract = True
         ifaces = [i for m in self.modules[: module.index + 1] for i in m.types if i.kind == "interface"]
         if ifaces and not t.generic and rng.random() < 0.6:
@@ -275,7 +280,7 @@ class Model:
                 if not any(m.name == im.name and m.arity == im.arity for m in t.methods):
                     t.methods.append(Method(im.name, im.arity, t, implements=[im]))
         if rng.random() < p["dead"]:
-            t.methods.append(Method(f"unused{tag}", 1, t, static=self.lang not in ("typescript", "javascript", "angular"), private=True, dead=True))
+            t.methods.append(Method(f"unused{tag}", 1, t, static=self.lang in ("csharp", "java"), private=True, dead=True))
         if t.outer:
             t.outer.nested.append(t)
         else:
@@ -710,6 +715,9 @@ class TypeScript(Writer):
     def test_fq(self, m: Method) -> str:
         return f"{self.file_of(m.owner)}:{m.owner.name}.{m.name}"
 
+    def program_key(self, t: Type) -> str:
+        return f"{self.file_of(t)}:{t.module.name + '.' if self.layout == 'single' else ''}main/0"
+
     def member_fq(self, m: Method) -> str:
         if m.test:
             return self.test_fq(m)
@@ -897,7 +905,268 @@ class TypeScript(Writer):
             self.target = "tsconfig.json"
 
 
-WRITERS = {"csharp": CSharp, "java": Java, "typescript": TypeScript, "javascript": TypeScript, "angular": TypeScript}
+def cap(name: str) -> str:
+    return name[:1].upper() + name[1:]
+
+
+class Go(Writer):
+    """Packages m0..mN in one module (or a go.work of modules); structs, constructor functions, implicit interfaces."""
+    MODULE = "example.com/corpus"
+
+    def pkg(self, module: Module) -> str:
+        return f"{self.MODULE}/{module.name}"
+
+    def type_fq(self, t: Type) -> str:
+        return f"{self.pkg(t.module)}/{t.name}"
+
+    def func_name(self, m: Method) -> str:
+        if m.ctor:
+            return f"New{m.owner.name}"
+        if m.test:
+            return f"Test{m.owner.name}{cap(m.name)}"
+        if m.static:
+            return f"{m.owner.name}{cap(m.name)}"
+        return None
+
+    def member_fq(self, m: Method) -> str:
+        func = self.func_name(m)
+        if func:
+            return f"{self.pkg(m.owner.module)}/{func}"
+        return f"{self.type_fq(m.owner)}.{self.member_name(m)}"
+
+    def member_name(self, m: Method) -> str:
+        return m.name if m.dead else cap(m.name)
+
+    def program_key(self, t: Type) -> str:
+        return f"{self.MODULE}/cmd/app/main/0"
+
+    def q(self, t: Type, here: Module | None) -> str:
+        """The package qualifier for t from a file in package here (None: package main)."""
+        if here is t.module:
+            return ""
+        self.uses.add(t.module)
+        return t.module.name + "."
+
+    def params(self, m: Method) -> str:
+        return "v T" if m.generic_param else ", ".join(f"p{i} int" for i in range(m.arity))
+
+    def new(self, t: Type, here) -> str:
+        return f"{self.q(t, here)}New{t.name}{'[int]' if t.generic else ''}(1)"
+
+    def call(self, kind, target: Method, extra, n: int, here) -> str:
+        a = self.args(target.arity)
+        name = self.member_name(target)
+        if kind == "new":
+            return f"r += {self.new(target.owner, here)}.{name}({a})"
+        if kind == "static":
+            return f"r += {self.q(target.owner, here)}{self.func_name(target)}({a})"
+        if kind == "lambda":
+            return f"g{n} := func(x int) int {{ return {self.new(target.owner, here)}.{name}({a}) }}; r += g{n}(1)"
+        if kind == "iface":
+            return f"{{ var f{n} {self.q(target.owner, here)}{target.owner.name} = {self.new(extra, here)}; r += f{n}.{name}({a}) }}"
+        if kind == "self":
+            return f"r += o.{name}({a})" if not target.static else f"r += {self.func_name(target)}({a})"
+        raise ValueError(kind)
+
+    def body(self, m: Method, here) -> list[str]:
+        return ["r := 0"] + [self.call(k, t, e, n, here) for n, (k, t, e) in enumerate(m.calls)]
+
+    def type_text(self, t: Type) -> list[str]:
+        here = t.module
+        if t.kind == "interface":
+            return [f"type {t.name} interface {{"] + [f"\t{cap(m.name)}({self.params(m)}) int" for m in t.methods] + ["}", ""]
+        gen, recv = ("[T any]", f"{t.name}[T]") if t.generic else ("", t.name)
+        out = [f"type {t.name}{gen} struct{{ a int }}", "", f"func New{t.name}{gen}(a int) *{recv} {{ return &{recv}{{a: a}} }}", ""]
+        for m in t.methods:
+            if m.ctor:
+                continue
+            if m.dead:
+                out += [f"func (o *{recv}) {m.name}(p0 int) int {{ return p0 + o.a }}", ""]
+                continue
+            head = f"func {self.func_name(m)}({self.params(m)}) int" if m.static else f"func (o *{recv}) {cap(m.name)}({self.params(m)}) int"
+            out += [head + " {"] + [f"\t{line}" for line in self.body(m, here)] + ["\treturn r", "}", ""]
+        return out
+
+    def file(self, package: str, lines: list[str], uses: set, test: bool = False) -> str:
+        imports = sorted(self.import_path(u) for u in uses) + (['"testing"'] if test else [])
+        head = [f"package {package}", ""]
+        if imports:
+            head += ["import ("] + [f"\t{i}" for i in imports] + [")", ""]
+        return "\n".join(head + lines)
+
+    def import_path(self, module: Module) -> str:
+        return f'"{self.pkg(module)}"'
+
+    def write(self, root: str):
+        for module in self.m.modules:
+            folder = module.name
+            groups = [[t] for t in module.types if not t.test and not t.program] if self.layout == "class" else [[t for t in module.types if not t.test and not t.program]]
+            for group in groups:
+                self.uses = set()
+                lines = [line for t in group for line in self.type_text(t)]
+                name = group[0].name.lower() if self.layout == "class" else module.name
+                self.files[f"{folder}/{name}.go"] = self.file(module.name, lines, self.uses)
+            for t in (x for x in module.types if x.test):
+                self.uses = set()
+                lines = []
+                for m in t.methods:
+                    if m.test:
+                        lines += [f"func {self.func_name(m)}(t *testing.T) {{"] + [f"\t{line}" for line in self.body(m, module)] + ["\t_ = r", "}", ""]
+                self.files[f"{folder}/{module.name}_test.go"] = self.file(module.name, lines, self.uses, test=True)
+            program = next((t for t in module.types if t.program), None)
+            if program:
+                self.uses = set()
+                lines = ["func main() {"] + [f"\t{line}" for line in self.body(program.methods[0], None)] + ["\tprintln(r)", "}", ""]
+                self.files["cmd/app/main.go"] = self.file("main", lines, self.uses)
+                self.app_uses = set(self.uses)
+        if self.multi:
+            # A module per package, joined by a go.work: requires on the lower modules, the workspace resolves them.
+            for module in self.m.modules:
+                requires = "".join(f"require {self.pkg(x)} v0.0.0\n" for x in self.m.modules[: module.index])
+                self.files[f"{module.name}/go.mod"] = f"module {self.pkg(module)}\n\ngo 1.22\n\n{requires}"
+            requires = "".join(f"require {self.pkg(x)} v0.0.0\n" for x in self.m.modules)
+            self.files["cmd/app/go.mod"] = f"module {self.MODULE}/cmd/app\n\ngo 1.22\n\n{requires}"
+            self.files["go.work"] = "go 1.22\n\nuse (\n" + "".join(f"\t./{m.name}\n" for m in self.m.modules) + "\t./cmd/app\n)\n"
+            self.target = "go.work"
+        else:
+            self.files["go.mod"] = f"module {self.MODULE}\n\ngo 1.22\n"
+            self.target = "go.mod"
+
+
+class Rust(Writer):
+    """Modules m0..mN in one crate (or a crate each in a workspace); structs with impl blocks, traits, closures."""
+
+    def mod_path(self, t: Type) -> list[str]:
+        return [t.module.name] + ([self.file_mod(t)] if self.layout == "class" else [])
+
+    def file_mod(self, t: Type) -> str:
+        return re.sub(r"(?<!^)(?=[A-Z])", "_", t.name).lower()
+
+    def type_fq(self, t: Type) -> str:
+        return "/".join(self.mod_path(t)) + "/" + t.name
+
+    def member_fq(self, m: Method) -> str:
+        if m.test:
+            return f"{m.owner.module.name}/{m.owner.module.name}_tests/{m.name}"
+        return f"{self.type_fq(m.owner)}.{'new' if m.ctor else m.name}"
+
+    def program_key(self, t: Type) -> str:
+        return "main/0"
+
+    def path(self, t: Type, here: Module | None) -> str:
+        crate = "crate" if not self.multi or (here is not None and here is t.module) else f"::{t.module.name}"
+        return "::".join([crate, *self.mod_path(t), t.name])
+
+    def params(self, m: Method, receiver: bool) -> str:
+        own = ["v: T"] if m.generic_param else [f"p{i}: i32" for i in range(m.arity)]
+        return ", ".join((["&self"] if receiver else []) + own)
+
+    def new(self, t: Type, here) -> str:
+        return f"{self.path(t, here)}{'::<i32>' if t.generic else ''}::new(1)"
+
+    def call(self, kind, target: Method, extra, n: int, here) -> str:
+        a = self.args(target.arity)
+        if kind == "new":
+            return f"r += {self.new(target.owner, here)}.{target.name}({a});"
+        if kind == "static":
+            return f"r += {self.path(target.owner, here)}::{target.name}({a});"
+        if kind == "lambda":
+            return f"let g{n} = |_x: i32| {self.new(target.owner, here)}.{target.name}({a}); r += g{n}(1);"
+        if kind == "iface":
+            return f"{{ let f{n}: Box<dyn {self.path(target.owner, here)}> = Box::new({self.new(extra, here)}); r += f{n}.{target.name}({a}); }}"
+        if kind == "self":
+            return f"r += self.{target.name}({a});" if not target.static else f"r += Self::{target.name}({a});"
+        raise ValueError(kind)
+
+    def body(self, m: Method, here) -> list[str]:
+        return ["let mut r = 0;"] + [self.call(k, t, e, n, here) for n, (k, t, e) in enumerate(m.calls)]
+
+    def traits_in_scope(self, here: Module | None) -> list[str]:
+        # Calling a trait method on a concrete type needs the trait in scope; alias each to avoid name clashes.
+        reach = self.m.modules if here is None else self.m.modules[: here.index + 1]
+        return [f"use {self.path(t, here)} as {t.module.name}_{t.name};" for m in reach for t in m.types if t.kind == "interface"]
+
+    def item_text(self, t: Type) -> list[str]:
+        here = t.module
+        if t.kind == "interface":
+            return [f"pub trait {t.name} {{"] + [f"    fn {m.name}({self.params(m, True)}) -> i32;" for m in t.methods] + ["}", ""]
+        gen = "<T>" if t.generic else ""
+        out = [f"pub struct {t.name}{gen} {{ a: i32{', v: Option<T>' if t.generic else ''} }}", "", f"impl{gen} {t.name}{gen} {{",
+               f"    pub fn new(a: i32) -> Self {{ {t.name} {{ a{', v: None' if t.generic else ''} }} }}"]
+        impls: dict[Type, list[Method]] = {}
+        for m in t.methods:
+            if m.ctor:
+                continue
+            if m.dead:
+                out.append(f"    fn {m.name}(&self, p0: i32) -> i32 {{ p0 + self.a }}")
+                continue
+            if m.implements:
+                impls.setdefault(m.implements[0].owner, []).append(m)
+                continue
+            out += [f"    pub fn {m.name}({self.params(m, not m.static)}) -> i32 {{"] + [f"        {line}" for line in self.body(m, here)] + ["        r", "    }"]
+        out += ["}", ""]
+        for trait, members in impls.items():
+            out.append(f"impl {self.path(trait, here)} for {t.name} {{")
+            for m in members:
+                out += [f"    fn {m.name}({self.params(m, True)}) -> i32 {{"] + [f"        {line}" for line in self.body(m, here)] + ["        r", "    }"]
+            out += ["}", ""]
+        return out
+
+    def tests_text(self, t: Type) -> list[str]:
+        out = ["#[cfg(test)]", f"mod {t.module.name}_tests {{"] + ["    " + line for line in self.traits_in_scope(t.module)]
+        for m in t.methods:
+            if m.test:
+                out += ["    #[test]", f"    fn {m.name}() {{"] + [f"        {line}" for line in self.body(m, t.module)] + ["        let _ = r;", "    }"]
+        return out + ["}", ""]
+
+    def module_files(self, module: Module, prefix: str):
+        items = [t for t in module.types if not t.test and not t.program]
+        tests = [line for t in module.types if t.test for line in self.tests_text(t)]
+        scope = self.traits_in_scope(module)
+        if self.layout == "class":
+            mods = []
+            for t in items:
+                self.files[f"{prefix}{module.name}/{self.file_mod(t)}.rs"] = "\n".join(scope + [""] + self.item_text(t))
+                mods.append(f"pub mod {self.file_mod(t)};")
+            self.files[f"{prefix}{module.name}/mod.rs"] = "\n".join(mods + [""] + tests)
+            return None
+        return scope + [""] + [line for t in items for line in self.item_text(t)] + tests
+
+    def write(self, root: str):
+        allow = "#![allow(dead_code, unused, non_snake_case, non_camel_case_types)]"
+        program = next(t for m in self.m.modules for t in m.types if t.program)
+        main = self.traits_in_scope(None) + ["", "fn main() {"] + [f"    {line}" for line in self.body(program.methods[0], None)] + ['    println!("{}", r);', "}", ""]
+        if self.multi:
+            for module in self.m.modules:
+                deps = "".join(f'{x.name} = {{ path = "../{x.name}" }}\n' for x in self.m.modules[: module.index])
+                self.files[f"{module.name}/Cargo.toml"] = f'[package]\nname = "{module.name}"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n{deps}'
+                inline = self.module_files(module, f"{module.name}/src/")
+                if inline is None:
+                    self.files[f"{module.name}/src/lib.rs"] = f"{allow}\npub mod {module.name};\n"
+                else:
+                    self.files[f"{module.name}/src/lib.rs"] = f"{allow}\npub mod {module.name} {{\n" + "\n".join("    " + l for l in inline) + "\n}\n"
+            deps = "".join(f'{x.name} = {{ path = "../{x.name}" }}\n' for x in self.m.modules)
+            self.files["app/Cargo.toml"] = f'[package]\nname = "app"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n{deps}'
+            self.files["app/src/main.rs"] = "\n".join([allow, ""] + main)
+            members = ", ".join(f'"{m.name}"' for m in self.m.modules) + ', "app"'
+            self.files["Cargo.toml"] = f'[workspace]\nmembers = [{members}]\nresolver = "2"\n'
+        else:
+            lines = [allow, ""]
+            for module in self.m.modules:
+                inline = self.module_files(module, "src/")
+                if inline is None:
+                    lines.append(f"mod {module.name};")
+                elif self.layout == "single":
+                    lines += [f"mod {module.name} {{"] + ["    " + l for l in inline] + ["}", ""]
+                else:
+                    self.files[f"src/{module.name}/mod.rs"] = "\n".join(inline)
+                    lines.append(f"mod {module.name};")
+            self.files["src/main.rs"] = "\n".join(lines + [""] + main)
+            self.files["Cargo.toml"] = '[package]\nname = "corpus"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n'
+        self.target = "Cargo.toml"
+
+
+WRITERS = {"csharp": CSharp, "java": Java, "typescript": TypeScript, "javascript": TypeScript, "angular": TypeScript, "go": Go, "rust": Rust}
 
 
 # ---- answer key ----------------------------------------------------------------------------------------------------------
@@ -907,7 +1176,7 @@ def answer_key(model: Model, w: Writer) -> dict:
     callers: dict[str, set] = {}
     all_types = [t for m in model.modules for t in model.all_types(m)]
     for t in all_types:
-        if not t.program:
+        if not t.program and not (t.test and model.lang in NO_INHERITANCE):
             types[w.type_fq(t)] = t.kind
         for s in ([t.base] if t.base else []) + t.ifaces:
             edges["Supertype"].add((w.type_fq(t), w.type_fq(s)))
@@ -919,9 +1188,9 @@ def answer_key(model: Model, w: Writer) -> dict:
         for m in t.template_calls:
             edges["TemplateCalls"].add((template, w.key(m)))
             callers.setdefault(w.key(m), set()).add(template)
-        if t.program and model.lang in ("typescript", "javascript", "angular"):
+        if t.program and model.lang in ("typescript", "javascript", "angular", "go", "rust"):
             main = t.methods[0]
-            fq = f"{w.file_of(t)}:{t.module.name + '.' if w.layout == 'single' else ''}main/0"
+            fq = w.program_key(t)
             methods[fq] = dict(entry=True, test=False, dead=False, ctor=False)
             for kind, target, extra in main.calls:
                 for callee in call_targets(kind, target, extra, w):
@@ -929,8 +1198,8 @@ def answer_key(model: Model, w: Writer) -> dict:
                     callers.setdefault(callee, set()).add(fq)
             continue
         for m in t.methods:
-            if t.test and m.ctor and model.lang in ("typescript", "javascript", "angular"):
-                continue  # a describe block has no constructor
+            if t.test and m.ctor and model.lang not in ("csharp", "java"):
+                continue  # a describe block or a test module has no constructor
             k = w.key(m) if not (t.program and model.lang in ("csharp",)) else f"{w.type_fq(t)}.Main/0"
             methods[k] = dict(entry=m.entry, test=m.test, dead=m.dead, ctor=m.ctor, lifecycle=m.lifecycle, abstract=m.abstract)
             if m.overrides:
@@ -945,7 +1214,21 @@ def answer_key(model: Model, w: Writer) -> dict:
                     callers.setdefault(callee, set()).add(k)
                     if m.test:
                         edges["TestedBy"].add((callee, k))
-    # Interfaces a derived type picks up through its base: members of interfaces implemented on the way.
+    if model.lang == "go":
+        # Go interfaces are satisfied structurally: any type whose method set covers an interface implements it,
+        # declared or not, in any package.
+        edges["Supertype"] = {e for e in edges["Supertype"] if types.get(e[1]) != "interface"}
+        edges["Implements"] = set()
+        interfaces = [t for t in all_types if t.kind == "interface"]
+        for t in all_types:
+            if t.kind != "class" or t.test or t.program or t.role:
+                continue
+            own = {(w.member_name(m), m.arity): m for m in t.methods if not (m.ctor or m.static or m.dead)}
+            for i in interfaces:
+                if all((w.member_name(im), im.arity) in own for im in i.methods):
+                    edges["Supertype"].add((w.type_fq(t), w.type_fq(i)))
+                    for im in i.methods:
+                        edges["Implements"].add((w.key(own[(w.member_name(im), im.arity)]), w.key(im)))
     return dict(
         language=model.lang, profile=model.profile, target=w.target,
         methods=methods, types=types,
@@ -953,7 +1236,7 @@ def answer_key(model: Model, w: Writer) -> dict:
         callers={k: sorted(v) for k, v in callers.items()},
         stats=dict(modules=len(model.modules), types=len(types), methods=len(methods), calls=len(edges["Calls"]),
                    files=len(w.files), lines=sum(v.count("\n") for v in w.files.values())),
-        entry_is_framework=model.lang in ("csharp", "java"),
+        entry_is_framework=model.lang in ("csharp", "java", "go", "rust"),
     )
 
 

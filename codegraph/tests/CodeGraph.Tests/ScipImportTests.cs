@@ -153,6 +153,100 @@ public sealed class ScipImportTests : IDisposable
         Assert.DoesNotContain(dead, d => d.Method.Name is "total" or "round");
     }
 
+    /// <summary>rust-analyzer names impl members impl#[Self][Trait]member(): they belong to the self type.</summary>
+    [Fact]
+    public void Rust_impl_members_belong_to_their_type_and_name_their_trait()
+    {
+        var method = ScipSymbol.Parse("rust-analyzer cargo corpus 0.1.0 m0/ledger/impl#[Ledger][IShape]handle_shape().")!;
+        Assert.Equal("m0/ledger/Ledger.handle_shape", method.FullName);
+        Assert.Equal("rust-analyzer cargo corpus 0.1.0 m0/ledger/Ledger#", method.Parent);
+        Assert.Equal("IShape", method.ImplTrait);
+
+        var generic = ScipSymbol.Parse("rust-analyzer cargo corpus 0.1.0 m0/ledger/impl#[`Boxed<T>`]put().")!;
+        Assert.Equal("m0/ledger/Boxed.put", generic.FullName);
+        Assert.Equal("rust-analyzer cargo corpus 0.1.0 m0/ledger/Boxed#", generic.Parent);
+        Assert.Null(generic.ImplTrait);
+    }
+
+    /// <summary>
+    /// A Rust index carries no relationships; trait impls come from the impl descriptor and the trait its header
+    /// references, not a same-named one elsewhere. #[test] marks tests. Go's
+    /// interface members (MethodSpecification) are methods, and Go's generated test main outside the root is skipped.
+    /// </summary>
+    [Fact]
+    public async Task Rust_trait_impls_and_tests_and_Go_interface_members_come_through()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "src"));
+        var rustText = string.Join('\n',
+            "pub trait IShape { fn area(&self) -> i32; }",              // 0
+            "pub struct Square { a: i32 }",                             // 1
+            "impl IShape for Square { fn area(&self) -> i32 { 1 } }",   // 2
+            "#[test]",                                                  // 3
+            "fn squares() { Square { a: 1 }.area(); }");                // 4
+        const string R = "rust-analyzer cargo corpus 0.1.0 shapes/";
+        Occurrence Def(string symbol, int line, int column) => new()
+        {
+            Symbol = symbol, SymbolRoles = (int)SymbolRole.Definition,
+            SingleLineRange = new SingleLineRange { Line = line, StartCharacter = column, EndCharacter = column + 4 },
+            MultiLineEnclosingRange = new MultiLineRange { StartLine = line, StartCharacter = 0, EndLine = line, EndCharacter = 80 },
+        };
+        var rust = new Document { RelativePath = "src/shapes.rs", Language = "rust", Text = rustText };
+        rust.Occurrences.Add(Def(R + "IShape#", 0, 10));
+        rust.Occurrences.Add(Def(R + "IShape#area().", 0, 22));
+        rust.Occurrences.Add(Def(R + "Square#", 1, 11));
+        rust.Occurrences.Add(Def(R + "impl#[Square][IShape]area().", 2, 28));
+        rust.Occurrences.Add(Def(R + "squares().", 4, 3));
+        rust.Occurrences.Add(new Occurrence { Symbol = R + "impl#[Square][IShape]area().", SingleLineRange = new SingleLineRange { Line = 4, StartCharacter = 31, EndCharacter = 35 } });
+        rust.Occurrences.Add(new Occurrence { Symbol = R + "IShape#", SingleLineRange = new SingleLineRange { Line = 2, StartCharacter = 5, EndCharacter = 11 } }); // the impl header
+        // A trait of the same name whose module path is closer to Square's: naming alone would pick it.
+        var decoy = new Document { RelativePath = "src/sq.rs", Language = "rust", Text = "pub trait IShape { fn area(&self) -> i32; }" };
+        decoy.Occurrences.Add(Def(R + "Sq/IShape#", 0, 10));
+        decoy.Occurrences.Add(Def(R + "Sq/IShape#area().", 0, 22));
+        decoy.Symbols.Add(new SymbolInformation { Symbol = R + "Sq/IShape#", Kind = SymbolInformation.Types.Kind.Trait });
+        decoy.Symbols.Add(new SymbolInformation { Symbol = R + "Sq/IShape#area().", Kind = SymbolInformation.Types.Kind.TraitMethod });
+        rust.Symbols.Add(new SymbolInformation { Symbol = R + "IShape#", Kind = SymbolInformation.Types.Kind.Trait });
+        rust.Symbols.Add(new SymbolInformation { Symbol = R + "IShape#area().", Kind = SymbolInformation.Types.Kind.TraitMethod });
+        rust.Symbols.Add(new SymbolInformation { Symbol = R + "Square#", Kind = SymbolInformation.Types.Kind.Struct });
+        rust.Symbols.Add(new SymbolInformation { Symbol = R + "impl#[Square][IShape]area().", Kind = SymbolInformation.Types.Kind.Method });
+        rust.Symbols.Add(new SymbolInformation { Symbol = R + "squares().", Kind = SymbolInformation.Types.Kind.Function });
+
+        const string G = "scip-go gomod example.com/app . `example.com/app/shapes`/";
+        var go = new Document { RelativePath = "shapes/shape.go", Language = "go", Text = "package shapes\ntype IShape interface{ Area() int }\n" };
+        go.Occurrences.Add(Def(G + "IShape#", 1, 5));
+        go.Occurrences.Add(Def(G + "IShape#Area.", 1, 23));
+        go.Symbols.Add(new SymbolInformation { Symbol = G + "IShape#", Kind = SymbolInformation.Types.Kind.Interface });
+        go.Symbols.Add(new SymbolInformation { Symbol = G + "IShape#Area.", Kind = SymbolInformation.Types.Kind.MethodSpecification });
+        var generated = new Document { RelativePath = "../../.cache/go-build/ab/main-d", Language = "go", Text = "package main\nfunc main() {}\n" };
+        generated.Occurrences.Add(Def("scip-go gomod example.com/app . `example.com/app/shapes.test`/main().", 1, 5));
+
+        var index = new Scip.Index { Metadata = new Metadata { ToolInfo = new ToolInfo { Name = "rust-analyzer", Version = "1.99" }, ProjectRoot = new Uri(_root).AbsoluteUri } };
+        index.Documents.AddRange([rust, decoy, go, generated]);
+        var path = Path.Combine(_root, "index.scip");
+        await File.WriteAllBytesAsync(path, Google.Protobuf.MessageExtensions.ToByteArray(index), TestContext.Current.CancellationToken);
+        var db = Path.Combine(_root, "graph.db");
+        await GraphImport.WriteAsync(ScipImport.Read(path, _ => { }), db, _ => { }, TestContext.Current.CancellationToken);
+
+        using var store = GraphStore.Open(db, readOnly: true, TimeSpan.FromSeconds(5));
+        var area = ScipImport.IdOf(R + "impl#[Square][IShape]area().");
+        Assert.Equal("shapes/Square.area", store.GetNode(area)!.FullName);
+        Assert.Contains(store.EdgesTo(area), e => e.Kind == EdgeKind.Contains && e.Source.Id == ScipImport.IdOf(R + "Square#"));
+        Assert.Contains(store.EdgesFrom(area), e => e.Kind == EdgeKind.Implements && e.Target.Id == ScipImport.IdOf(R + "IShape#area()."));
+        Assert.DoesNotContain(store.EdgesFrom(area), e => e.Target.Id == ScipImport.IdOf(R + "Sq/IShape#area()."));
+        Assert.Contains(store.EdgesFrom(ScipImport.IdOf(R + "Square#")), e => e.Kind == EdgeKind.Implements && e.Target.Id == ScipImport.IdOf(R + "IShape#"));
+        Assert.True(store.GetNode(ScipImport.IdOf(R + "squares()."))!.IsTest, "#[test] marks a Rust test");
+        Assert.Equal(NodeKind.Method, store.GetNode(ScipImport.IdOf(G + "IShape#Area."))!.Kind);
+        Assert.Null(store.GetNode(ScipImport.IdOf("scip-go gomod example.com/app . `example.com/app/shapes.test`/main().")));
+    }
+
+    [Fact]
+    public void A_go_workspace_is_indexed_through_each_used_module()
+    {
+        File.WriteAllText(Path.Combine(_root, "go.work"), "go 1.22\n\nuse (\n\t./svc\n\tlib // shared\n)\nuse ./tools\n");
+        Assert.Equal(["./svc/...", "./lib/...", "./tools/..."], ScipIndexers.GoWorkspacePatterns(_root));
+        File.WriteAllText(Path.Combine(_root, "go.mod"), "module example.com/app\n");
+        Assert.Empty(ScipIndexers.GoWorkspacePatterns(_root));
+    }
+
     /// <summary>
     /// A real scip-java 0.12.3 index of <c>Fixtures/java-shop</c> (JDK 27, Maven). scip-java lists a method's
     /// relationship in both directions and a type's supertypes transitively; the graph keeps C#'s shape.
@@ -219,7 +313,8 @@ public sealed class ScipRunnerTests : IDisposable
         var fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "angular-app.scip");
         var fake = Path.Combine(tools, "scip-go");
         // Records its working directory, then writes the fixture index where --output says.
-        File.WriteAllText(fake, $"#!/bin/sh\npwd > \"{_root}/cwd\"\ncp \"{fixture}\" \"$2\"\n");
+        // Records its working directory and arguments, then writes the fixture index to the path after --output.
+        File.WriteAllText(fake, $"#!/bin/sh\npwd > \"{_root}/cwd\"\necho \"$@\" > \"{_root}/args\"\nwhile [ $# -gt 0 ]; do if [ \"$1\" = --output ]; then cp \"{fixture}\" \"$2\"; fi; shift; done\n");
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);

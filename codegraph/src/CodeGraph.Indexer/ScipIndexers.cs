@@ -21,15 +21,62 @@ internal static class ScipIndexers
             (dir, output) => ["index", ".", "--project-name", Path.GetFileName(dir), "--output", output],
             "npm install -g @sourcegraph/scip-python",
             [".py", ".toml", ".cfg"]),
-        new("go", ["go.mod"], "scip-go",
-            (_, output) => ["--output", output],
-            "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest",
-            [".go", ".mod"]),
+        new("go", ["go.work", "go.mod"], "scip-go",
+            (dir, output) => ["index", .. GoWorkspacePatterns(dir), "--output", output],
+            "go install github.com/scip-code/scip-go/cmd/scip-go@latest",
+            [".go", ".mod", ".work"]),
         new("rust", ["Cargo.toml"], "rust-analyzer",
             (_, output) => ["scip", ".", "--output", output],
             "rustup component add rust-analyzer",
             [".rs", ".toml"]),
     ];
+
+    /// <summary>
+    /// A go.work root has no module of its own, so scip-go would index nothing: name each used module's packages
+    /// (./svc/...), which gives one index for the whole workspace. A plain module needs no patterns.
+    /// </summary>
+    internal static string[] GoWorkspacePatterns(string dir)
+    {
+        var work = Path.Combine(dir, "go.work");
+        if (!File.Exists(work) || File.Exists(Path.Combine(dir, "go.mod")))
+        {
+            return [];
+        }
+
+        var patterns = new List<string>();
+        var inBlock = false;
+        foreach (var raw in File.ReadLines(work))
+        {
+            var line = raw.Split("//")[0].Trim();
+            if (inBlock)
+            {
+                if (line == ")")
+                {
+                    inBlock = false;
+                }
+                else if (line.Length > 0)
+                {
+                    patterns.Add(Pattern(line));
+                }
+            }
+            else if (line == "use (")
+            {
+                inBlock = true;
+            }
+            else if (line.StartsWith("use ", StringComparison.Ordinal))
+            {
+                patterns.Add(Pattern(line[4..].Trim()));
+            }
+        }
+
+        return [.. patterns];
+
+        static string Pattern(string module)
+        {
+            var path = module.Trim('"').Replace('\\', '/').TrimEnd('/');
+            return (path is "." ? "." : path.StartsWith("./", StringComparison.Ordinal) || path.StartsWith("../", StringComparison.Ordinal) ? path : "./" + path) + "/...";
+        }
+    }
 
     /// <summary>The indexer for a build file, or for a folder holding one.</summary>
     public static (Indexer Indexer, string Marker)? For(string path)

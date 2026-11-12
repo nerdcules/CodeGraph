@@ -24,11 +24,15 @@ GENERIC = re.compile(r"<(?!init>|template>)[^<>]*>")
 
 
 def arity(signature: str | None) -> int:
-    """Parameters in a signature's first parameter list, counted at nesting depth zero."""
+    """Parameters in a signature's parameter list, counted at nesting depth zero. Go's receiver group
+    (func (*T).Name(...)) is skipped, and so is a leading self (Rust, Python)."""
     if not signature or "(" not in signature:
         return 0
-    i = signature.index("(") + 1
-    depth, count, seen = 0, 0, False
+    i = signature.index("(")
+    if signature.startswith("func ("):  # Go method: the receiver comes first
+        i = signature.index("(", signature.index(")") + 1)
+    i += 1
+    depth, params, current = 0, [], ""
     while i < len(signature):
         ch = signature[i]
         if ch in "<([{":
@@ -37,12 +41,17 @@ def arity(signature: str | None) -> int:
             if depth == 0:
                 break
             depth -= 1
-        elif ch == "," and depth == 0:
-            count += 1
-        elif not ch.isspace():
-            seen = True
+        if ch == "," and depth == 0:
+            params.append(current.strip())
+            current = ""
+        else:
+            current += ch
         i += 1
-    return count + 1 if seen else 0
+    if current.strip():
+        params.append(current.strip())
+    if params and re.fullmatch(r"(&\s*('\w+\s+)?(mut\s+)?)?(mut\s+)?self(\s*:.*)?|cls", params[0]):
+        params = params[1:]
+    return len(params)
 
 
 def normalise(node: dict) -> str:

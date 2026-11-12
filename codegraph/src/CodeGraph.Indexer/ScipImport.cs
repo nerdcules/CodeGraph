@@ -20,7 +20,7 @@ internal static class ScipImport
 
     /// <summary>Java and Kotlin test and entry-point annotations, read from the source line above a definition.</summary>
     private static readonly System.Text.RegularExpressions.Regex TestAnnotation =
-        new(@"^\s*@(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate|org\.junit\.[\w.]*Test)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
+        new(@"^\s*(@(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate|org\.junit\.[\w.]*Test)\b|#\[(test|tokio::test|async_std::test|rstest|test_case)\b)", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     private static readonly System.Text.RegularExpressions.Regex EntryAnnotation =
         new(@"^\s*@(RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|Bean|Scheduled|EventListener|KafkaListener|RabbitListener|JmsListener|PostConstruct|PreDestroy)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
@@ -56,10 +56,18 @@ internal static class ScipImport
         var defined = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
         var definitions = new List<(Document Document, string File, List<(Span Span, string Id, bool IsTest)> Scopes)>();
         var overrideAnnotated = new List<(string Id, string File)>();
+        // Rust: the trait each `impl Trait for Type` header names, by file and line, to resolve impl members exactly.
+        var implHeaders = new Dictionary<string, List<(int Line, string Trait)>>(StringComparer.Ordinal);
 
         // Pass 1: every definition, so references in any document can tell source from external.
         foreach (var document in index.Documents)
         {
+            // Generated sources outside the project (Go's test main in the build cache) are not the project's code.
+            if (Path.IsPathRooted(document.RelativePath) || document.RelativePath.Replace('\\', '/').StartsWith("../", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             var file = Path.GetFullPath(Path.Combine(root, document.RelativePath));
             var language = LanguageOf(document, tool);
             languages[language] = languages.GetValueOrDefault(language) + 1;
@@ -70,6 +78,15 @@ internal static class ScipImport
 
             var lines = ReadLines(file, document.Text);
             var scopes = new List<(Span, string, bool)>();
+            foreach (var occurrence in document.Occurrences)
+            {
+                var at = (occurrence.SymbolRoles & DefinitionRole) == 0 && occurrence.Symbol.EndsWith('#') ? RangeOf(occurrence).StartLine : -1;
+                if (at >= 0 && at < lines.Length && System.Text.RegularExpressions.Regex.IsMatch(lines[at], @"^\s*(unsafe\s+)?impl\b.*\bfor\b"))
+                {
+                    (implHeaders.TryGetValue(file, out var list) ? list : implHeaders[file] = []).Add((at, occurrence.Symbol));
+                }
+            }
+
             foreach (var occurrence in document.Occurrences)
             {
                 if ((occurrence.SymbolRoles & DefinitionRole) == 0 || ScipSymbol.Parse(occurrence.Symbol) is not { } symbol)
@@ -195,6 +212,37 @@ internal static class ScipImport
             }
         }
 
+        // Rust trait impls carry no relationships: the impl descriptor names the trait, and the impl header references
+        // it, so impl#[Ledger][IShape]handle_shape() implements IShape#handle_shape() and Ledger implements IShape.
+        foreach (var symbol in defined.Keys.ToList())
+        {
+            if (ScipSymbol.Parse(symbol) is not { ImplTrait: { } trait, Parent: { } self } implMember || !defined.ContainsKey(self))
+            {
+                continue;
+            }
+
+            // The header above the member names the trait exactly; by name, nearest module first, is the fallback.
+            var member = defined[symbol];
+            var header = implHeaders.GetValueOrDefault(member.FilePath ?? "")?
+                .Where(h => h.Line <= member.StartLine - 1 && defined.ContainsKey(h.Trait) && ScipSymbol.Parse(h.Trait)?.Name == trait)
+                .OrderByDescending(h => h.Line).Select(h => h.Trait).FirstOrDefault();
+            var traitSymbol = header ?? defined.Where(d => d.Value.Kind == NodeKind.Type && d.Value.Name == trait).Select(d => d.Key)
+                .OrderByDescending(t => CommonPrefix(t, self)).FirstOrDefault();
+            if (traitSymbol is null)
+            {
+                continue;
+            }
+
+            var traitMember = traitSymbol + implMember.Name + "().";
+            foreach (var (from, to) in new[] { (symbol, traitMember), (self, traitSymbol) })
+            {
+                if (defined.ContainsKey(to))
+                {
+                    (related.TryGetValue(from, out var set) ? set : related[from] = new(StringComparer.Ordinal)).Add(to);
+                }
+            }
+        }
+
         bool IsSupertype(string? sub, string? super) =>
             sub is not null && super is not null && related.TryGetValue(sub, out var supers) && supers.Contains(super);
         foreach (var (symbol, targets) in related)
@@ -261,6 +309,17 @@ internal static class ScipImport
     /// <summary>JVM languages name packages with dots: <c>org.acme.shop.Cart.add</c>, not <c>org/acme/shop/Cart.add</c>.</summary>
     internal static bool DottedNamespaces(string language) => language is Languages.Java or "kotlin" or "scala";
 
+    private static int CommonPrefix(string a, string b)
+    {
+        var n = 0;
+        while (n < a.Length && n < b.Length && a[n] == b[n])
+        {
+            n++;
+        }
+
+        return n;
+    }
+
     private static TypeKind ParentKind(string symbol, Dictionary<string, GraphNode> defined) =>
         ScipSymbol.Parse(symbol)?.Parent is { } parent && defined.TryGetValue(parent, out var node) ? node.TypeKind : TypeKind.None;
 
@@ -291,6 +350,10 @@ internal static class ScipImport
                 return new(NodeKind.Type, TypeKind.TypeAlias, MemberKind.Ordinary, name);
             case SymbolInformation.Types.Kind.Attribute when symbol.Suffix == ScipSuffix.Type:
                 return new(NodeKind.Type, TypeKind.Annotation, MemberKind.Ordinary, name);
+            // Interface and trait members: Go's MethodSpecification carries a term suffix, not a method one.
+            case SymbolInformation.Types.Kind.MethodSpecification or SymbolInformation.Types.Kind.TraitMethod
+                or SymbolInformation.Types.Kind.ProtocolMethod or SymbolInformation.Types.Kind.AbstractMethod or SymbolInformation.Types.Kind.PureVirtualMethod:
+                return new(NodeKind.Method, TypeKind.None, MemberKind.Ordinary, name);
             case SymbolInformation.Types.Kind.Constructor:
                 return new(NodeKind.Method, TypeKind.None, MemberKind.Constructor, "constructor");
             case SymbolInformation.Types.Kind.Property or SymbolInformation.Types.Kind.StaticProperty or SymbolInformation.Types.Kind.Getter or SymbolInformation.Types.Kind.Setter or SymbolInformation.Types.Kind.Accessor:
@@ -417,7 +480,9 @@ internal static class ScipImport
     private static List<string> Annotations(string[] lines, int line)
     {
         var found = new List<string>();
-        if (line < lines.Length && lines[line].TrimStart().StartsWith('@'))
+        // Java and Python annotations start with @, Rust attributes with #[.
+        static bool IsAnnotation(string trimmed) => trimmed.StartsWith('@') || trimmed.StartsWith("#[", StringComparison.Ordinal);
+        if (line < lines.Length && IsAnnotation(lines[line].TrimStart()))
         {
             found.Add(lines[line]);
         }
@@ -426,7 +491,7 @@ internal static class ScipImport
         for (var i = Math.Min(line, lines.Length) - 1; i >= 0 && i >= line - 8; i--)
         {
             var trimmed = lines[i].TrimStart();
-            if (trimmed.StartsWith('@'))
+            if (IsAnnotation(trimmed))
             {
                 found.Add(lines[i]);
             }
@@ -481,7 +546,7 @@ internal static class ScipImport
 internal enum ScipSuffix { None, Namespace, Type, Term, Method, TypeParameter, Parameter, Meta, Macro }
 
 /// <summary>A parsed SCIP symbol: <c>scheme manager package version descriptors</c>, or a local.</summary>
-internal sealed record ScipSymbol(string Scheme, string Package, IReadOnlyList<(string Name, ScipSuffix Suffix)> Descriptors, string? Parent)
+internal sealed record ScipSymbol(string Scheme, string Package, IReadOnlyList<(string Name, ScipSuffix Suffix)> Descriptors, string? Parent, string? ImplTrait = null)
 {
     public string Name => Descriptors.Count == 0 ? "" : Descriptors[^1].Name;
 
@@ -573,7 +638,13 @@ internal sealed record ScipSymbol(string Scheme, string Package, IReadOnlyList<(
                     return null;
                 }
 
-                descriptors.Add((symbol[(i + 1)..end], symbol[i] == '[' ? ScipSuffix.TypeParameter : ScipSuffix.Parameter));
+                var bracketed = symbol[(i + 1)..end];
+                if (bracketed.Length >= 2 && bracketed[0] == '`' && bracketed[^1] == '`')
+                {
+                    bracketed = bracketed[1..^1].Replace("``", "`"); // rust-analyzer escapes `Boxed<T>` inside brackets too
+                }
+
+                descriptors.Add((bracketed, symbol[i] == '[' ? ScipSuffix.TypeParameter : ScipSuffix.Parameter));
                 i = end + 1;
                 continue;
             }
@@ -617,8 +688,28 @@ internal sealed record ScipSymbol(string Scheme, string Package, IReadOnlyList<(
             }
         }
 
-        return new ScipSymbol(fields[0], fields[2], descriptors, parent);
+        // Rust: rust-analyzer names an impl block's members impl#[SelfType][Trait]member(). The member belongs to
+        // the self type (a sibling struct or enum symbol), and a trait impl implements the trait.
+        string? implTrait = null;
+        var impl = descriptors.FindIndex(d => d is ("impl", ScipSuffix.Type));
+        if (impl >= 0 && impl + 1 < descriptors.Count && descriptors[impl + 1].Item2 == ScipSuffix.TypeParameter)
+        {
+            var self = StripGenerics(descriptors[impl + 1].Item1);
+            var traitAt = impl + 2 < descriptors.Count && descriptors[impl + 2].Item2 == ScipSuffix.TypeParameter ? impl + 2 : -1;
+            implTrait = traitAt > 0 ? StripGenerics(descriptors[traitAt].Item1) : null;
+            var rest = descriptors.Skip(traitAt > 0 ? traitAt + 1 : impl + 2).ToList();
+            var selfSymbol = symbol[..starts[impl]] + Escape(self) + "#";
+            descriptors = [.. descriptors.Take(impl), (self, ScipSuffix.Type), .. rest];
+            parent = rest.Count > 0 ? selfSymbol : parent;
+        }
+
+        return new ScipSymbol(fields[0], fields[2], descriptors, parent, implTrait);
     }
+
+    private static string StripGenerics(string name) => name.IndexOf('<') is var lt and > 0 ? name[..lt] : name;
+
+    private static string Escape(string name) =>
+        name.All(c => char.IsLetterOrDigit(c) || c is '_' or '$' or '+' or '-') ? name : "`" + name.Replace("`", "``") + "`";
 
     private static string? ReadName(string symbol, ref int i)
     {

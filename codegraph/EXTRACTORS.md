@@ -7,7 +7,7 @@ reads the code with that language's own compiler and writes graph records. Three
 |---|---|---|---|
 | Roslyn, in process | C# | `codegraph-index App.sln` | Roslyn, every tool |
 | Node extractor, `extractors/typescript` | TypeScript, JavaScript, Angular | `codegraph-index angular.json` or `tsconfig.json` | typescript-language-server, bundled |
-| SCIP indexers | Java, Kotlin, Scala, Python, Go, Rust | `codegraph-index pom.xml`, `build.gradle`, `pyproject.toml`, `go.mod`, `Cargo.toml` | jdtls, pyright, gopls or rust-analyzer when on PATH |
+| SCIP indexers | Java, Kotlin, Scala, Python, Go, Rust | `codegraph-index pom.xml`, `build.gradle`, `pyproject.toml`, `go.mod` or `go.work`, `Cargo.toml` | jdtls, pyright, gopls or rust-analyzer when on PATH |
 
 SCIP indexers are found on PATH or in the folders their installers use (coursier, `go install`, cargo), since
 coursier does not add its folder to PATH. SCIP ids are `scip:` plus the symbol without its version, so a
@@ -27,6 +27,15 @@ with an Angular `ClientApp/` gets both, in one graph.
 | templates | | Angular templates: `Renders` and template calls | |
 | incremental | per file | whole workspace, a few seconds | whole project |
 | `data_flow` | yes | no | no |
+
+Indexers differ in what they put in the index, and the importer evens that out:
+
+- **scip-java** lists a method's override in both directions and a type's supertypes transitively. Only the
+  subtype-to-supertype direction and direct supertypes are kept.
+- **rust-analyzer** emits no relationships and names impl members `impl#[Self][Trait]member()`. The member goes
+  to its self type, and the trait in the descriptor becomes `Implements` edges. `#[test]` marks a test.
+- **scip-go** calls interface members `MethodSpecification`; they are methods. Go's generated test main lies
+  outside the module and is skipped. A `go.work` root is indexed through each module it uses.
 
 SCIP is the breadth route. It tells calls and reads apart only by the target's kind, and it carries no
 attributes. A language that matters enough gets a native extractor, as TypeScript did.

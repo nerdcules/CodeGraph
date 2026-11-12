@@ -35,8 +35,8 @@ def sh(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
 
 
-def host_java() -> dict[str, str]:
-    """Host paths to mount for Java: the JDK, Maven, scip-java's launcher folder and the caches they use."""
+def host_tools() -> dict[str, str]:
+    """Host toolchains to mount: the JDK, Maven, scip-java and their caches; Go and scip-go; the Rust toolchain."""
     mounts = {}
     java = shutil.which("java")
     if java:
@@ -49,6 +49,17 @@ def host_java() -> dict[str, str]:
         home = next((l.split(":", 1)[1].strip() for l in sh([mvn, "-v"]).stdout.splitlines() if l.startswith("Maven home")), None)
         if home:
             mounts[os.path.realpath(home)] = "/opt/maven"
+    go = shutil.which("go")
+    if go:
+        mounts[os.path.realpath(sh([go, "env", "GOROOT"]).stdout.strip())] = "/opt/go"
+        gobin = sh([go, "env", "GOBIN"]).stdout.strip() or os.path.join(sh([go, "env", "GOPATH"]).stdout.strip().split(os.pathsep)[0], "bin")
+        if os.path.isdir(gobin):
+            mounts[gobin] = "/opt/gobin"
+    rustc = shutil.which("rustc")
+    if rustc:
+        sysroot = sh([rustc, "--print", "sysroot"]).stdout.strip()
+        if os.path.isdir(sysroot):
+            mounts[sysroot] = "/opt/rust"
     user = os.path.expanduser("~")
     for host, container in [(os.path.join(os.environ.get("XDG_DATA_HOME", os.path.join(user, ".local", "share")), "coursier", "bin"), "/opt/coursier/bin"),
                             (os.path.join(user, ".cache", "coursier"), "/home/runner/.cache/coursier"),
@@ -147,7 +158,7 @@ def main():
     os.makedirs(results, exist_ok=True)
     if not a.no_build:
         build(a.base, publish)
-    mounts = host_java() if a.base else {}
+    mounts = host_tools() if a.base else {}
     network = "none" if a.base else "bridge"
     jobs = [(l, p, int(s)) for l in a.langs.split(",") for p in a.profiles.split(",") for s in a.seeds.split(",") if (l, p) not in UNSUPPORTED]
     # The largest first, so the long runs overlap the short ones.
