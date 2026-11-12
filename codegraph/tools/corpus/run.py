@@ -60,6 +60,13 @@ def host_tools() -> dict[str, str]:
         sysroot = sh([rustc, "--print", "sysroot"]).stdout.strip()
         if os.path.isdir(sysroot):
             mounts[sysroot] = "/opt/rust"
+    scip_python = shutil.which("scip-python")
+    if scip_python:  # an npm package: mount the package, run_one.sh makes a launcher for the container's node
+        package = os.path.realpath(scip_python)
+        while package != "/" and not os.path.exists(os.path.join(package, "package.json")):
+            package = os.path.dirname(package)
+        if package != "/":
+            mounts[package] = "/opt/scip-python"
     user = os.path.expanduser("~")
     for host, container in [(os.path.join(os.environ.get("XDG_DATA_HOME", os.path.join(user, ".local", "share")), "coursier", "bin"), "/opt/coursier/bin"),
                             (os.path.join(user, ".cache", "coursier"), "/home/runner/.cache/coursier"),
@@ -160,7 +167,11 @@ def main():
         build(a.base, publish)
     mounts = host_tools() if a.base else {}
     network = "none" if a.base else "bridge"
-    jobs = [(l, p, int(s)) for l in a.langs.split(",") for p in a.profiles.split(",") for s in a.seeds.split(",") if (l, p) not in UNSUPPORTED]
+    langs = a.langs.split(",")
+    if "python" in langs and a.base and not shutil.which("scip-python"):
+        print("skipping python: scip-python is not installed (npm install -g @sourcegraph/scip-python)", flush=True)
+        langs.remove("python")
+    jobs = [(l, p, int(s)) for l in langs for p in a.profiles.split(",") for s in a.seeds.split(",") if (l, p) not in UNSUPPORTED]
     # The largest first, so the long runs overlap the short ones.
     jobs.sort(key=lambda j: -PROFILES[j[1]]["modules"] * PROFILES[j[1]]["classes"])
     print(f"{len(jobs)} runs, {a.jobs} at a time ({a.cpus} CPUs, {a.memory} each), network {network}", flush=True)

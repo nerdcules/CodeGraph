@@ -21,13 +21,15 @@ import random
 import re
 from dataclasses import dataclass, field
 
-LANGS = ["csharp", "java", "typescript", "javascript", "angular", "go", "rust"]
+LANGS = ["csharp", "java", "typescript", "javascript", "angular", "go", "rust", "python"]
 
 # Constructions a language cannot express: JavaScript has no namespaces to put several modules in one file, Java
 # allows one package per file, and Angular decorators make a file a module (no global namespaces).
 UNSUPPORTED = {("javascript", "single-file"), ("java", "single-file"), ("angular", "single-file"), ("go", "single-file"),
                # Go and Rust have no inheritance, so a deep hierarchy has nothing to build.
-               ("go", "deep-hierarchy"), ("rust", "deep-hierarchy")}
+               ("go", "deep-hierarchy"), ("rust", "deep-hierarchy"),
+               # Python: one module per file, and one project root per scip-python run.
+               ("python", "single-file"), ("python", "multi-project")}
 NO_INHERITANCE = {"go", "rust"}
 
 # Size and shape of each profile. Probabilities are per class or per method; counts are per module.
@@ -159,8 +161,10 @@ class Model:
         self.seq = 0
         if lang == "javascript":  # no interfaces, generics or abstract members in plain JavaScript
             self.p.update(ifaces=0, generic=0.0, iface_inherit=0.0)
-        if lang in ("typescript", "javascript", "angular"):  # one implementation per name: no overloading by arity
+        if lang in ("typescript", "javascript", "angular", "python"):  # one implementation per name: no overloading by arity
             self.p.update(overload=0.0)
+        if lang == "python":  # no generics in the model's sense; interfaces are abstract base classes
+            self.p.update(generic=0.0)
         if lang in NO_INHERITANCE:  # structs and interfaces or traits: no bases, overloads or nested types
             self.p.update(inherit=0.0, override=0.0, super_=0.0, nested=0.0, overload=0.0, iface_inherit=0.0)
         self.build()
@@ -1166,7 +1170,131 @@ class Rust(Writer):
         self.target = "Cargo.toml"
 
 
-WRITERS = {"csharp": CSharp, "java": Java, "typescript": TypeScript, "javascript": TypeScript, "angular": TypeScript, "go": Go, "rust": Rust}
+class Python(Writer):
+    """A corpus package with a subpackage per module; abstract base classes for interfaces; pytest-style tests.
+    Imports for calls are local to each function, so modules that call each other never import circularly;
+    only bases and interfaces, which form no cycle, are imported at module level."""
+
+    def module_of(self, t: Type) -> str:
+        top = t.path[0]
+        if self.layout == "module":
+            return f"corpus.{t.module.name}"
+        return f"corpus.{t.module.name}.{re.sub(r'(?<!^)(?=[A-Z])', '_', top.name).lower()}"
+
+    def type_fq(self, t: Type) -> str:
+        if t.test:
+            return f"tests.test_{t.module.name}/{t.name}"
+        return f"{self.module_of(t)}/{'.'.join(x.name for x in t.path)}"
+
+    def member_name(self, m: Method) -> str:
+        return ("_" + m.name) if m.dead else m.name
+
+    def member_fq(self, m: Method) -> str:
+        if m.test:
+            return f"tests.test_{m.owner.module.name}/test_{m.owner.name}_{m.name}"
+        return f"{self.type_fq(m.owner)}.{'<init>' if m.ctor else self.member_name(m)}"
+
+    def program_key(self, t: Type) -> str:
+        return "corpus.__main__/main/0"
+
+    def ref(self, t: Type, imports: set) -> str:
+        alias = f"{t.module.name}_{t.path[0].name}"
+        imports.add(f"from {self.module_of(t)} import {t.path[0].name} as {alias}")
+        return ".".join([alias] + [x.name for x in t.path[1:]])
+
+    def params(self, m: Method, receiver: bool) -> str:
+        return ", ".join((["self"] if receiver else []) + [f"p{i}" for i in range(m.arity)])
+
+    def call(self, kind, target: Method, extra, n: int, imports: set) -> str:
+        a = self.args(target.arity)
+        name = self.member_name(target)
+        if kind == "new":
+            return f"r += {self.ref(target.owner, imports)}(1).{name}({a})"
+        if kind == "static":
+            return f"r += {self.ref(target.owner, imports)}.{name}({a})"
+        if kind == "lambda":
+            return f"g{n} = lambda x: {self.ref(target.owner, imports)}(1).{name}({a}); r += g{n}(1)"
+        if kind == "iface":
+            return f"f{n}: {self.ref(target.owner, imports)} = {self.ref(extra, imports)}(1); r += f{n}.{name}({a})"
+        if kind == "super":
+            return f"r += super().{name}({a})"
+        if kind == "self":
+            return f"r += self.{name}({a})" if not target.static else f"r += {self.ref(target.owner, imports)}.{name}({a})"
+        raise ValueError(kind)
+
+    def body(self, m: Method) -> list[str]:
+        imports: set = set()
+        calls = [self.call(k, t, e, n, imports) for n, (k, t, e) in enumerate(m.calls)]
+        return sorted(imports) + ["r = 0"] + calls
+
+    def class_text(self, t: Type, indent: str, top_imports: set) -> list[str]:
+        bases = ([self.ref(t.base, top_imports)] if t.base else []) + [self.ref(i, top_imports) for i in t.ifaces]
+        if t.kind == "interface" or t.abstract:
+            bases.append("abc.ABC")
+            top_imports.add("import abc")
+        out = [f"{indent}class {t.name}{'(' + ', '.join(bases) + ')' if bases else ''}:"]
+        for m in t.methods:
+            if t.kind == "interface" or m.abstract:
+                out += [f"{indent}    @abc.abstractmethod", f"{indent}    def {m.name}({self.params(m, True)}):", f"{indent}        raise NotImplementedError"]
+            elif m.ctor:
+                out += [f"{indent}    def __init__(self, a):", f"{indent}        {'super().__init__(1)' if t.base else 'self.a = a'}"]
+            elif m.dead:
+                out += [f"{indent}    def {self.member_name(m)}(self, p0):", f"{indent}        return p0"]
+            else:
+                head = [f"{indent}    @staticmethod"] if m.static else []
+                out += head + [f"{indent}    def {m.name}({self.params(m, not m.static)}):"] + [f"{indent}        {line}" for line in self.body(m)] + [f"{indent}        return r"]
+        for n in t.nested:
+            out += self.class_text(n, indent + "    ", top_imports)
+        return out + [""]
+
+    def module_text(self, types: list[Type], own: set) -> str:
+        top_imports: set = set()
+        lines = [line for t in types for line in self.class_text(t, "", top_imports)]
+        # A base or interface defined in this same file needs no import.
+        top_imports = {i for i in top_imports if not any(i == f"from {self.module_of(t)} import {t.name} as {t.module.name}_{t.name}" for t in types)}
+        lines = [re.sub(r"\b(m\d+)_(\w+)\b", lambda x: x.group(2) if any(t.name == x.group(2) and t.module.name == x.group(1) for t in types) else x.group(0), l)
+                 if l.startswith("class ") else l for l in lines]
+        return "\n".join(sorted(top_imports) + ["", ""] + lines)
+
+    def ordered(self, types: list[Type]) -> list[Type]:
+        done, out = set(), []
+        def visit(t):
+            if t in done:
+                return
+            done.add(t)
+            for s_ in ([t.base] if t.base else []) + t.ifaces:
+                if s_ in types:
+                    visit(s_)
+            out.append(t)
+        for t in types:
+            visit(t)
+        return out
+
+    def write(self, root: str):
+        self.files["corpus/__init__.py"] = ""
+        self.files["tests/__init__.py"] = ""
+        for module in self.m.modules:
+            items = [t for t in module.types if not t.test and not t.program]
+            if self.layout == "module":
+                self.files[f"corpus/{module.name}/__init__.py"] = self.module_text(self.ordered(items), set())
+            else:
+                self.files[f"corpus/{module.name}/__init__.py"] = ""
+                for t in items:
+                    self.files[self.module_of(t).replace(".", "/") + ".py"] = self.module_text([t], set())
+            for t in (x for x in module.types if x.test):
+                lines = []
+                for m in t.methods:
+                    if m.test:
+                        lines += [f"def test_{t.name}_{m.name}():"] + [f"    {line}" for line in self.body(m)] + [""]
+                self.files[f"tests/test_{module.name}.py"] = "\n".join(lines)
+        program = next(t for m in self.m.modules for t in m.types if t.program)
+        self.files["corpus/__main__.py"] = "\n".join(["def main():"] + [f"    {line}" for line in self.body(program.methods[0])] + ["    print(r)", "", "", 'if __name__ == "__main__":', "    main()", ""])
+        self.files["pyproject.toml"] = '[project]\nname = "corpus"\nversion = "0.1.0"\n\n[tool.setuptools]\npackages = ["corpus"]\n'
+        self.files = {k: v for k, v in self.files.items()}
+        self.target = "pyproject.toml"
+
+
+WRITERS = {"csharp": CSharp, "java": Java, "typescript": TypeScript, "javascript": TypeScript, "angular": TypeScript, "go": Go, "rust": Rust, "python": Python}
 
 
 # ---- answer key ----------------------------------------------------------------------------------------------------------
@@ -1198,7 +1326,7 @@ def answer_key(model: Model, w: Writer) -> dict:
                     callers.setdefault(callee, set()).add(fq)
             continue
         for m in t.methods:
-            if t.test and m.ctor and model.lang not in ("csharp", "java"):
+            if t.test and m.ctor and model.lang not in ("csharp", "java", "python"):
                 continue  # a describe block or a test module has no constructor
             k = w.key(m) if not (t.program and model.lang in ("csharp",)) else f"{w.type_fq(t)}.Main/0"
             methods[k] = dict(entry=m.entry, test=m.test, dead=m.dead, ctor=m.ctor, lifecycle=m.lifecycle, abstract=m.abstract)
@@ -1214,6 +1342,10 @@ def answer_key(model: Model, w: Writer) -> dict:
                     callers.setdefault(callee, set()).add(k)
                     if m.test:
                         edges["TestedBy"].add((callee, k))
+    if model.lang == "python":
+        # An abstract base class is a class to scip-python, so implementing its abstract method is an override.
+        edges["Overrides"] |= edges["Implements"]
+        edges["Implements"] = set()
     if model.lang == "go":
         # Go interfaces are satisfied structurally: any type whose method set covers an interface implements it,
         # declared or not, in any package.
@@ -1236,7 +1368,7 @@ def answer_key(model: Model, w: Writer) -> dict:
         callers={k: sorted(v) for k, v in callers.items()},
         stats=dict(modules=len(model.modules), types=len(types), methods=len(methods), calls=len(edges["Calls"]),
                    files=len(w.files), lines=sum(v.count("\n") for v in w.files.values())),
-        entry_is_framework=model.lang in ("csharp", "java", "go", "rust"),
+        entry_is_framework=model.lang in ("csharp", "java", "go", "rust", "python"),
     )
 
 

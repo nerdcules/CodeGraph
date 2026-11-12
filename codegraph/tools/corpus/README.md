@@ -3,7 +3,7 @@
 Synthetic codebases with a known answer key, to test each extractor against. `gen.py` builds one seeded model
 (modules, classes, interfaces, inheritance, overrides, overloads, generics, nested types, statics, lambdas, tests,
 an entry point, planted dead code, and Angular components, services and templates) and writes it out as one
-language (C#, Java, TypeScript, JavaScript, Angular, Go or Rust), in one construction. `expected.json` lists every method, type and edge the graph should hold.
+language (C#, Java, TypeScript, JavaScript, Angular, Go, Rust or Python), in one construction. `expected.json` lists every method, type and edge the graph should hold.
 `check.py` indexes the codebase, exports the graph (`codegraph-index export --dead-code`) and scores it.
 
 ```bash
@@ -16,7 +16,8 @@ python3 tools/corpus/gen.py --lang csharp --profile collisions --out /tmp/c && \
 `run.py` publishes `codegraph-index`, builds the image from `Dockerfile` and runs one container per language,
 profile and seed, `--jobs` at a time. With `--base`, the host's JDK, Maven, scip-java and their caches are mounted
 read-only, along with the host's Go toolchain and scip-go and its Rust toolchain with rust-analyzer, and the
-containers run with `--network none`. Go and Rust have no inheritance, so they skip `deep-hierarchy`. Results go to `artifacts/corpus/`: one JSON per run,
+containers run with `--network none`. Go and Rust have no inheritance, so they skip `deep-hierarchy`. Python
+needs scip-python (`npm install -g @sourcegraph/scip-python`); without it `run.py` skips Python and says so. Results go to `artifacts/corpus/`: one JSON per run,
 `summary.md` and `summary.json`.
 
 | profile | construction |

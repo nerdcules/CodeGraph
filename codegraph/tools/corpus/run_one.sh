@@ -11,6 +11,14 @@ export PATH="/opt/jdk/bin:/opt/maven/bin:/opt/coursier/bin:/opt/go/bin:/opt/gobi
 export GOTOOLCHAIN=local GOPATH="$HOME/go" GOCACHE="$HOME/go-build" CARGO_HOME="$HOME/.cargo" CARGO_NET_OFFLINE=true
 [ -d /opt/go ] && export GOROOT=/opt/go
 [ -d /opt/jdk ] && export JAVA_HOME=/opt/jdk
+# scip-python is an npm package mounted at /opt/scip-python: give it a launcher on PATH.
+if [ -f /opt/scip-python/package.json ]; then
+  mkdir -p "$HOME/bin"
+  entry=$(node -p 'const b = require("/opt/scip-python/package.json").bin; typeof b === "string" ? b : Object.values(b)[0]')
+  printf '#!/bin/sh\nexec node "/opt/scip-python/%s" "$@"\n' "$entry" > "$HOME/bin/scip-python"
+  chmod +x "$HOME/bin/scip-python"
+  export PATH="$HOME/bin:$PATH"
+fi
 # The JVM takes its home folder from the user database, not $HOME; coursier and Maven must look in $HOME.
 export JAVA_TOOL_OPTIONS="-Duser.home=$HOME" COURSIER_CACHE="$HOME/.cache/coursier/v1"
 # Maven writes to its local repository, so each container gets its own copy of the seeded one.
