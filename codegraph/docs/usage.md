@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · **Usage** · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · **Usage** · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
 
 ---
 
@@ -138,6 +138,7 @@ A typical turn uses three tools:
 
 This uses some thousands of tokens.
 To read all the files that contain the name uses tens of thousands of tokens.
+[Why it saves tokens](../README.md#why-it-saves-tokens) shows a measured example.
 
 ## The tools
 
@@ -200,6 +201,14 @@ codegraph-index export --language typescript --out graph.ndjson
 Give `--dead-code` to add the dead-code candidates to the export.
 [EXTRACTORS.md](../EXTRACTORS.md#the-record-contract) gives the record format.
 
+The indexer can also write the graph as notes for an Obsidian vault:
+
+```bash
+codegraph-index export obsidian --out ~/Notes/MyProject/_code
+```
+
+[Obsidian](obsidian.md) tells how to use the notes and the plugin.
+
 ## Command reference
 
 ```
@@ -207,6 +216,7 @@ codegraph-index <target> [--db <path>] [--full] [--all-targets] [--watch] [--log
 codegraph-index init [target | folder] [--live] [--no-index] [--db <path>]
 codegraph-index import <records.ndjson | index.scip | -> [--db <path>]
 codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]
+codegraph-index export obsidian --out <vault>/<folder> [--db <path>] [--language <name>] [--link-root <path>]
 codegraph-mcp [<graph.db>] [--web <port>]
 ```
 
@@ -232,4 +242,4 @@ codegraph-mcp [<graph.db>] [--web <port>]
 
 ---
 
-← Previous: [Installation](installation.md) · Next: [Use cases](use-cases.md) →
+← Previous: [Installation](installation.md) · Next: [Obsidian](obsidian.md) →

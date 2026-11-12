@@ -2,426 +2,288 @@
 
 # CodeGraph
 
-A compiler-built code graph plus an MCP server, so Claude Code can answer
-"who calls this / what breaks if I change it / which tests guard it" from a small
-graph query instead of re-reading source files. C# is indexed by Roslyn; TypeScript,
-JavaScript and Angular by the TypeScript compiler; Java, Kotlin, Scala, Python, Go and
-Rust through their SCIP indexers. One graph can hold several, such as a .NET API and its
-Angular front end. [EXTRACTORS.md](EXTRACTORS.md) says what each records.
+CodeGraph reads a codebase with its compiler, stores what it finds as a graph, and answers
+questions about that graph: who calls this, what breaks if I change it, which tests guard it,
+what is never used. The answers go to Claude Code, or any other MCP client, through an MCP
+server. Every edge is a resolved symbol, never a text match, so the answer is the one the
+compiler would give.
 
-[docs/](docs/README.md) has the guides: installation, usage, use cases, how it works, performance and
-architecture, with diagrams.
+That is all CodeGraph needs. Two optional extras show the same graph to people: notes in an
+Obsidian vault, and a small web viewer. Use them or leave them out; the indexer and the server
+work the same either way.
 
-[MCP-SERVER.md](MCP-SERVER.md) is the server's reference page: install, configuration, every
-tool with its arguments, output format, staleness, telemetry and troubleshooting.
-[PROMPTS.md](PROMPTS.md) shows the prompts that drive it.
+- [What it does](#what-it-does)
+- [What you can ask](#what-you-can-ask)
+- [Why it saves tokens](#why-it-saves-tokens)
+- [Quick start](#quick-start)
+- [Keeping the graph current](#keeping-the-graph-current)
+- [Optional: the code as notes in Obsidian](#optional-the-code-as-notes-in-obsidian)
+- [Performance](#performance)
+- [Trust and privacy](#trust-and-privacy)
+- [Repository layout](#repository-layout)
+- [Build and test](#build-and-test)
+- [Not yet](#not-yet)
+- [Further reading](#further-reading)
+
+## What it does
+
+![Architecture: extractors write graph.db, the MCP server reads it, the live daemon keeps it current](docs/images/architecture.svg)
+
+Three programs share one file, `.codegraph/graph.db`, kept beside each git worktree:
+
+| Program | What it does |
+|---|---|
+| `codegraph-index` | Builds the graph. C# goes through Roslyn in process; TypeScript, JavaScript and Angular through the TypeScript compiler; Java, Kotlin, Scala, Go, Rust and Python through their SCIP indexers. One graph can hold several languages, such as a .NET API and its Angular front end. |
+| `codegraph-mcp` | A read-only MCP server over the graph: 35 tools over stdio, which Claude Code (or any MCP client) calls instead of reading source files. With `--web PORT` it also serves a graph viewer on localhost. |
+| `codegraph-index --watch` | The live daemon. It keeps the compiled solution in memory, re-indexes a save in well under a second, and answers the questions a stored graph cannot: compiler errors, every reference including framework members, and what a proposed edit would break before it is written. |
+
+The graph holds projects, files, types and members as nodes, and `Calls`, `References`,
+`Inherits`, `Implements`, `Overrides`, `TestedBy`, `DependsOn` and `InvokedByFramework` as
+edges. It records things a plain call graph misses: a call to an interface member counts as a
+call to every implementation, reading a property is a call, a `using` or `await` is a call to
+the members it binds to, and top-level statements belong to `Main`.
+
+| Language | Route | Live tools |
+|---|---|---|
+| C# | Roslyn, in process | Roslyn |
+| TypeScript, JavaScript, Angular | codegraph-ts (Node.js) | typescript-language-server |
+| Java, Kotlin, Scala | scip-java | jdtls, when on PATH |
+| Go | scip-go | gopls, when on PATH |
+| Rust | rust-analyzer | rust-analyzer |
+| Python | scip-python | pyright, when on PATH |
+
+## What you can ask
+
+![Each question points to the tool that answers it](docs/images/use-cases.svg)
+
+| Question | Tool |
+|---|---|
+| Where is `SaveAsync`? | `find_symbol`, `symbol_at`, `outline`, `snippet` |
+| Where is the code that does X, when no name is known? | `search_code`: full-text over names, comments and bodies, ranked by BM25, optionally fused with embeddings |
+| Who calls it, what does it call? | `callers_of`, `callees_of`, `neighbors`, `path_between`, `traverse` |
+| What breaks if I change it? | `impact_of`, `dependents_of`, `depends_on`, `explain_reachability` |
+| Which tests guard it? | `tests_for`, `covered_by`, `coverage_stats`, `uncovered` |
+| Who implements or inherits this type? Where is it used? | `implementors_of`, `inheritors_of`, `overrides_of`, `references_to`, `members_of` |
+| What is never used? What are the entry points? | `dead_code_report`, `list_roots`, `most_called` |
+| Is the graph fresh? What did this cost? | `index_status`, `graph_stats`, `usage_stats` |
+| Will my edit compile? What would a rename change? Where does this parameter go? | `check_change`, `rename_preview`, `diagnostics`, `live_references`, `data_flow`, `live_status` (live daemon) |
+
+Every answer is checked against the working tree first. If indexed files changed since the
+graph was built, the answer starts with a `⚠ STALE INDEX` line and marks the affected rows, so
+the model never reasons silently from an old graph. [MCP-SERVER.md](MCP-SERVER.md) lists every
+tool with its arguments; [PROMPTS.md](PROMPTS.md) shows prompts that drive them.
+
+## Why it saves tokens
+
+An AI coding assistant pays for everything it reads. Without a graph, it answers "what breaks if
+I change this method?" the way a person would with only a terminal: search for the name, open
+the files that match, read them to tell real calls from look-alikes, then repeat for each
+caller's callers and look for the tests. Every search result and every file it opens enters the
+context window as input tokens, and stays there, taking room from the rest of the session.
+Text search makes it worse, because a name matches more than the method: `.Replace(` also
+matches every `string.Replace`. And the model can still miss a caller that goes through an
+interface, a base class or a property, because nothing in the text says so.
+
+CodeGraph moves that work to index time. The compiler resolves every call, override and test
+once, and that costs no tokens. After that, each question is one tool call that returns only the
+rows that answer it, with the file and line of each, so the model opens only the code it is
+going to change.
+
+![A typical turn: find_symbol, impact_of, then snippet](docs/images/typical-turn.svg)
+
+Measured on this repository, for "what breaks if I change `GraphStore.Replace`?":
+
+| How the assistant finds out | What enters its context | Size, at about 4 characters a token |
+|---|---|---|
+| CodeGraph: `find_symbol`, `impact_of`, `snippet` | The method, its 11 dependents, the 33 tests that guard them, and the method's own source | 21,138 characters, about 5,300 tokens |
+| Opening the files that answer names, if the model somehow knew which they were | 13 files | 140,240 characters, about 35,000 tokens |
+| Opening every file that matches `.Replace(` | 23 files, and the dependents' own callers are still to find | 422,643 characters, about 105,000 tokens |
+
+So the same answer costs between a seventh and a twentieth of the tokens, and it includes the
+transitive dependents and tests that a text search would still have to chase. The
+savings come from a few design choices:
+
+- **Rows, not files.** An answer row is a full name, a file and a line range, and a node id for
+  the next call. The model reads source only with `snippet`, for the members it will touch.
+- **Bounded answers.** Walks show the nearest 200 rows and a count of the rest at each depth.
+  `impact_of` on the most-used member of a 55,000-node graph used to return about 618,000 tokens;
+  it now returns about 4,100 ([performance](docs/performance.md#answer-size)).
+- **No wasted turns.** The stale warning stops the model from reasoning from an old graph and
+  redoing the work. With the live daemon, `check_change` compiles a proposed edit and lists what
+  it breaks, so the model doesn't need a build-and-read-the-errors loop to find out.
+- **People don't need the assistant at all.** The Obsidian notes and reports below hold the
+  same answers, worked out in advance. A tester who reads "which tests reach this type" in a
+  note, or a product manager who browses the project map, spends no tokens.
+
+`usage_stats` reports, for the current session and all time, the tokens each tool returned and
+an estimate of the source tokens those answers saved the model from reading. Point the assistant
+at the tools, not at the Obsidian notes: a tool answer holds only the rows asked for, while a
+note holds everything about a type.
 
 ## Quick start
 
 Needs the .NET 10 SDK and git. TypeScript and Angular also need Node.js 22.22 or later, and the
-SCIP languages need their indexer, such as `scip-java` (`cs install --contrib scip-java`). It is found on PATH
-or where coursier, `go install` and cargo put tools. From a clone of this repo:
+SCIP languages need their indexer on PATH, such as `scip-java` (`cs install --contrib scip-java`).
 
 ```bash
-./install.sh ~/dev/App --add-to-path              # macOS / Linux
+./install.sh ~/dev/App --add-to-path              # macOS / Linux  → ~/.codegraph/bin
 ```
 
 ```powershell
-.\install.ps1 C:\dev\App -AddToPath               # Windows (PowerShell 7 also runs it on macOS / Linux)
+.\install.ps1 C:\dev\App -AddToPath               # Windows        → C:\tools\codegraph
 ```
 
-That builds, tests and installs both executables, then sets up the repo: its `.mcp.json` gets
-the `codegraph` server, `.gitignore` gets `.codegraph/`, and the first graph is built. Start
-Claude Code in the repo and approve the server. Set up more repos later from inside each one:
+![The install script builds, tests, publishes, checks, and then sets up each repository](docs/images/install-flow.svg)
+
+The script builds with warnings as errors, runs the tests, publishes both executables, and runs
+`codegraph-index init` on each repo you name. `init` writes the `codegraph` server into the
+repo's `.mcp.json`, adds `.codegraph/` to `.gitignore` and builds the first graph. Start Claude
+Code in the repo and approve the server. For more repos, run `init` inside each one:
 
 ```bash
-codegraph-index init            # finds the solution, angular.json, tsconfig.json or build file from here
+codegraph-index init                 # finds the solution, angular.json, tsconfig.json or build file from here
+codegraph-index init --live          # the server starts the live daemon itself on its first call
 ```
 
+`setup.sh` / `setup.ps1` run everything from a source checkout instead of publishing, and
+`uninstall.sh` / `uninstall.ps1` take it all out again. [docs/installation.md](docs/installation.md)
+covers options, upgrades and troubleshooting.
+
+## Keeping the graph current
+
+![Index: read, make records, write, swap. Query: tool call, check freshness, run SQL, answer](docs/images/pipeline.svg)
+
+- **Incremental.** Each file's hash is stored. A re-run re-walks only changed files and their
+  dependents (callers, subclasses, referencers, tests), then merges the result into the graph in
+  about a second. `--full` rebuilds from scratch.
+- **Watch mode.** `codegraph-index <solution> --watch` pays the solution load once and applies
+  each save to the compiled solution in memory, so a one-file edit re-indexes in well under a
+  second. The server notices each swap through the file's mtime.
+- **Live daemon.** The same watch process answers over a local pipe. `check_change` compiles a
+  proposed file in memory and reports what it would break; `rename_preview` runs Roslyn's rename on
+  a fork; `diagnostics` reports compiler errors for the working tree. The graph stays the system of
+  record for transitive and aggregate questions, where it is orders of magnitude faster.
+- **Safe while sessions run.** A full rebuild writes a fresh file and swaps it in with one
+  rename; the server only ever reads.
+
+## Optional: the code as notes in Obsidian
+
+CodeGraph doesn't need Obsidian: Claude Code and other MCP clients use the server directly.
+The notes are for people who want to browse the code without an editor or an AI assistant, such
+as architects, testers and product managers. Reading them uses no AI model and costs no tokens.
+
+`codegraph-index export obsidian --out <vault>/_code` writes the graph as a folder of linked
+Markdown notes: one per project and per type, members as headings, each type's users, callees
+and tests, and reports for architects and testers. The Obsidian plugin runs that export, rewrites
+the notes when the graph changes, and adds a live panel that asks the same `codegraph-mcp` Claude
+Code uses.
+
+![The start page of the code notes in Obsidian, with the generated folders in the file explorer](docs/images/obsidian-index.png)
+
+Open a type and the panel shows its references, impact, tests and members; put the cursor under
+a member and it shows that member's callers, callees, impact and tests, each row a link to its
+note and a button that opens the source line in your editor.
+
+![The live panel shows the callers of GraphStore.Replace](docs/images/obsidian-member-callers.png)
+
+![The Impact tab for GraphStore.Replace: 11 dependents and 33 tests that guard them](docs/images/obsidian-member-impact.png)
+
+The reports answer the questions people ask before they open an editor: which projects depend
+on which, which types no test reaches, which public methods are untested, where the entry points
+are and which members are called the most.
+
+![The Test coverage report: a table of types, projects and the tests that reach them](docs/images/obsidian-test-coverage.png)
+
+Obsidian's own graph view then shows the codebase as it shows any vault, coloured by project,
+and feature notes written by people link into the generated ones and survive every rebuild.
+
+![The Obsidian graph view of the code notes, with a colour for each project and for the reports](docs/images/obsidian-graph-view.png)
+
+Install the plugin with `./install.sh --obsidian-vault <vault>` or
+`node obsidian-plugin/install-plugin.mjs <vault>`, then set the repo folder in its settings.
+[docs/obsidian.md](docs/obsidian.md) walks through every feature with screenshots;
+[obsidian-plugin/README.md](obsidian-plugin/README.md) has the details and the Dataview fields.
+
+## Performance
+
+Measured on generated codebases of about 30,000 to 55,000 lines per language, two CPUs each,
+and on this repository's graph. [BENCHMARKS.md](BENCHMARKS.md) and
+[docs/performance.md](docs/performance.md) have every number.
+
+![Index time of the largest generated codebase of each language](docs/images/perf-index.svg)
+
+![Tool call latency through the MCP server and in the store](docs/images/perf-queries.svg)
+
+A full index of this repository takes about 10 s, almost all of it MSBuild and Roslyn, and a
+re-index after one edit re-walks only that file and its dependents; a save under watch mode
+reaches the graph in well under a second. Tool calls through the server take 1 to 15 ms on this
+graph, a walk over 165,000 nodes under a second, and the live daemon's `check_change` compiles
+an edited file and its dependents in under half a second.
+
+## Trust and privacy
+
+- **Local and read-only.** No source leaves the machine. The server only reads the graph file,
+  and nothing is written during a query. Telemetry is one JSON line per call in
+  `.codegraph/telemetry.jsonl` beside the graph (`CODEGRAPH_TELEMETRY=off` keeps it in memory).
+- **Honest about staleness.** Every answer compares the graph with the working tree first.
+- **The repo's `.mcp.json` is repo content.** Claude Code asks before starting a project's
+  servers. The Obsidian plugin does the same: it shows the entry and starts it only after you
+  approve that exact command, arguments and environment, and asks again when a pull changes it.
+- **Generated notes stay in their folder.** The exporter rewrites only notes whose text changed,
+  deletes only notes it wrote before, never follows a symbolic link out of the folder, and
+  refuses to write into a folder it did not create.
+
+## Repository layout
+
 ```
-src/CodeGraph.Core      model + DuckDB store + traversals + full-text search + telemetry
-src/CodeGraph.Indexer   codegraph-index: Roslyn extractor, record and SCIP import, LSP live bridge → graph.db
+src/CodeGraph.Core      model, DuckDB store, traversals, full-text search, telemetry, live protocol
+src/CodeGraph.Indexer   codegraph-index: Roslyn extractor, record and SCIP import, watch mode, live daemon, exports
 extractors/typescript   codegraph-ts: TypeScript and Angular extractor (Node), with typescript-language-server
 src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
-src/CodeGraph.Web       graph visualiser UI and its API routes, embedded into codegraph-mcp --web
-tests/CodeGraph.Tests   store, search, telemetry, indexer extraction, watch-mode sync, live daemon
+src/CodeGraph.Web       graph viewer UI and its API routes, embedded into codegraph-mcp --web
+obsidian-plugin         Obsidian plugin: the graph as linked notes, plus a live panel over codegraph-mcp
+tests/CodeGraph.Tests   store, search, telemetry, extraction, incremental and watch-mode sync, live daemon, exports
 tools/CodeGraph.Bench   codegraph-bench: the numbers in BENCHMARKS.md
-install.ps1 / .sh       build, test, publish both executables, set up the repos you name
-setup.ps1 / .sh         pull latest, build, write .mcp.json as `dotnet run`, index (no publish)
-uninstall.ps1 / .sh     remove the install folder, PATH entry, a repo's .mcp.json entry and graph
-nuget.config            nuget.org only, source-mapped, audit on
-assets/logo.svg         the logo; also the web UI's favicon and header mark
-MCP-SERVER.md           reference page for the server and its tools
-EXTRACTORS.md           languages, the extractor record contract, live tools for other languages
+tools/corpus            generated codebases in eight languages, run in Docker, with answer keys
+tools/obsidian-e2e      the plugin end to end in real Obsidian, headless, per Obsidian version
+install.* / setup.*     publish and set up repos / run from a checkout
+uninstall.*             remove the install folder, PATH entry, a repo's .mcp.json entry and graph
 ```
 
-## Why use the Code-Graph MCP?
-
-Without a graph, Claude answers structural questions by reading source. "Who calls
-`SaveAsync`?" becomes a grep for the name, a read of every file that matched, and a guess
-about which matches are the one you mean. That is slow, it is expensive in context, and it
-is wrong in the ways that matter most in C#: it finds unrelated methods with the same name,
-misses calls that go through an interface or a base class, and never finds the indirect
-implementor two levels down.
-
-The graph fixes the accuracy problem first. The indexer runs the real Roslyn compiler over
-the solution, so every edge is a resolved symbol, not a text match. `impact_of` walks
-callers, overrides and implementations transitively; `implementors_of` follows `Inherits`
-as well as `Implements`; `references_to` sees a type in signatures, generic arguments,
-casts and attributes. Claude gets the same answer the compiler would give.
-
-Three things a plain call graph misses are in the graph too, because they are where a grep
-beat an early version of this tool on "which tests reach X": a call to an interface or base
-member counts as a call to every implementation and override (`Runner.Run` has a
-member-level `Implements` edge to `IRunner.Run`, and `callers_of`, `covered_by`, `tests_for`,
-`impact_of` and the coverage tools follow it); reading or writing a property, field or event
-is a `Calls` edge, so `IStaging.Enabled` has callers; a `using`, `foreach` or `await` is a call to
-the Dispose, enumerator or awaiter members it binds to; and top-level statements are indexed
-as the program's `Main`, so DI registrations and the lambdas that construct services belong
-to a node and reach what they call.
-
-It also fixes the cost problem. A typical turn is `find_symbol` → `impact_of` → `snippet`
-on the two or three declarations that matter, which is low thousands of tokens instead of
-the tens of thousands spent opening files. Context stays free for the actual change, and
-long sessions degrade less.
-
-Beyond navigation, the graph answers questions that are impractical from source at all:
-which tests guard a member (`tests_for`), what is unreachable from any entry point
-(`dead_code_report`, `uncovered`), the shortest call path between two methods
-(`path_between`), which members are called the most (`most_called`), and "where's the code
-that does X" when no symbol name is known (`search_code`, full-text over names, comments and
-bodies).
-
-The practical properties that make it usable day to day:
-
-- **Trustworthy when stale.** Every answer is checked against the working tree first. If
-  indexed files changed, the answer says so and marks the affected rows, so Claude never
-  silently reasons from an old graph.
-- **Cheap to keep fresh.** Re-indexing is incremental: only changed files and their
-  dependents are re-walked, and it runs safely while Claude sessions are open.
-- **One config for every worktree.** The server discovers `.codegraph/graph.db` from its
-  working directory, so a single `.mcp.json` serves every checkout, each with its own graph.
-- **Read-only and local.** The server only ever reads the graph file. No source leaves the
-  machine and nothing is written during a query.
-
-## Build
+## Build and test
 
 ```bash
 dotnet build -warnaserror
-```
-
-`Directory.Build.props` pins `RoslynVersion` and the product `Version` that MCP clients display
-for the server; the package versions live in each `.csproj`.
-`TreatWarningsAsErrors` also promotes NuGet audit warnings, so a package picking up a
-published advisory fails the build until it is bumped — that is deliberate.
-
-`nuget.config` makes restore the same on every machine: it clears inherited feeds, registers
-nuget.org as the only source and maps every package to it, so a private feed on a developer
-box can neither slow restore down nor substitute a same-named package. It also turns the
-audit on explicitly, at `low` severity and over transitive packages too (`NuGetAuditMode=all`),
-which is what the build break above rests on.
-
-`CodeGraph.Indexer` references `Microsoft.Build.Framework` with `ExcludeAssets="runtime"`
-and `PrivateAssets="all"`. MSBuildLocator loads MSBuild from the installed SDK, and shipping
-the package copy alongside it breaks assembly loading at runtime; Build.Locator enforces
-this as error MSBL001.
-
-## Test
-
-```bash
 dotnet test
 ```
 
-`global.json` selects the Microsoft.Testing.Platform runner, which .NET 10 requires for
-xunit.v3. The suite needs no database, no SDK discovery and no network: the store tests run
-against a throwaway DuckDB file, and the indexer tests drive the real extractor over an
-`AdhocWorkspace`, so calls resolve through a genuine semantic model without MSBuild.
-
-## Index a solution
-
-```bash
-dotnet run --project src/CodeGraph.Indexer -- /path/to/GymX.sln
-# → <git worktree root>/.codegraph/graph.db   (solution dir when not in a repo; override with --db)
-```
-
-Progress and warnings go to stderr. Multi-target projects (net10.0-android;net10.0-ios)
-open as one project per target framework. The first target is compiled and walked in full; later
-targets walk only files the first did not have (TFM-conditional files), and are not compiled at all
-when there are none. Code that differs between targets under `#if` is therefore indexed as the first
-target sees it; `--all-targets` compiles every target.
-
-### Incremental re-indexing
-
-Re-running the indexer is incremental. Each file's SHA-256 is stored, and only files whose
-hash changed are re-walked, plus their **dependents**: files with an edge into a node declared
-in a changed file (callers, subclasses, referencers, tests), and the other parts of any partial
-type. Every edge records the file that produced it (`edge_origins`), so one file's contribution
-can be removed without touching edges that another file still produces. Projects with no
-re-walked files skip compilation entirely. `--full` rebuilds from scratch, and so does a
-schema-version or solution mismatch.
-
-The solution load (MSBuild evaluation) is paid every one-shot run, so a no-op re-index of this
-repo takes about 9s against about 50s for a full one. An edit to a widely used file still
-compiles every project that depends on it. Not covered: a *new* overload or extension method in
-a file that existing callers never referenced can change what an untouched file binds to. Run
-`--full` after big refactors.
-
-### Watch mode
-
-```bash
-dotnet run --project src/CodeGraph.Indexer -- /path/to/GymX.sln --watch
-```
-
-`--watch` pays the solution load once and keeps running. A `FileSystemWatcher` on the worktree
-collects saves, waits for a quiet half second, applies the edits to the loaded Roslyn solution in
-memory (new text, new files into the project whose directory holds them, deleted files out) and
-runs the same incremental walk as above, so a one-file edit re-indexes in well under a second
-instead of the 9s a cold run spends in MSBuild. A change to a `.csproj`, `.sln`, `.props` or
-`.targets` file is the one thing that triggers a real reload. Build output (`bin/`, `obj/`) is
-ignored. Ctrl+C stops it. The MCP server notices each swap through the db's mtime, so Claude's
-next answer uses the new graph.
-
-The incremental contract is tested directly: v1 full, then an edit and an incremental run,
-must equal v2 full (`IncrementalIndexTests`).
-
-### Live daemon
-
-The watch process is also a daemon. The Roslyn solution it holds answers questions the graph cannot, over a
-local pipe named after the graph file, and the MCP server asks it before every answer whether saves are
-pending so that `STALE` all but disappears while it runs. Seven tools use it: `symbol_at` (a file position
-to a graph id), `live_references` (every use of a symbol, including framework property reads the graph does
-not hold), `diagnostics` (compiler errors for the working tree), `check_change` (a what-if compile of one or
-more proposed files, in memory, reporting what it would break and who depends on each changed declaration),
-`rename_preview` (Roslyn's rename on a fork, every changed line plus conflicts), `data_flow` (where each
-parameter of a method goes) and `live_status` (which can also start the daemon; `CODEGRAPH_DAEMON=auto`
-starts it on the first tool call).
-The graph stays the system of record for transitive and aggregate questions, where it is orders of magnitude
-faster than asking Roslyn repeatedly; see [MCP-SERVER.md](MCP-SERVER.md#live-daemon) and
-[BENCHMARKS.md](BENCHMARKS.md).
-
-A full rebuild writes a fresh file and swaps it in, and every incremental write checkpoints, so the graph file
-no longer grows with each re-index.
-
-The swap itself is a bulk load. Every table (nodes, edges, edge origins, file stamps, search
-terms) goes through DuckDB's appender into a connection-local staging table and is merged in
-with one statement per table: nodes and stamps update in place, duplicate edges and origins
-are dropped. DuckDB takes milliseconds per parameterized `INSERT`, which for a solution of
-tens of thousands of nodes and edges was over ten minutes and looked like a hang; the same
-write now takes about a second, and a full index of this repo takes 9s end to end, almost all
-of it MSBuild and Roslyn. `BulkWriteTests` cover the merge rules on a 20,000-node graph.
-
-### Progress
-
-Project log lines carry a counter (`[12/33] project: App.Core`), and in a terminal one status
-line on stderr updates in place with a spinner, the phase, a detail and the phase's elapsed time:
-
-```
-| loading solution: App.slnx (14s)
-/ indexing: [12/33] App.Core: compiling (3s)
-- indexing: [12/33] App.Core: 120/340 files (5s)
-\ writing graph: 11095 nodes, 42437 edges (1s)
-```
-
-It ticks on a timer, so a long MSBuild load or compilation still visibly moves. The line is cut
-to the console width and cleared before every log line, between watch-mode runs and on exit.
-When stderr is redirected (a pipe, a test runner, a log file) only the log lines are written.
-The renderer is `ConsoleStatus`; the indexer reports through `IndexProgress` (`ProgressTests`).
-
-## Install
-
-```powershell
-.\install.ps1                                   # Windows → C:\tools\codegraph; asks which repo to set up
-.\install.ps1 C:\dev\App, C:\dev\Other -AddToPath -Live
-```
-
-```bash
-./install.sh                                    # macOS / Linux → ~/.codegraph/bin; asks which repo to set up
-./install.sh ~/dev/App ~/dev/Other --install-dir /opt/codegraph --add-to-path --live
-```
-
-Both scripts build with warnings as errors, run the test suite (`-SkipTests` / `--skip-tests`
-to skip), and publish `codegraph-index` and `codegraph-mcp` into the install folder. The publish
-is ReadyToRun for this machine's platform, which indexes about a quarter faster than a plain
-build ([BENCHMARKS.md](BENCHMARKS.md#round-8-readytorun-publish)). They check that both
-executables start, then run `codegraph-index init` on each repo or solution you name. With
-none named in an interactive shell, they ask for one. `install.ps1` runs under Windows
-PowerShell 5.1 and under PowerShell 7 on any platform. Re-run either script to upgrade. A running
-`codegraph-mcp` holds its files open, so the script stops rather than overwrite it. Close the
-Claude Code sessions using it, or pass `-Force` / `--force` to stop them.
-
-### Set up a repo: `codegraph-index init`
-
-```bash
-codegraph-index init [repo-folder | App.sln | App.csproj] [--live] [--no-index] [--db PATH]
-```
-
-Run with no argument, it starts from the current folder. It looks for one `.slnx` or `.sln`
-there, then up to three levels below, then at the git worktree root, and last for a single
-`.csproj` in the folder. Two candidates are an error that lists both, so pass the one you mean.
-Then it does four things:
-
-1. Writes the `codegraph` server into `.mcp.json` at the worktree root, keeping other servers
-   and any `env` settings already on the entry. A re-run with nothing new leaves the file untouched.
-2. Starts the server the way an MCP host would, without your shell's `DOTNET_ROOT`. If that
-   fails and the .NET running `init` works, the entry gets `"env": { "DOTNET_ROOT": … }`.
-   This is the usual case with a version-managed dotnet such as mise or asdf.
-3. Adds `.codegraph/` to `.gitignore` unless git already ignores it.
-4. Builds the graph, as `codegraph-index <solution>` would. `--no-index` stops before this step.
-
-`--live` adds `CODEGRAPH_DAEMON=auto` to the entry. The server then starts the
-[live daemon](#live-daemon) itself on its first tool call. `--db` keeps the graph somewhere else
-and passes that path to the server.
-
-### Uninstall
-
-```powershell
-.\uninstall.ps1                                  # removes the default install folder
-.\uninstall.ps1 -InstallDir D:\tools\codegraph -Repo C:\dev\App -Force -Yes
-```
-
-```bash
-./uninstall.sh [--install-dir DIR] [--repo DIR]... [--force] [--yes]
-```
-
-Deletes the install folder (after checking it really holds codegraph), takes it out of the
-user PATH or the `# codegraph` lines out of `~/.bashrc` / `~/.zshrc`, and for each `-Repo` /
-`--repo` removes the `codegraph` entry from that repo's `.mcp.json` (other servers stay) and
-deletes its `.codegraph/` graph and telemetry. It asks before each deletion unless `-Yes` /
-`--yes`, and refuses while a codegraph process runs from the folder unless `-Force` / `--force`
-stops it. A checkout wired up by `setup.ps1` has nothing installed; use `-Repo` alone to undo
-its `.mcp.json` entry and graph.
-
-### From a source checkout
-
-`setup.ps1` / `setup.sh` is the no-publish alternative for people who keep this repo cloned:
-nothing is copied anywhere, the MCP server runs from the checkout with `dotnet run --no-build`,
-and an upgrade is a `git pull` plus a build. The script fetches origin and, if the checkout is
-behind, asks before fast-forwarding (never over local changes); builds Release with warnings as
-errors; writes or updates the `codegraph` entry in the target repo's `.mcp.json`, keeping any
-other servers there; and indexes the solution with `dotnet run --project src/CodeGraph.Indexer`.
-
-```powershell
-.\setup.ps1 -Solution C:\dev\App\App.sln          # asks before pulling and before touching .mcp.json
-.\setup.ps1 -Solution C:\dev\App\App.sln -Yes -Full  # no questions; rebuild the graph from scratch
-```
-
-```bash
-./setup.sh --solution ~/dev/App/App.sln [--yes] [--full] [--no-pull] [--config-dir DIR]
-```
-
-The `.mcp.json` entry it writes is `dotnet run --project <checkout>/src/CodeGraph.Mcp -c Release
---no-build`, which starts in about a second and prints nothing but JSON-RPC on stdout. Re-run the
-script after pulling, since `--no-build` runs whatever was built last. On Windows use the
-PowerShell script; the bash one under Git Bash writes `/d/...` paths that other hosts cannot read.
-
-## Wire it into Claude Code
-
-`codegraph-index init` writes this for you. By hand, put one `.mcp.json` in the repo. Leave out the db path: the
-server looks for `.codegraph/graph.db` from its working directory up to the git worktree root. Claude Code starts it in the project directory, so the same file works in
-every worktree (`C:/dev/sa-1`, `C:/dev/sa-2`, …), each reading its own graph:
-
-```json
-{
-  "mcpServers": {
-    "codegraph": {
-      "command": "C:/tools/codegraph/codegraph-mcp.exe"
-    }
-  }
-}
-```
-
-The server identifies itself at `initialize` with a name, title, version, description, website
-and the logo as an icon, plus short instructions for the model, so the page a client shows for
-it (VS Code's "MCP Server: codegraph", Claude Code's `/mcp`) is populated without a gallery
-listing. [MCP-SERVER.md](MCP-SERVER.md#what-clients-show-for-the-server) lists the fields.
-
-A worktree that hasn't been indexed yet still starts. Its tools answer "no code graph at …,
-build it with codegraph-index". An explicit path argument or `CODEGRAPH_DB` still wins over
-discovery. Two solutions in one worktree need `--db` to keep separate graphs.
-
-Add `.codegraph/` to `.gitignore`; `init` does this too.
-
-### Telemetry
-
-Every tool call is recorded: tool, duration, size of the answer, and the size of the source
-files the answer pointed at, which is what reading them instead would have cost. One JSON line
-per call goes to `.codegraph/telemetry.jsonl` beside the graph; nothing leaves the machine.
-`usage_stats` reports both this session and all time:
-
-```
-this session (3 call(s), 1201 result tokens, ~54656 source tokens saved)
-tool         calls  errors   avg ms  result tok  source tok   saved tok
-search_code      2       0      138         521       23443       22922
-find_symbol      1       0       25         680       32414       31734
-```
-
-Tokens are estimated at four characters each, and "saved" is an upper bound: it assumes the
-model would have opened every file an answer mentions. Set `CODEGRAPH_TELEMETRY=off` to keep
-the counts in memory only.
-
-### Staleness
-
-The graph stores the commit it was built at and every file's hash. Before each answer the
-server checks the working tree; this is cached for 3s and costs one `stat` per indexed file,
-with a re-hash only when size or mtime changed. If anything moved, the answer starts with a
-line like:
-
-```
-⚠ STALE INDEX: 2 indexed file(s) edited since (ChainRunner.cs, RouteExecutor.cs). Rows marked
-STALE come from changed files, and new files are missing. Refresh with: codegraph-index "…/App.sln"
-```
-
-and every result row from an edited file ends in `STALE`. A moved HEAD is reported too, since
-files added by a checkout aren't in the graph. `index_status` shows the full picture.
-
-## Tools exposed
-
-| tool | what it answers |
-|---|---|
-| `find_symbol` | id, kind, signature, location for a name |
-| `search_code` | "where's the code that does X": ranked full-text search over names, signatures, comments, string literals and body identifiers |
-| `outline` | children of a node, no bodies |
-| `callers_of` / `callees_of` | call graph, N hops; calls include property, field and event accesses, and a call to an interface or base member reaches its implementations |
-| `impact_of` | transitive dependents + guarding tests (for a type: every member that references it, too) |
-| `tests_for` | tests that call or read a member directly, through its interface too |
-| `references_to` | where a type is used: signatures, fields, locals (including `var`-inferred ones), generic args, casts, attributes, record parameters, `using` aliases |
-| `implementors_of` / `inheritors_of` | who implements an interface (including subclasses of implementors) / derives from a type |
-| `snippet` | just the declaration span from source |
-| `graph_stats` | sanity check |
-| `index_status` | which graph, built when and at which commit, which files changed since |
-| `usage_stats` | calls per tool, latency, answer size and estimated source tokens saved, this session and all time |
-
-A typical Claude turn: `find_symbol` → `impact_of` → `snippet` on the two or three
-things that matter. Low thousands of tokens instead of tens of thousands.
-[MCP-SERVER.md](MCP-SERVER.md) lists every tool with its arguments and ranges;
-[PROMPTS.md](PROMPTS.md) has example prompts and the tools each one uses.
-
-Indexing this repo is the quickest end-to-end check: `tests_for` on `GraphStore.Impact`
-should come back with the tests in `tests/CodeGraph.Tests`.
-
-### Full-text search
-
-`search_code` answers intent-style questions when no symbol name is known. At index time every
-type and member gets a document: its name (weighted ×3), its doc and leading comments (×2), its
-signature, and the identifiers, string literals and comments in its body. Identifiers split on
-case boundaries, so `SaveWorkoutAsync` is found by "save workout"; a light stemmer folds
-plurals and tenses on both sides. Queries are ranked by BM25 in plain SQL over two tables in the
-same DuckDB file, so there is no extension to install and read-only queries work as for every
-other tool. Results show how many of the query's terms each hit matched.
-
-That is lexical search: it finds code that uses the same words. With an OpenAI-compatible embeddings
-endpoint (a local Ollama, say) it also ranks by meaning and fuses the two rankings; see
-[MCP-SERVER.md](MCP-SERVER.md#semantic-search). It is off unless `CODEGRAPH_EMBEDDINGS_URL` is set.
+The build treats warnings and NuGet audit findings as errors, and `nuget.config` pins nuget.org
+as the only source. The test suite needs no SDK discovery and no network: the store tests use a
+throwaway DuckDB file and the indexer tests drive the real Roslyn extractor over an
+`AdhocWorkspace`. The plugin's tests are `npm test` in `obsidian-plugin/`. Two more layers run
+in Docker: [tools/corpus](tools/corpus/README.md) checks precision and recall against generated
+codebases with answer keys, and [tools/obsidian-e2e](tools/obsidian-e2e/README.md) runs the plugin
+in real Obsidian.
 
 ## Not yet
 
-- In a repo with both, `--watch` on the C# solution refreshes only C#. Run a second daemon on the front end
-  with its own `--db`, or re-run `codegraph-index init` to refresh both.
-- TypeScript and the SCIP languages re-index the whole workspace on each save. That is a few seconds for 1,000
-  files, against per-file incremental indexing for C#.
-- There is no native Java extractor: Java goes through scip-java. Its calls and reads are told apart by the
-  target's kind only, and annotations are read from the source line.
+- In a repo with both, `--watch` on the C# solution refreshes only C#. Run a second daemon on the
+  front end with its own `--db`, or re-run `codegraph-index init` to refresh both.
+- TypeScript and the SCIP languages re-index the whole workspace on each save: a few seconds for
+  1,000 files, against per-file incremental indexing for C#.
+- There is no native Java extractor: Java goes through scip-java, which tells calls and reads
+  apart by the target's kind only.
 - `data_flow` answers for C# only.
-
 - `--watch` re-reads a project's globs only on a project-file change, so a new file in a
   directory no project covers is picked up by the next cold run.
+
+## Further reading
+
+| Page | Read it to |
+|---|---|
+| [docs/](docs/README.md) | Installation, usage, use cases, how it works, performance and architecture, with diagrams |
+| [docs/obsidian.md](docs/obsidian.md) | Set up and use the Obsidian plugin, with screenshots |
+| [MCP-SERVER.md](MCP-SERVER.md) | Every tool with its arguments, output format, staleness, telemetry, semantic search, troubleshooting |
+| [PROMPTS.md](PROMPTS.md) | Prompts that make Claude Code use the tools |
+| [EXTRACTORS.md](EXTRACTORS.md) | What each language records, and the record contract for adding one |
+| [BENCHMARKS.md](BENCHMARKS.md) | Every measurement, round by round |
