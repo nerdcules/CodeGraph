@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 250" width="960" height="250" role="img" aria-labelledby="title desc">
+<title id="title">What the install script does</title>
+<desc id="desc">The install script builds, tests and publishes the two executables, checks that they start, then sets up each repository.</desc>
+<style>
+  .bg { fill: #ffffff; }
+  text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
+  .t { font-weight: 600; }
+  .h { font-weight: 600; font-size: 14px; }
+  .m { fill: #59636e; font-size: 11.5px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .box { fill: #f6f8fa; stroke: #d1d9e0; stroke-width: 1.2; }
+  .group { fill: none; stroke: #d1d9e0; stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .a1 { fill: #ddf4ff; stroke: #0969da; stroke-width: 1.2; }
+  .a2 { fill: #dafbe1; stroke: #1a7f37; stroke-width: 1.2; }
+  .a3 { fill: #fbefff; stroke: #8250df; stroke-width: 1.2; }
+  .a4 { fill: #fff8c5; stroke: #9a6700; stroke-width: 1.2; }
+  .line { fill: none; stroke: #59636e; stroke-width: 1.4; }
+  .dash { fill: none; stroke: #8250df; stroke-width: 1.4; stroke-dasharray: 6 4; }
+  .head { fill: #59636e; }
+  .headp { fill: #8250df; }
+  .bar1 { fill: #0969da; } .bar2 { fill: #1a7f37; } .bar3 { fill: #8250df; } .bar4 { fill: #9a6700; }
+  .grid { stroke: #d1d9e0; stroke-width: 1; }
+  .num { fill: #ffffff; font-weight: 600; font-size: 12px; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    text { fill: #e6edf3; }
+    .m { fill: #9198a1; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .group { stroke: #3d444d; }
+    .a1 { fill: #0c2d6b; stroke: #4493f8; }
+    .a2 { fill: #033a16; stroke: #3fb950; }
+    .a3 { fill: #2e1461; stroke: #ab7df8; }
+    .a4 { fill: #3b2300; stroke: #d29922; }
+    .line { stroke: #9198a1; } .head { fill: #9198a1; }
+    .dash { stroke: #ab7df8; } .headp { fill: #ab7df8; }
+    .bar1 { fill: #4493f8; } .bar2 { fill: #3fb950; } .bar3 { fill: #ab7df8; } .bar4 { fill: #d29922; }
+    .grid { stroke: #3d444d; }
+    .num { fill: #0d1117; }
+  }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="head" d="M0,0 L10,5 L0,10 z"/>
+  </marker>
+  <marker id="arrowp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="headp" d="M0,0 L10,5 L0,10 z"/>
+  </marker>
+</defs>
+<rect class="bg" x="0" y="0" width="960" height="250" rx="10"/>
+<rect x="20" y="40" width="124" height="76" rx="8" class="a1"/>
+<text x="82.0" y="65.5" class="t" text-anchor="middle">Build</text>
+<text x="82.0" y="82.5" class="m" text-anchor="middle">Release,</text>
+<text x="82.0" y="99.5" class="m" text-anchor="middle">warnings as errors</text>
+<rect x="170" y="40" width="124" height="76" rx="8" class="a1"/>
+<text x="232.0" y="65.5" class="t" text-anchor="middle">Test</text>
+<text x="232.0" y="82.5" class="m" text-anchor="middle">the full suite</text>
+<text x="232.0" y="99.5" class="m" text-anchor="middle">(skip with a flag)</text>
+<path d="M146 78 H168" class="line" marker-end="url(#arrow)"/>
+<rect x="320" y="40" width="124" height="76" rx="8" class="a2"/>
+<text x="382.0" y="65.5" class="t" text-anchor="middle">Publish</text>
+<text x="382.0" y="82.5" class="m" text-anchor="middle">ReadyToRun for</text>
+<text x="382.0" y="99.5" class="m" text-anchor="middle">this platform</text>
+<path d="M296 78 H318" class="line" marker-end="url(#arrow)"/>
+<rect x="470" y="40" width="124" height="76" rx="8" class="a2"/>
+<text x="532.0" y="65.5" class="t" text-anchor="middle">Check</text>
+<text x="532.0" y="82.5" class="m" text-anchor="middle">both executables</text>
+<text x="532.0" y="99.5" class="m" text-anchor="middle">start</text>
+<path d="M446 78 H468" class="line" marker-end="url(#arrow)"/>
+<rect x="620" y="24" width="326" height="206" rx="10" class="group"/>
+<text x="634" y="46" class="t" text-anchor="start">codegraph-index init (per repository)</text>
+<rect x="634" y="58" width="298" height="34" rx="6" class="a3"/>
+<text x="646" y="80" class="t" text-anchor="start">.mcp.json</text>
+<text x="752" y="80" class="m" text-anchor="start">adds the codegraph server</text>
+<rect x="634" y="100" width="298" height="34" rx="6" class="a3"/>
+<text x="646" y="122" class="t" text-anchor="start">DOTNET_ROOT</text>
+<text x="752" y="122" class="m" text-anchor="start">set when the server needs it</text>
+<rect x="634" y="142" width="298" height="34" rx="6" class="a3"/>
+<text x="646" y="164" class="t" text-anchor="start">.gitignore</text>
+<text x="752" y="164" class="m" text-anchor="start">adds .codegraph/</text>
+<rect x="634" y="184" width="298" height="34" rx="6" class="a2"/>
+<text x="646" y="206" class="t" text-anchor="start">First index</text>
+<text x="752" y="206" class="m" text-anchor="start">builds .codegraph/graph.db</text>
+<path d="M594 78 H618" class="line" marker-end="url(#arrow)"/>
+<text x="320" y="160" class="m" text-anchor="middle">Re-run the script to upgrade.</text>
+<text x="320" y="180" class="m" text-anchor="middle">It stops if codegraph-mcp is running, unless you give --force.</text>
+</svg>

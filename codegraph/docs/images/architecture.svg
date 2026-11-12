@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500" role="img" aria-labelledby="title desc">
+<title id="title">CodeGraph architecture</title>
+<desc id="desc">Extractors read the repository and write graph.db. The MCP server reads graph.db and talks to the client. The live daemon keeps the code loaded, re-indexes on save and answers live tools over a local pipe.</desc>
+<style>
+  .bg { fill: #ffffff; }
+  text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
+  .t { font-weight: 600; }
+  .h { font-weight: 600; font-size: 14px; }
+  .m { fill: #59636e; font-size: 11.5px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .box { fill: #f6f8fa; stroke: #d1d9e0; stroke-width: 1.2; }
+  .group { fill: none; stroke: #d1d9e0; stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .a1 { fill: #ddf4ff; stroke: #0969da; stroke-width: 1.2; }
+  .a2 { fill: #dafbe1; stroke: #1a7f37; stroke-width: 1.2; }
+  .a3 { fill: #fbefff; stroke: #8250df; stroke-width: 1.2; }
+  .a4 { fill: #fff8c5; stroke: #9a6700; stroke-width: 1.2; }
+  .line { fill: none; stroke: #59636e; stroke-width: 1.4; }
+  .dash { fill: none; stroke: #8250df; stroke-width: 1.4; stroke-dasharray: 6 4; }
+  .head { fill: #59636e; }
+  .headp { fill: #8250df; }
+  .bar1 { fill: #0969da; } .bar2 { fill: #1a7f37; } .bar3 { fill: #8250df; } .bar4 { fill: #9a6700; }
+  .grid { stroke: #d1d9e0; stroke-width: 1; }
+  .num { fill: #ffffff; font-weight: 600; font-size: 12px; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    text { fill: #e6edf3; }
+    .m { fill: #9198a1; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .group { stroke: #3d444d; }
+    .a1 { fill: #0c2d6b; stroke: #4493f8; }
+    .a2 { fill: #033a16; stroke: #3fb950; }
+    .a3 { fill: #2e1461; stroke: #ab7df8; }
+    .a4 { fill: #3b2300; stroke: #d29922; }
+    .line { stroke: #9198a1; } .head { fill: #9198a1; }
+    .dash { stroke: #ab7df8; } .headp { fill: #ab7df8; }
+    .bar1 { fill: #4493f8; } .bar2 { fill: #3fb950; } .bar3 { fill: #ab7df8; } .bar4 { fill: #d29922; }
+    .grid { stroke: #3d444d; }
+    .num { fill: #0d1117; }
+  }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="head" d="M0,0 L10,5 L0,10 z"/>
+  </marker>
+  <marker id="arrowp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="headp" d="M0,0 L10,5 L0,10 z"/>
+  </marker>
+</defs>
+<rect class="bg" x="0" y="0" width="900" height="500" rx="10"/>
+<text x="20" y="30" class="h" text-anchor="start">Repository</text>
+<rect x="20" y="42" width="190" height="300" rx="10" class="group"/>
+<rect x="32" y="56" width="166" height="56" rx="8" class="box"/>
+<text x="115.0" y="80.0" class="t" text-anchor="middle">C# solution</text>
+<text x="115.0" y="97.0" class="m" text-anchor="middle">.sln  .slnx  .csproj</text>
+<rect x="32" y="126" width="166" height="56" rx="8" class="box"/>
+<text x="115.0" y="150.0" class="t" text-anchor="middle">TypeScript, Angular</text>
+<text x="115.0" y="167.0" class="m" text-anchor="middle">tsconfig.json  angular.json</text>
+<rect x="32" y="196" width="166" height="56" rx="8" class="box"/>
+<text x="115.0" y="220.0" class="t" text-anchor="middle">Java, Kotlin, Scala</text>
+<text x="115.0" y="237.0" class="m" text-anchor="middle">pom.xml  build.gradle</text>
+<rect x="32" y="266" width="166" height="64" rx="8" class="box"/>
+<text x="115.0" y="285.5" class="t" text-anchor="middle">Go, Rust, Python</text>
+<text x="115.0" y="302.5" class="m" text-anchor="middle">go.mod  Cargo.toml</text>
+<text x="115.0" y="319.5" class="m" text-anchor="middle">pyproject.toml</text>
+<text x="250" y="30" class="h" text-anchor="start">codegraph-index</text>
+<rect x="250" y="42" width="290" height="300" rx="10" class="group"/>
+<rect x="264" y="56" width="262" height="50" rx="8" class="a1"/>
+<text x="395.0" y="77.0" class="t" text-anchor="middle">Roslyn extractor</text>
+<text x="395.0" y="94.0" class="m" text-anchor="middle">in process</text>
+<rect x="264" y="120" width="262" height="50" rx="8" class="a1"/>
+<text x="395.0" y="141.0" class="t" text-anchor="middle">codegraph-ts extractor</text>
+<text x="395.0" y="158.0" class="m" text-anchor="middle">Node.js, TypeScript 6 compiler API</text>
+<rect x="264" y="184" width="262" height="64" rx="8" class="a1"/>
+<text x="395.0" y="203.5" class="t" text-anchor="middle">SCIP importer</text>
+<text x="395.0" y="220.5" class="m" text-anchor="middle">scip-java, scip-go, rust-analyzer,</text>
+<text x="395.0" y="237.5" class="m" text-anchor="middle">scip-python</text>
+<rect x="264" y="272" width="262" height="56" rx="8" class="a2"/>
+<text x="395.0" y="296.0" class="t" text-anchor="middle">Graph writer</text>
+<text x="395.0" y="313.0" class="m" text-anchor="middle">fresh file, copy other languages, swap</text>
+<path d="M198 84 C230 84 232 81 262 81" class="line" marker-end="url(#arrow)"/>
+<path d="M198 154 C230 154 232 145 262 145" class="line" marker-end="url(#arrow)"/>
+<path d="M198 224 C230 224 232 205 262 205" class="line" marker-end="url(#arrow)"/>
+<path d="M198 294 C230 294 232 225 262 225" class="line" marker-end="url(#arrow)"/>
+<path d="M395 106 V118" class="line" marker-end="url(#arrow)"/>
+<path d="M395 170 V182" class="line" marker-end="url(#arrow)"/>
+<path d="M395 248 V270" class="line" marker-end="url(#arrow)"/>
+<path class="a2" d="M565.0 150 v110 a60.0 14 0 0 0 120 0 v-110"/>
+<ellipse class="a2" cx="625" cy="150" rx="60.0" ry="14"/>
+<text x="625" y="202" class="t" text-anchor="middle">graph.db</text>
+<text x="625" y="220" class="m" text-anchor="middle">DuckDB, one file</text>
+<text x="625" y="236" class="m" text-anchor="middle">per worktree</text>
+<path d="M526 300 C565 300 580 280 597 268" class="line" marker-end="url(#arrow)"/>
+<text x="556" y="318" class="m" text-anchor="middle">write</text>
+<rect x="720" y="160" width="160" height="74" rx="8" class="a3"/>
+<text x="800.0" y="184.5" class="t" text-anchor="middle">codegraph-mcp</text>
+<text x="800.0" y="201.5" class="m" text-anchor="middle">35 read-only tools</text>
+<text x="800.0" y="218.5" class="m" text-anchor="middle">stdio MCP server</text>
+<rect x="720" y="44" width="160" height="60" rx="8" class="box"/>
+<text x="800.0" y="70.0" class="t" text-anchor="middle">Claude Code</text>
+<text x="800.0" y="87.0" class="m" text-anchor="middle">or another MCP client</text>
+<path d="M686 205 H718" class="line" marker-end="url(#arrow)"/>
+<text x="702" y="196" class="m" text-anchor="middle">read</text>
+<path d="M800 158 V106" class="line" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<text x="808" y="136" class="m" text-anchor="start">JSON-RPC</text>
+<text x="250" y="378" class="h" text-anchor="start">Live daemon: codegraph-index --watch</text>
+<rect x="250" y="390" width="290" height="94" rx="10" class="group"/>
+<rect x="264" y="404" width="128" height="66" rx="8" class="a4"/>
+<text x="328.0" y="433.0" class="t" text-anchor="middle">Roslyn solution</text>
+<text x="328.0" y="450.0" class="m" text-anchor="middle">in memory (C#)</text>
+<rect x="400" y="404" width="126" height="66" rx="8" class="a4"/>
+<text x="463.0" y="424.5" class="t" text-anchor="middle">LSP bridge</text>
+<text x="463.0" y="441.5" class="m" text-anchor="middle">language server</text>
+<text x="463.0" y="458.5" class="m" text-anchor="middle">(other languages)</text>
+<path d="M198 300 C225 300 225 437 262 437" class="line" marker-end="url(#arrow)"/>
+<text x="214" y="380" class="m" text-anchor="middle">save</text>
+<path d="M540 420 C610 420 625 330 625 290" class="line" marker-end="url(#arrow)"/>
+<text x="598" y="372" class="m" text-anchor="middle">re-index</text>
+<path d="M540 460 H800 V236" class="dash" marker-end="url(#arrowp)" marker-start="url(#arrowp)"/>
+<text x="660" y="452" class="m" text-anchor="middle">local pipe: live tools, freshness</text>
+</svg>

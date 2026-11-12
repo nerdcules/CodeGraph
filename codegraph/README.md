@@ -9,6 +9,9 @@ JavaScript and Angular by the TypeScript compiler; Java, Kotlin, Scala, Python, 
 Rust through their SCIP indexers. One graph can hold several, such as a .NET API and its
 Angular front end. [EXTRACTORS.md](EXTRACTORS.md) says what each records.
 
+[docs/](docs/README.md) has the guides: installation, usage, use cases, how it works, performance and
+architecture, with diagrams.
+
 [MCP-SERVER.md](MCP-SERVER.md) is the server's reference page: install, configuration, every
 tool with its arguments, output format, staleness, telemetry and troubleshooting.
 [PROMPTS.md](PROMPTS.md) shows the prompts that drive it.

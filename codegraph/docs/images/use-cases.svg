@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 440" width="900" height="440" role="img" aria-labelledby="title desc">
+<title id="title">Questions and the tools that answer them</title>
+<desc id="desc">Each question on the left points to the tool that answers it on the right.</desc>
+<style>
+  .bg { fill: #ffffff; }
+  text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
+  .t { font-weight: 600; }
+  .h { font-weight: 600; font-size: 14px; }
+  .m { fill: #59636e; font-size: 11.5px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .box { fill: #f6f8fa; stroke: #d1d9e0; stroke-width: 1.2; }
+  .group { fill: none; stroke: #d1d9e0; stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .a1 { fill: #ddf4ff; stroke: #0969da; stroke-width: 1.2; }
+  .a2 { fill: #dafbe1; stroke: #1a7f37; stroke-width: 1.2; }
+  .a3 { fill: #fbefff; stroke: #8250df; stroke-width: 1.2; }
+  .a4 { fill: #fff8c5; stroke: #9a6700; stroke-width: 1.2; }
+  .line { fill: none; stroke: #59636e; stroke-width: 1.4; }
+  .dash { fill: none; stroke: #8250df; stroke-width: 1.4; stroke-dasharray: 6 4; }
+  .head { fill: #59636e; }
+  .headp { fill: #8250df; }
+  .bar1 { fill: #0969da; } .bar2 { fill: #1a7f37; } .bar3 { fill: #8250df; } .bar4 { fill: #9a6700; }
+  .grid { stroke: #d1d9e0; stroke-width: 1; }
+  .num { fill: #ffffff; font-weight: 600; font-size: 12px; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    text { fill: #e6edf3; }
+    .m { fill: #9198a1; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .group { stroke: #3d444d; }
+    .a1 { fill: #0c2d6b; stroke: #4493f8; }
+    .a2 { fill: #033a16; stroke: #3fb950; }
+    .a3 { fill: #2e1461; stroke: #ab7df8; }
+    .a4 { fill: #3b2300; stroke: #d29922; }
+    .line { stroke: #9198a1; } .head { fill: #9198a1; }
+    .dash { stroke: #ab7df8; } .headp { fill: #ab7df8; }
+    .bar1 { fill: #4493f8; } .bar2 { fill: #3fb950; } .bar3 { fill: #ab7df8; } .bar4 { fill: #d29922; }
+    .grid { stroke: #3d444d; }
+    .num { fill: #0d1117; }
+  }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="head" d="M0,0 L10,5 L0,10 z"/>
+  </marker>
+  <marker id="arrowp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="headp" d="M0,0 L10,5 L0,10 z"/>
+  </marker>
+</defs>
+<rect class="bg" x="0" y="0" width="900" height="440" rx="10"/>
+<rect x="20" y="24" width="330" height="34" rx="6" class="box"/>
+<text x="34" y="46" class="" text-anchor="start">Who calls this method?</text>
+<rect x="560" y="24" width="300" height="34" rx="6" class="a3"/>
+<text x="574" y="46" class="mono" text-anchor="start">callers_of</text>
+<path d="M350 41 H558" class="line" marker-end="url(#arrow)"/>
+<rect x="20" y="69" width="330" height="34" rx="6" class="box"/>
+<text x="34" y="91" class="" text-anchor="start">What breaks if I change it?</text>
+<rect x="560" y="69" width="300" height="34" rx="6" class="a3"/>
+<text x="574" y="91" class="mono" text-anchor="start">impact_of</text>
+<path d="M350 86 H558" class="line" marker-end="url(#arrow)"/>
+<rect x="20" y="114" width="330" height="34" rx="6" class="box"/>
+<text x="34" y="136" class="" text-anchor="start">Which tests guard it?</text>
+<rect x="560" y="114" width="300" height="34" rx="6" class="a2"/>
+<text x="574" y="136" class="mono" text-anchor="start">tests_for, covered_by</text>
+<path d="M350 131 H558" class="line" marker-end="url(#arrow)"/>
+<rect x="20" y="159" width="330" height="34" rx="6" class="box"/>
+<text x="34" y="181" class="" text-anchor="start">What code is never used?</text>
+<rect x="560" y="159" width="300" height="34" rx="6" class="a4"/>
+<text x="574" y="181" class="mono" text-anchor="start">dead_code_report</text>
+<path d="M350 176 H558" class="line" marker-end="url(#arrow)"/>
+<rect x="20" y="204" width="330" height="34" rx="6" class="box"/>
+<text x="34" y="226" class="" text-anchor="start">How does A reach B?</text>
+<rect x="560" y="204" width="300" height="34" rx="6" class="a3"/>
+<text x="574" y="226" class="mono" text-anchor="start">path_between</text>
+<path d="M350 221 H558" class="line" marker-end="url(#arrow)"/>
+<rect x="20" y="249" width="330" height="34" rx="6" class="box"/>
+<text x="34" y="271" class="" text-anchor="start">Where is the code that does X?</text>
+<rect x="560" y="249" width="300" height="34" rx="6" class="a1"/>
+<text x="574" y="271" class="mono" text-anchor="start">search_code</text>
+<path d="M350 266 H558" class="line" marker-end="url(#arrow)"/>
+<rect x="20" y="294" width="330" height="34" rx="6" class="box"/>
+<text x="34" y="316" class="" text-anchor="start">Who implements this interface?</text>
+<rect x="560" y="294" width="300" height="34" rx="6" class="a1"/>
+<text x="574" y="316" class="mono" text-anchor="start">implementors_of</text>
+<path d="M350 311 H558" class="line" marker-end="url(#arrow)"/>
+<rect x="20" y="339" width="330" height="34" rx="6" class="box"/>
+<text x="34" y="361" class="" text-anchor="start">Will my edit compile?</text>
+<rect x="560" y="339" width="300" height="34" rx="6" class="a4"/>
+<text x="574" y="361" class="mono" text-anchor="start">check_change (live)</text>
+<path d="M350 356 H558" class="line" marker-end="url(#arrow)"/>
+<rect x="20" y="384" width="330" height="34" rx="6" class="box"/>
+<text x="34" y="406" class="" text-anchor="start">What would a rename change?</text>
+<rect x="560" y="384" width="300" height="34" rx="6" class="a4"/>
+<text x="574" y="406" class="mono" text-anchor="start">rename_preview (live)</text>
+<path d="M350 401 H558" class="line" marker-end="url(#arrow)"/>
+</svg>

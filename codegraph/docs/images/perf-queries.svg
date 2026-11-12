@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 414" width="900" height="414" role="img" aria-labelledby="title desc">
+<title id="title">Tool calls through the MCP server, this repository&#x27;s graph</title>
+<desc id="desc">Bar chart. Milliseconds per tool call through codegraph-mcp, and per store query, on a graph of 1,583 nodes and 8,784 edges.</desc>
+<style>
+  .bg { fill: #ffffff; }
+  text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
+  .t { font-weight: 600; }
+  .h { font-weight: 600; font-size: 14px; }
+  .m { fill: #59636e; font-size: 11.5px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .box { fill: #f6f8fa; stroke: #d1d9e0; stroke-width: 1.2; }
+  .group { fill: none; stroke: #d1d9e0; stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .a1 { fill: #ddf4ff; stroke: #0969da; stroke-width: 1.2; }
+  .a2 { fill: #dafbe1; stroke: #1a7f37; stroke-width: 1.2; }
+  .a3 { fill: #fbefff; stroke: #8250df; stroke-width: 1.2; }
+  .a4 { fill: #fff8c5; stroke: #9a6700; stroke-width: 1.2; }
+  .line { fill: none; stroke: #59636e; stroke-width: 1.4; }
+  .dash { fill: none; stroke: #8250df; stroke-width: 1.4; stroke-dasharray: 6 4; }
+  .head { fill: #59636e; }
+  .headp { fill: #8250df; }
+  .bar1 { fill: #0969da; } .bar2 { fill: #1a7f37; } .bar3 { fill: #8250df; } .bar4 { fill: #9a6700; }
+  .grid { stroke: #d1d9e0; stroke-width: 1; }
+  .num { fill: #ffffff; font-weight: 600; font-size: 12px; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    text { fill: #e6edf3; }
+    .m { fill: #9198a1; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .group { stroke: #3d444d; }
+    .a1 { fill: #0c2d6b; stroke: #4493f8; }
+    .a2 { fill: #033a16; stroke: #3fb950; }
+    .a3 { fill: #2e1461; stroke: #ab7df8; }
+    .a4 { fill: #3b2300; stroke: #d29922; }
+    .line { stroke: #9198a1; } .head { fill: #9198a1; }
+    .dash { stroke: #ab7df8; } .headp { fill: #ab7df8; }
+    .bar1 { fill: #4493f8; } .bar2 { fill: #3fb950; } .bar3 { fill: #ab7df8; } .bar4 { fill: #d29922; }
+    .grid { stroke: #3d444d; }
+    .num { fill: #0d1117; }
+  }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="head" d="M0,0 L10,5 L0,10 z"/>
+  </marker>
+  <marker id="arrowp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="headp" d="M0,0 L10,5 L0,10 z"/>
+  </marker>
+</defs>
+<rect class="bg" x="0" y="0" width="900" height="414" rx="10"/>
+<text x="20" y="30" class="h" text-anchor="start">Tool calls through the MCP server, this repository&#x27;s graph</text>
+<line x1="230.0" y1="48" x2="230.0" y2="344" class="grid"/>
+<text x="230.0" y="360" class="m" text-anchor="middle">0 ms</text>
+<line x1="375.0" y1="48" x2="375.0" y2="344" class="grid"/>
+<text x="375.0" y="360" class="m" text-anchor="middle">5 ms</text>
+<line x1="520.0" y1="48" x2="520.0" y2="344" class="grid"/>
+<text x="520.0" y="360" class="m" text-anchor="middle">10 ms</text>
+<line x1="665.0" y1="48" x2="665.0" y2="344" class="grid"/>
+<text x="665.0" y="360" class="m" text-anchor="middle">15 ms</text>
+<line x1="810.0" y1="48" x2="810.0" y2="344" class="grid"/>
+<text x="810.0" y="360" class="m" text-anchor="middle">20 ms</text>
+<text x="218" y="67" class="" text-anchor="end">graph_stats</text>
+<text x="218" y="80" class="m" text-anchor="end">through the server</text>
+<rect x="230" y="54" width="37.7" height="22" rx="4" class="bar3"/>
+<text x="275.7" y="70" class="m" text-anchor="start">1.3 ms</text>
+<text x="218" y="107" class="" text-anchor="end">path_between</text>
+<text x="218" y="120" class="m" text-anchor="end">depth 10, store</text>
+<rect x="230" y="94" width="113.1" height="22" rx="4" class="bar2"/>
+<text x="351.1" y="110" class="m" text-anchor="start">3.9 ms</text>
+<text x="218" y="147" class="" text-anchor="end">find_symbol</text>
+<text x="218" y="160" class="m" text-anchor="end">through the server</text>
+<rect x="230" y="134" width="136.3" height="22" rx="4" class="bar3"/>
+<text x="374.3" y="150" class="m" text-anchor="start">4.7 ms</text>
+<text x="218" y="187" class="" text-anchor="end">impact_of</text>
+<text x="218" y="200" class="m" text-anchor="end">depth 20, store</text>
+<rect x="230" y="174" width="249.4" height="22" rx="4" class="bar2"/>
+<text x="487.4" y="190" class="m" text-anchor="start">8.6 ms</text>
+<text x="218" y="227" class="" text-anchor="end">coverage_stats</text>
+<text x="218" y="240" class="m" text-anchor="end">store</text>
+<rect x="230" y="214" width="319.0" height="22" rx="4" class="bar2"/>
+<text x="557.0" y="230" class="m" text-anchor="start">11 ms</text>
+<text x="218" y="267" class="" text-anchor="end">dead_code_report</text>
+<text x="218" y="280" class="m" text-anchor="end">store</text>
+<rect x="230" y="254" width="319.0" height="22" rx="4" class="bar2"/>
+<text x="557.0" y="270" class="m" text-anchor="start">11 ms</text>
+<text x="218" y="307" class="" text-anchor="end">impact_of</text>
+<text x="218" y="320" class="m" text-anchor="end">through the server</text>
+<rect x="230" y="294" width="437.9" height="22" rx="4" class="bar3"/>
+<text x="675.9" y="310" class="m" text-anchor="start">15.1 ms</text>
+<text x="20" y="382" class="m" text-anchor="start">Median of repeated calls on a graph of 1,583 nodes and 8,784 edges.</text>
+<rect x="20" y="392" width="12" height="12" rx="2" class="bar3"/>
+<text x="38" y="402" class="m" text-anchor="start">Full MCP round trip through codegraph-mcp</text>
+<rect x="316.59999999999997" y="392" width="12" height="12" rx="2" class="bar2"/>
+<text x="334.59999999999997" y="402" class="m" text-anchor="start">Store query only</text>
+</svg>
