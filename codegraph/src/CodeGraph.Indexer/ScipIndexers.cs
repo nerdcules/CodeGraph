@@ -18,7 +18,7 @@ internal static class ScipIndexers
             "https://sourcegraph.github.io/scip-java/ (coursier: cs install --contrib scip-java)",
             [".java", ".kt", ".kts", ".scala", ".gradle", ".xml", ".sbt"]),
         new("python", ["pyproject.toml", "setup.py", "setup.cfg"], "scip-python",
-            (dir, output) => ["index", ".", "--project-name", Path.GetFileName(dir), "--output", output],
+            (dir, output) => ["index", ".", "--project-name", Path.GetFileName(dir), "--output", output, .. PythonEnvironment(output)],
             "npm install -g @sourcegraph/scip-python",
             [".py", ".toml", ".cfg"]),
         new("go", ["go.work", "go.mod"], "scip-go",
@@ -30,6 +30,22 @@ internal static class ScipIndexers
             "rustup component add rust-analyzer",
             [".rs", ".toml"]),
     ];
+
+    /// <summary>
+    /// scip-python lists the installed packages with pip and stops when there is no pip. Without one, an empty
+    /// environment lets it index the project's own code (calls into packages are then unresolved).
+    /// </summary>
+    internal static string[] PythonEnvironment(string output)
+    {
+        if (ToolLocator.Find("pip") is not null || ToolLocator.Find("pip3") is not null)
+        {
+            return [];
+        }
+
+        var environment = output + ".environment.json";
+        File.WriteAllText(environment, "[]");
+        return ["--environment", environment];
+    }
 
     /// <summary>
     /// A go.work root has no module of its own, so scip-go would index nothing: name each used module's packages
@@ -152,6 +168,7 @@ internal static class ScipIndexers
             try
             {
                 File.Delete(output);
+                File.Delete(output + ".environment.json");
             }
             catch (IOException)
             {

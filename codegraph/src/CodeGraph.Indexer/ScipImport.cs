@@ -54,7 +54,7 @@ internal static class ScipImport
 
         var languages = new Dictionary<string, int>(StringComparer.Ordinal);
         var defined = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
-        var definitions = new List<(Document Document, string File, List<(Span Span, string Id, bool IsTest)> Scopes)>();
+        var definitions = new List<(Document Document, string File, List<(Span Span, string Id, bool IsTest)> Scopes, string[] Lines)>();
         var overrideAnnotated = new List<(string Id, string File)>();
         // Rust: the trait each `impl Trait for Type` header names, by file and line, to resolve impl members exactly.
         var implHeaders = new Dictionary<string, List<(int Line, string Trait)>>(StringComparer.Ordinal);
@@ -107,6 +107,7 @@ internal static class ScipImport
                 var isTest = shape.Kind == NodeKind.Method
                     && ((occurrence.SymbolRoles & TestRole) != 0 || annotations.Any(a => TestAnnotation.IsMatch(a)) || LooksLikeTest(symbol.Name, document.RelativePath, language));
                 var signature = symbolInfo?.SignatureDocumentation?.Text is { Length: > 0 } text ? Collapse(text)
+                    : FencedCode(symbolInfo?.Documentation) is { } code ? Collapse(code) // scip-python: ```python\ndef f(a) -> None:\n```
                     : symbolInfo?.DisplayName is { Length: > 0 } display ? display
                     : null;
                 var declaration = range.StartLine < lines.Length ? lines[range.StartLine] : "";
@@ -145,7 +146,7 @@ internal static class ScipImport
 
             // Innermost first: of two scopes holding a reference, the later-starting and earlier-ending one.
             scopes.Sort((a, b) => b.Item1.StartLine != a.Item1.StartLine ? b.Item1.StartLine.CompareTo(a.Item1.StartLine) : a.Item1.EndLine.CompareTo(b.Item1.EndLine));
-            definitions.Add((document, file, scopes));
+            definitions.Add((document, file, scopes, lines));
         }
 
         batch.Language = languages.Count == 0 ? "unknown" : languages.MaxBy(l => l.Value).Key;
@@ -156,7 +157,7 @@ internal static class ScipImport
 
         // Pass 2: references, from the innermost enclosing definition (or the file) to the symbol.
         var externals = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (document, file, scopes) in definitions)
+        foreach (var (document, file, scopes, lines) in definitions)
         {
             var fileId = $"scip:file:{document.RelativePath}";
             foreach (var occurrence in document.Occurrences)
@@ -180,6 +181,18 @@ internal static class ScipImport
                     if (ownerIsTest && kind == EdgeKind.Calls)
                     {
                         Edge(batch, target.Id, owner, EdgeKind.TestedBy, file);
+                    }
+
+                    // Python constructs by calling the class (`Cache(1)`): scip-python references the class, so the
+                    // call to its __init__ is the class reference followed by an argument list.
+                    if (target.Kind == NodeKind.Type && target.Language == "python" && FollowedByCall(lines, at)
+                        && defined.TryGetValue(occurrence.Symbol + "__init__().", out var init) && init.Id != owner)
+                    {
+                        Edge(batch, owner, init.Id, EdgeKind.Calls, file);
+                        if (ownerIsTest)
+                        {
+                            Edge(batch, init.Id, owner, EdgeKind.TestedBy, file);
+                        }
                     }
                 }
                 else if (ScipSymbol.Parse(occurrence.Symbol) is { IsMethod: true } external)
@@ -239,6 +252,37 @@ internal static class ScipImport
                 if (defined.ContainsKey(to))
                 {
                     (related.TryGetValue(from, out var set) ? set : related[from] = new(StringComparer.Ordinal)).Add(to);
+                }
+            }
+        }
+
+        // scip-python gives a nested class no symbol information, so no relationships: its bases are the type
+        // references inside `class Name(...)` on its definition line.
+        foreach (var (document, _, _, lines) in definitions)
+        {
+            foreach (var occurrence in document.Occurrences)
+            {
+                if ((occurrence.SymbolRoles & DefinitionRole) == 0 || !defined.TryGetValue(occurrence.Symbol, out var type)
+                    || type is not { Kind: NodeKind.Type, Language: "python" } || related.ContainsKey(occurrence.Symbol)
+                    || info.TryGetValue(occurrence.Symbol, out var known) && known.Relationships.Count > 0)
+                {
+                    continue;
+                }
+
+                var name = RangeOf(occurrence);
+                if (name.StartLine >= lines.Length || !System.Text.RegularExpressions.Regex.IsMatch(lines[name.StartLine], @"^\s*class\s+\w+\s*\("))
+                {
+                    continue;
+                }
+
+                foreach (var reference in document.Occurrences)
+                {
+                    var at = RangeOf(reference);
+                    if ((reference.SymbolRoles & DefinitionRole) == 0 && at.StartLine == name.StartLine && at.StartCharacter > name.EndCharacter
+                        && reference.Symbol != occurrence.Symbol && defined.TryGetValue(reference.Symbol, out var super) && super.Kind == NodeKind.Type)
+                    {
+                        (related.TryGetValue(occurrence.Symbol, out var set) ? set : related[occurrence.Symbol] = new(StringComparer.Ordinal)).Add(reference.Symbol);
+                    }
                 }
             }
         }
@@ -318,6 +362,37 @@ internal static class ScipImport
         }
 
         return n;
+    }
+
+    private static bool FollowedByCall(string[] lines, Span at)
+    {
+        if (at.EndLine >= lines.Length)
+        {
+            return false;
+        }
+
+        var line = lines[at.EndLine];
+        var i = at.EndCharacter;
+        while (i < line.Length && line[i] == ' ')
+        {
+            i++;
+        }
+
+        return i < line.Length && line[i] == '(';
+    }
+
+    /// <summary>The code in a documentation entry that is one fenced block, as scip-python writes a declaration.</summary>
+    private static string? FencedCode(IEnumerable<string>? documentation)
+    {
+        var first = documentation?.FirstOrDefault()?.Trim();
+        if (first is null || !first.StartsWith("```", StringComparison.Ordinal) || !first.EndsWith("```", StringComparison.Ordinal) || first.Length < 7)
+        {
+            return null;
+        }
+
+        var body = first[3..^3];
+        var newline = body.IndexOf('\n');
+        return newline < 0 ? null : body[(newline + 1)..].Trim() is { Length: > 0 } code ? code : null;
     }
 
     private static TypeKind ParentKind(string symbol, Dictionary<string, GraphNode> defined) =>

@@ -17,7 +17,8 @@ python3 tools/corpus/gen.py --lang csharp --profile collisions --out /tmp/c && \
 profile and seed, `--jobs` at a time. With `--base`, the host's JDK, Maven, scip-java and their caches are mounted
 read-only, along with the host's Go toolchain and scip-go and its Rust toolchain with rust-analyzer, and the
 containers run with `--network none`. Go and Rust have no inheritance, so they skip `deep-hierarchy`. Python
-needs scip-python (`npm install -g @sourcegraph/scip-python`); without it `run.py` skips Python and says so. Results go to `artifacts/corpus/`: one JSON per run,
+needs scip-python (`npm install -g @sourcegraph/scip-python`), mounted the same way; without it `run.py` skips
+Python and says so. Python has no single-file or multi-project construction. Results go to `artifacts/corpus/`: one JSON per run,
 `summary.md` and `summary.json`.
 
 | profile | construction |

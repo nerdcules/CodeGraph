@@ -1304,7 +1304,7 @@ def answer_key(model: Model, w: Writer) -> dict:
     callers: dict[str, set] = {}
     all_types = [t for m in model.modules for t in model.all_types(m)]
     for t in all_types:
-        if not t.program and not (t.test and model.lang in NO_INHERITANCE):
+        if not t.program and not (t.test and model.lang in (*NO_INHERITANCE, "python")):
             types[w.type_fq(t)] = t.kind
         for s in ([t.base] if t.base else []) + t.ifaces:
             edges["Supertype"].add((w.type_fq(t), w.type_fq(s)))
@@ -1316,7 +1316,7 @@ def answer_key(model: Model, w: Writer) -> dict:
         for m in t.template_calls:
             edges["TemplateCalls"].add((template, w.key(m)))
             callers.setdefault(w.key(m), set()).add(template)
-        if t.program and model.lang in ("typescript", "javascript", "angular", "go", "rust"):
+        if t.program and model.lang in ("typescript", "javascript", "angular", "go", "rust", "python"):
             main = t.methods[0]
             fq = w.program_key(t)
             methods[fq] = dict(entry=True, test=False, dead=False, ctor=False)
@@ -1326,7 +1326,7 @@ def answer_key(model: Model, w: Writer) -> dict:
                     callers.setdefault(callee, set()).add(fq)
             continue
         for m in t.methods:
-            if t.test and m.ctor and model.lang not in ("csharp", "java", "python"):
+            if t.test and m.ctor and model.lang not in ("csharp", "java"):
                 continue  # a describe block or a test module has no constructor
             k = w.key(m) if not (t.program and model.lang in ("csharp",)) else f"{w.type_fq(t)}.Main/0"
             methods[k] = dict(entry=m.entry, test=m.test, dead=m.dead, ctor=m.ctor, lifecycle=m.lifecycle, abstract=m.abstract)
@@ -1376,6 +1376,12 @@ def call_targets(kind, target: Method, extra, w: Writer) -> list[str]:
     if kind in ("new", "lambda"):
         return [w.key(target.owner.ctor()), w.key(target)]
     if kind == "iface":
+        if w.m.lang == "python":
+            # Pyright narrows `f: IShape = Impl(1)` to Impl, so the call resolves to the implementation it reaches.
+            for t in [extra, *extra.ancestors()]:
+                found = next((m for m in t.methods if m.name == target.name and m.arity == target.arity and not m.abstract), None)
+                if found:
+                    return [w.key(extra.ctor()), w.key(found)]
         return [w.key(extra.ctor()), w.key(target)]
     return [w.key(target)]
 

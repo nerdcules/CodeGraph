@@ -238,6 +238,53 @@ public sealed class ScipImportTests : IDisposable
         Assert.Null(store.GetNode(ScipImport.IdOf("scip-go gomod example.com/app . `example.com/app/shapes.test`/main().")));
     }
 
+    /// <summary>
+    /// scip-python writes a declaration as a fenced block in the documentation and references the class, not
+    /// __init__, where code constructs it: the block is the signature, and Cache(1) calls Cache.__init__. A nested
+    /// class gets no symbol information, so its bases come from its class line.
+    /// </summary>
+    [Fact]
+    public async Task Python_signatures_come_from_documentation_and_calling_a_class_calls_its_init()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "app"));
+        var text = "class Cache:\n    def __init__(self, a):\n        self.a = a\n\ndef build():\n    return Cache (1)\n\nclass Box:\n    class Inner(Cache):\n        pass\n";
+        const string P = "scip-python python app 0.1.0 `app.cache`/";
+        Occurrence Def(string symbol, int line, int column, int endLine) => new()
+        {
+            Symbol = symbol, SymbolRoles = (int)SymbolRole.Definition,
+            SingleLineRange = new SingleLineRange { Line = line, StartCharacter = column, EndCharacter = column + 5 },
+            MultiLineEnclosingRange = new MultiLineRange { StartLine = line, StartCharacter = 0, EndLine = endLine, EndCharacter = 80 },
+        };
+        var document = new Document { RelativePath = "app/cache.py", Language = "python", Text = text };
+        document.Occurrences.Add(Def(P + "Cache#", 0, 6, 2));
+        document.Occurrences.Add(Def(P + "Cache#__init__().", 1, 8, 2));
+        document.Occurrences.Add(Def(P + "build().", 4, 4, 5));
+        document.Occurrences.Add(new Occurrence { Symbol = P + "Cache#", SingleLineRange = new SingleLineRange { Line = 5, StartCharacter = 11, EndCharacter = 16 } });
+        document.Symbols.Add(new SymbolInformation { Symbol = P + "Cache#" });
+        var init = new SymbolInformation { Symbol = P + "Cache#__init__()." };
+        init.Documentation.Add("```python\ndef __init__(\n  self,\n  a\n) -> None:\n```");
+        document.Symbols.Add(init);
+        document.Symbols.Add(new SymbolInformation { Symbol = P + "build()." });
+        // A nested class: no symbol information at all, only its definition and the base it names.
+        document.Occurrences.Add(Def(P + "Box#", 7, 6, 9));
+        document.Occurrences.Add(Def(P + "Box#Inner#", 8, 10, 9));
+        document.Occurrences.Add(new Occurrence { Symbol = P + "Cache#", SingleLineRange = new SingleLineRange { Line = 8, StartCharacter = 16, EndCharacter = 21 } });
+        document.Symbols.Add(new SymbolInformation { Symbol = P + "Box#" });
+        var index = new Scip.Index { Metadata = new Metadata { ToolInfo = new ToolInfo { Name = "scip-python", Version = "0.6.8" }, ProjectRoot = new Uri(_root).AbsoluteUri } };
+        index.Documents.Add(document);
+        var path = Path.Combine(_root, "index.scip");
+        await File.WriteAllBytesAsync(path, Google.Protobuf.MessageExtensions.ToByteArray(index), TestContext.Current.CancellationToken);
+        var db = Path.Combine(_root, "graph.db");
+        await GraphImport.WriteAsync(ScipImport.Read(path, _ => { }), db, _ => { }, TestContext.Current.CancellationToken);
+
+        using var store = GraphStore.Open(db, readOnly: true, TimeSpan.FromSeconds(5));
+        var initId = ScipImport.IdOf(P + "Cache#__init__().");
+        Assert.Equal("def __init__( self, a ) -> None:", store.GetNode(initId)!.Signature);
+        Assert.Contains(store.EdgesFrom(ScipImport.IdOf(P + "build().")), e => e.Kind == EdgeKind.Calls && e.Target.Id == initId);
+        Assert.Contains(store.EdgesFrom(ScipImport.IdOf(P + "build().")), e => e.Kind == EdgeKind.References && e.Target.Id == ScipImport.IdOf(P + "Cache#"));
+        Assert.Contains(store.EdgesFrom(ScipImport.IdOf(P + "Box#Inner#")), e => e.Kind == EdgeKind.Inherits && e.Target.Id == ScipImport.IdOf(P + "Cache#"));
+    }
+
     [Fact]
     public void A_go_workspace_is_indexed_through_each_used_module()
     {

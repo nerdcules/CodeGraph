@@ -36,6 +36,10 @@ Indexers differ in what they put in the index, and the importer evens that out:
   to its self type, and the trait in the descriptor becomes `Implements` edges. `#[test]` marks a test.
 - **scip-go** calls interface members `MethodSpecification`; they are methods. Go's generated test main lies
   outside the module and is skipped. A `go.work` root is indexed through each module it uses.
+- **scip-python** writes declarations as a fenced block in the documentation, which becomes the signature. It
+  references the class where code calls it (`Cache(1)`), so that is a call to `__init__`. A nested class gets no
+  symbol information, so its bases come from its `class Name(...)` line. Without `pip` on PATH it gets an empty
+  environment rather than stopping.
 
 SCIP is the breadth route. It tells calls and reads apart only by the target's kind, and it carries no
 attributes. A language that matters enough gets a native extractor, as TypeScript did.
