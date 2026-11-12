@@ -20,9 +20,13 @@ public sealed class GraphStore : IDisposable
         nameof(EdgeKind.InvokedByFramework),
         nameof(EdgeKind.References),
         nameof(EdgeKind.CallsExternal),
+        nameof(EdgeKind.Imports),
+        nameof(EdgeKind.Injects),
+        nameof(EdgeKind.Renders),
     ];
 
-    // References only ever points at types, so it widens impact_of(type) without changing member walks.
+    // References, Injects and Renders only ever point at types, so they widen impact_of(type) without changing
+    // member walks: a service's dependents include what injects it, a component's include the templates using it.
     private static readonly string[] ImpactEdgeKinds =
     [
         nameof(EdgeKind.Calls),
@@ -30,10 +34,12 @@ public sealed class GraphStore : IDisposable
         nameof(EdgeKind.Implements),
         nameof(EdgeKind.Inherits),
         nameof(EdgeKind.References),
+        nameof(EdgeKind.Injects),
+        nameof(EdgeKind.Renders),
     ];
 
     /// <summary>Bumped when the indexer's output changes shape; a mismatch forces a full rebuild.</summary>
-    public const string SchemaVersion = "5";
+    public const string SchemaVersion = "6";
 
     private readonly DuckDBConnection _connection;
     private readonly string _dbPath;
@@ -123,7 +129,8 @@ public sealed class GraphStore : IDisposable
         IEnumerable<FileStamp> files,
         IReadOnlyDictionary<string, string> meta,
         IEnumerable<SearchDocument>? search = null,
-        IEnumerable<NodeEmbedding>? embeddings = null)
+        IEnumerable<NodeEmbedding>? embeddings = null,
+        string language = Languages.CSharp)
     {
         using var transaction = _connection.BeginTransaction();
 
@@ -179,7 +186,7 @@ public sealed class GraphStore : IDisposable
             WriteEmbeddings(transaction, embeddings);
         }
 
-        WriteFiles(transaction, files);
+        WriteFiles(transaction, files, language);
 
         using (var command = _connection.CreateCommand())
         {
@@ -221,8 +228,8 @@ public sealed class GraphStore : IDisposable
         return meta;
     }
 
-    /// <summary>The stamp of every source file as of the last index, keyed by path.</summary>
-    public IReadOnlyDictionary<string, FileStamp> IndexedFiles()
+    /// <summary>The stamp of every source file as of the last index, keyed by path; only one language's with <paramref name="language"/>.</summary>
+    public IReadOnlyDictionary<string, FileStamp> IndexedFiles(string? language = null)
     {
         var files = new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
         if (!TableExists("files"))
@@ -231,7 +238,8 @@ public sealed class GraphStore : IDisposable
         }
 
         using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT path, hash, size, mtime_ticks FROM files;";
+        command.CommandText = "SELECT path, hash, size, mtime_ticks FROM files WHERE $language IS NULL OR language = $language;";
+        command.Parameters.Add(P("language", language));
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -242,11 +250,12 @@ public sealed class GraphStore : IDisposable
         return files;
     }
 
-    /// <summary>Paths of the project files (.csproj) behind every Project node.</summary>
-    public IReadOnlyList<string> ProjectFilePaths()
+    /// <summary>Paths of the project files (.csproj, tsconfig.json, pom.xml) behind every Project node of a language.</summary>
+    public IReadOnlyList<string> ProjectFilePaths(string? language = Languages.CSharp)
     {
         using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT DISTINCT file_path FROM nodes WHERE kind = 'Project' AND file_path IS NOT NULL;";
+        command.CommandText = "SELECT DISTINCT file_path FROM nodes WHERE kind = 'Project' AND file_path IS NOT NULL AND ($language IS NULL OR language = $language);";
+        command.Parameters.Add(P("language", language));
         var paths = new List<string>();
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -255,6 +264,120 @@ public sealed class GraphStore : IDisposable
         }
 
         return paths;
+    }
+
+    /// <summary>
+    /// Every path one language's rows hang off: its stamped source files and the file paths of its nodes (project
+    /// files included). An importer removes exactly these before writing that language again, leaving the others.
+    /// </summary>
+    public IReadOnlySet<string> LanguagePaths(string language)
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT path FROM files WHERE language = $language
+            UNION SELECT file_path FROM nodes WHERE language = $language AND file_path IS NOT NULL;
+            """;
+        command.Parameters.Add(P("language", language));
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            paths.Add(reader.GetString(0));
+        }
+
+        return paths;
+    }
+
+    /// <summary>The languages this graph holds, with node counts, most first.</summary>
+    public IReadOnlyList<(string Language, int Nodes)> LanguageCounts()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT language, COUNT(*) FROM nodes WHERE kind <> 'External' GROUP BY language ORDER BY 2 DESC, 1;";
+        var counts = new List<(string, int)>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            counts.Add((reader.GetString(0), reader.GetInt32(1)));
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// Copies every other language's rows from the graph at <paramref name="sourceDb"/> into this one: a full C#
+    /// rebuild writes a fresh file, and a TypeScript or Java part indexed by another extractor must survive it.
+    /// Rows are matched by node language and by the files those nodes and their edge origins hang off, the same
+    /// scoping <see cref="LanguagePaths"/> gives an importer. A source from before schema 6 holds no other language.
+    /// </summary>
+    public int CopyOtherLanguages(string sourceDb, string exceptLanguage)
+    {
+        if (!File.Exists(sourceDb))
+        {
+            return 0;
+        }
+
+        Execute($"ATTACH '{sourceDb.Replace("'", "''")}' AS other (READ_ONLY);");
+        try
+        {
+            using (var probe = _connection.CreateCommand())
+            {
+                probe.CommandText = "SELECT COUNT(*) FROM information_schema.columns WHERE table_catalog = 'other' AND table_name = 'files' AND column_name = 'language';";
+                if (Convert.ToInt64(probe.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 0)
+                {
+                    return 0;
+                }
+            }
+
+            using var transaction = _connection.BeginTransaction();
+            var language = P("language", exceptLanguage);
+            void Run(string sql)
+            {
+                using var command = _connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = sql;
+                command.Parameters.Add(P("language", exceptLanguage));
+                command.ExecuteNonQuery();
+            }
+
+            const string ForeignNodes = "SELECT id FROM other.nodes WHERE language <> $language";
+            const string ForeignPaths =
+                "SELECT path FROM other.files WHERE language <> $language " +
+                "UNION SELECT file_path FROM other.nodes WHERE language <> $language AND file_path IS NOT NULL";
+            Run("CREATE TEMP TABLE IF NOT EXISTS copy_paths (path VARCHAR);");
+            Run("DELETE FROM copy_paths;");
+            Run($"INSERT INTO copy_paths {ForeignPaths};");
+            Run($"INSERT INTO nodes ({NodeColumns}) SELECT {NodeColumns} FROM other.nodes WHERE language <> $language ON CONFLICT DO NOTHING;");
+            Run("INSERT INTO edge_origins SELECT from_id, to_id, kind, file_path FROM other.edge_origins WHERE file_path IN (SELECT path FROM copy_paths) ON CONFLICT DO NOTHING;");
+            Run(
+                """
+                INSERT INTO edges SELECT DISTINCT e.from_id, e.to_id, e.kind FROM other.edges e
+                JOIN other.edge_origins o ON o.from_id = e.from_id AND o.to_id = e.to_id AND o.kind = e.kind
+                WHERE o.file_path IN (SELECT path FROM copy_paths)
+                ON CONFLICT DO NOTHING;
+                """);
+            Run("INSERT INTO files (path, hash, size, mtime_ticks, language) SELECT path, hash, size, mtime_ticks, language FROM other.files WHERE language <> $language ON CONFLICT DO NOTHING;");
+            Run($"INSERT INTO search_docs SELECT node_id, length FROM other.search_docs WHERE node_id IN ({ForeignNodes}) ON CONFLICT DO NOTHING;");
+            Run($"INSERT INTO search_terms SELECT node_id, term, tf FROM other.search_terms WHERE node_id IN ({ForeignNodes}) ON CONFLICT DO NOTHING;");
+            Run($"INSERT INTO embeddings SELECT node_id, text_hash, vector FROM other.embeddings WHERE node_id IN ({ForeignNodes}) ON CONFLICT DO NOTHING;");
+            // Per-language meta (lang.<language>.*) rides along; the rebuilding language writes its own.
+            Run("INSERT INTO meta SELECT key, value FROM other.meta WHERE key LIKE 'lang.%' AND key NOT LIKE 'lang.' || $language || '.%' ON CONFLICT DO NOTHING;");
+            int copied;
+            using (var count = _connection.CreateCommand())
+            {
+                count.Transaction = transaction;
+                count.CommandText = "SELECT COUNT(*) FROM nodes WHERE language <> $language;";
+                count.Parameters.Add(language);
+                copied = Convert.ToInt32(count.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            transaction.Commit();
+            return copied;
+        }
+        finally
+        {
+            Execute("DETACH other;");
+        }
     }
 
     /// <summary>
@@ -317,6 +440,7 @@ public sealed class GraphStore : IDisposable
                     .AppendValue(node.IsAsync)
                     .AppendValue(node.IsOverride)
                     .AppendValue(node.MemberKind.ToString())
+                    .AppendValue(node.Language)
                     .EndRow();
             }
         }
@@ -336,7 +460,8 @@ public sealed class GraphStore : IDisposable
                 accessibility = excluded.accessibility, is_static = excluded.is_static,
                 is_abstract = excluded.is_abstract, is_virtual = excluded.is_virtual,
                 is_sealed = excluded.is_sealed, is_async = excluded.is_async,
-                is_override = excluded.is_override, member_kind = excluded.member_kind;
+                is_override = excluded.is_override, member_kind = excluded.member_kind,
+                language = excluded.language;
             """, transaction);
         Execute("DELETE FROM stage_nodes;", transaction);
 
@@ -370,7 +495,7 @@ public sealed class GraphStore : IDisposable
         Execute("DELETE FROM stage_edge_origins;", transaction);
     }
 
-    private void WriteFiles(DuckDBTransaction transaction, IEnumerable<FileStamp> files)
+    private void WriteFiles(DuckDBTransaction transaction, IEnumerable<FileStamp> files, string language)
     {
         Stage(transaction, "stage_files", "path VARCHAR, hash VARCHAR, size BIGINT, mtime_ticks BIGINT");
         using (var appender = StageAppender("stage_files"))
@@ -383,11 +508,12 @@ public sealed class GraphStore : IDisposable
 
         Execute(
             """
-            INSERT INTO files
-            SELECT * FROM stage_files
+            INSERT INTO files (path, hash, size, mtime_ticks, language)
+            SELECT path, hash, size, mtime_ticks, $language FROM stage_files
             QUALIFY row_number() OVER (PARTITION BY path ORDER BY rowid DESC) = 1
-            ON CONFLICT (path) DO UPDATE SET hash = excluded.hash, size = excluded.size, mtime_ticks = excluded.mtime_ticks;
-            """, transaction);
+            ON CONFLICT (path) DO UPDATE SET hash = excluded.hash, size = excluded.size, mtime_ticks = excluded.mtime_ticks,
+                language = excluded.language;
+            """, transaction, language: language);
         Execute("DELETE FROM stage_files;", transaction);
     }
 
@@ -395,7 +521,7 @@ public sealed class GraphStore : IDisposable
         "id VARCHAR, kind VARCHAR, name VARCHAR, full_name VARCHAR, signature VARCHAR, file_path VARCHAR, " +
         "start_line INTEGER, end_line INTEGER, is_test BOOLEAN, type_kind VARCHAR, accessibility VARCHAR, " +
         "is_static BOOLEAN, is_abstract BOOLEAN, is_virtual BOOLEAN, is_sealed BOOLEAN, is_async BOOLEAN, " +
-        "is_override BOOLEAN, member_kind VARCHAR";
+        "is_override BOOLEAN, member_kind VARCHAR, language VARCHAR";
 
     /// <summary>A connection-local, unconstrained staging table; it lives in DuckDB's temp catalog, never in the file.</summary>
     private void Stage(DuckDBTransaction transaction, string table, string columns)
@@ -571,7 +697,7 @@ public sealed class GraphStore : IDisposable
     /// "Where's the code that does X": BM25 over the names, signatures, doc comments and body identifiers the
     /// indexer tokenized. Nodes matching more of the query's terms rank first, then by score.
     /// </summary>
-    public IReadOnlyList<SearchHit> Search(string query, NodeKind? kind = null, string? filePattern = null, int limit = 20)
+    public IReadOnlyList<SearchHit> Search(string query, NodeKind? kind = null, string? filePattern = null, int limit = 20, string? language = null)
     {
         var terms = SearchText.QueryTerms(query);
         if (terms.Count == 0 || !TableExists("search_terms"))
@@ -605,6 +731,7 @@ public sealed class GraphStore : IDisposable
              JOIN nodes n ON n.id = sc.node_id
              WHERE ($kind IS NULL OR n.kind = $kind)
                AND ($file IS NULL OR n.file_path ILIKE $file)
+               AND ($language IS NULL OR n.language = $language)
              ORDER BY sc.matched DESC, sc.score DESC, n.full_name
              LIMIT $limit;
              """;
@@ -612,6 +739,7 @@ public sealed class GraphStore : IDisposable
         command.Parameters.Add(P("kind", kind?.ToString()));
         command.Parameters.Add(P("file", filePattern is null ? null : $"%{filePattern}%"));
         command.Parameters.Add(P("limit", Math.Clamp(limit, 1, 200)));
+        command.Parameters.Add(P("language", language));
 
         var hits = new List<SearchHit>();
         using var reader = command.ExecuteReader();
@@ -658,7 +786,8 @@ public sealed class GraphStore : IDisposable
         bool? isOverride = null,
         MemberKind? memberKind = null,
         string nameMatch = "Contains",
-        int offset = 0)
+        int offset = 0,
+        string? language = null)
     {
         // `_` and `%` are wildcards to ILIKE but ordinary characters in identifiers (Save_works, <Main>$).
         var literal = EscapeLike(query);
@@ -683,6 +812,7 @@ public sealed class GraphStore : IDisposable
                AND ($is_async IS NULL OR is_async = $is_async)
                AND ($is_override IS NULL OR is_override = $is_override)
                AND ($member_kind IS NULL OR member_kind = $member_kind)
+               AND ($language IS NULL OR language = $language)
              ORDER BY
                CASE WHEN LOWER(name) = LOWER($exact) THEN 0 ELSE 1 END,
                LENGTH(name),
@@ -702,6 +832,7 @@ public sealed class GraphStore : IDisposable
         command.Parameters.Add(P("is_async", isAsync.HasValue ? (object?)isAsync.Value : null));
         command.Parameters.Add(P("is_override", isOverride.HasValue ? (object?)isOverride.Value : null));
         command.Parameters.Add(P("member_kind", memberKind?.ToString()));
+        command.Parameters.Add(P("language", language));
         return ReadNodes(command);
     }
 
@@ -938,7 +1069,7 @@ public sealed class GraphStore : IDisposable
     /// <paramref name="includeExternal"/> ranks framework and NuGet members too; <paramref name="nameFilter"/>
     /// keeps names containing it (<c>System.IO</c>: which file APIs the solution leans on).
     /// </summary>
-    public IReadOnlyList<(GraphNode Method, int CallerCount)> MostCalled(int limit, int minCallers, int offset, bool includeExternal = false, string? nameFilter = null)
+    public IReadOnlyList<(GraphNode Method, int CallerCount)> MostCalled(int limit, int minCallers, int offset, bool includeExternal = false, string? nameFilter = null, string? language = null)
     {
         using var command = _connection.CreateCommand();
         var kinds = includeExternal ? "('Method', 'External')" : "('Method')";
@@ -949,6 +1080,7 @@ public sealed class GraphStore : IDisposable
              LEFT JOIN edges e ON e.to_id = n.id AND e.kind IN ('Calls', 'CallsExternal')
              WHERE n.kind IN {kinds}
                AND ($name IS NULL OR n.full_name ILIKE $name ESCAPE '\')
+               AND ($language IS NULL OR n.language = $language)
              GROUP BY {GroupByNodeColumns}
              HAVING COUNT(e.from_id) >= $min_callers
              ORDER BY caller_count DESC, n.full_name
@@ -956,6 +1088,7 @@ public sealed class GraphStore : IDisposable
              """;
         command.Parameters.Add(P("min_callers", minCallers));
         command.Parameters.Add(P("name", nameFilter is null ? null : $"%{EscapeLike(nameFilter)}%"));
+        command.Parameters.Add(P("language", language));
         command.Parameters.Add(P("limit", Math.Clamp(limit, 1, 100)));
         command.Parameters.Add(P("offset", Math.Max(0, offset)));
         var results = new List<(GraphNode, int)>();
@@ -1421,17 +1554,17 @@ public sealed class GraphStore : IDisposable
     // Column list for SELECT without table alias.
     private const string NodeColumns =
         "id, kind, name, full_name, signature, file_path, start_line, end_line, is_test, " +
-        "type_kind, accessibility, is_static, is_abstract, is_virtual, is_sealed, is_async, is_override, member_kind";
+        "type_kind, accessibility, is_static, is_abstract, is_virtual, is_sealed, is_async, is_override, member_kind, language";
 
     // Column list for JOIN queries where the nodes table is aliased 'n'.
     private const string QualifiedNodeColumns =
         "n.id, n.kind, n.name, n.full_name, n.signature, n.file_path, n.start_line, n.end_line, n.is_test, " +
-        "n.type_kind, n.accessibility, n.is_static, n.is_abstract, n.is_virtual, n.is_sealed, n.is_async, n.is_override, n.member_kind";
+        "n.type_kind, n.accessibility, n.is_static, n.is_abstract, n.is_virtual, n.is_sealed, n.is_async, n.is_override, n.member_kind, n.language";
 
     // DuckDB requires every non-aggregated SELECT column to appear in GROUP BY (no PK shortcut).
     private const string GroupByNodeColumns =
         "n.id, n.kind, n.name, n.full_name, n.signature, n.file_path, n.start_line, n.end_line, n.is_test, " +
-        "n.type_kind, n.accessibility, n.is_static, n.is_abstract, n.is_virtual, n.is_sealed, n.is_async, n.is_override, n.member_kind";
+        "n.type_kind, n.accessibility, n.is_static, n.is_abstract, n.is_virtual, n.is_sealed, n.is_async, n.is_override, n.member_kind, n.language";
 
     private static IReadOnlyList<GraphNode> ReadNodes(DuckDBCommand command)
     {
@@ -1452,50 +1585,32 @@ public sealed class GraphStore : IDisposable
         while (reader.Read())
         {
             var kind = Enum.Parse<EdgeKind>(reader.GetString(0));
-            // columns 1..18 are the node columns (offset by 1 for the edge kind column)
-            var node = new GraphNode(
-                Id: reader.GetString(1),
-                Kind: Enum.Parse<NodeKind>(reader.GetString(2)),
-                Name: reader.GetString(3),
-                FullName: reader.GetString(4),
-                Signature: reader.IsDBNull(5) ? null : reader.GetString(5),
-                FilePath: reader.IsDBNull(6) ? null : reader.GetString(6),
-                StartLine: reader.GetInt32(7),
-                EndLine: reader.GetInt32(8),
-                IsTest: reader.GetBoolean(9),
-                TypeKind: Enum.Parse<TypeKind>(reader.GetString(10)),
-                Accessibility: Enum.Parse<Accessibility>(reader.GetString(11)),
-                IsStatic: reader.GetBoolean(12),
-                IsAbstract: reader.GetBoolean(13),
-                IsVirtual: reader.GetBoolean(14),
-                IsSealed: reader.GetBoolean(15),
-                IsAsync: reader.GetBoolean(16),
-                IsOverride: reader.GetBoolean(17),
-                MemberKind: Enum.Parse<MemberKind>(reader.GetString(18)));
+            var node = ReadNode(reader, offset: 1); // the edge kind comes first
             results.Add((kind, node));
         }
         return results;
     }
 
-    private static GraphNode ReadNode(System.Data.Common.DbDataReader reader) => new(
-        Id: reader.GetString(0),
-        Kind: Enum.Parse<NodeKind>(reader.GetString(1)),
-        Name: reader.GetString(2),
-        FullName: reader.GetString(3),
-        Signature: reader.IsDBNull(4) ? null : reader.GetString(4),
-        FilePath: reader.IsDBNull(5) ? null : reader.GetString(5),
-        StartLine: reader.GetInt32(6),
-        EndLine: reader.GetInt32(7),
-        IsTest: reader.GetBoolean(8),
-        TypeKind: Enum.Parse<TypeKind>(reader.GetString(9)),
-        Accessibility: Enum.Parse<Accessibility>(reader.GetString(10)),
-        IsStatic: reader.GetBoolean(11),
-        IsAbstract: reader.GetBoolean(12),
-        IsVirtual: reader.GetBoolean(13),
-        IsSealed: reader.GetBoolean(14),
-        IsAsync: reader.GetBoolean(15),
-        IsOverride: reader.GetBoolean(16),
-        MemberKind: Enum.Parse<MemberKind>(reader.GetString(17)));
+    private static GraphNode ReadNode(System.Data.Common.DbDataReader reader, int offset = 0) => new(
+        Id: reader.GetString(offset),
+        Kind: Enum.Parse<NodeKind>(reader.GetString(offset + 1)),
+        Name: reader.GetString(offset + 2),
+        FullName: reader.GetString(offset + 3),
+        Signature: reader.IsDBNull(offset + 4) ? null : reader.GetString(offset + 4),
+        FilePath: reader.IsDBNull(offset + 5) ? null : reader.GetString(offset + 5),
+        StartLine: reader.GetInt32(offset + 6),
+        EndLine: reader.GetInt32(offset + 7),
+        IsTest: reader.GetBoolean(offset + 8),
+        TypeKind: Enum.Parse<TypeKind>(reader.GetString(offset + 9)),
+        Accessibility: Enum.Parse<Accessibility>(reader.GetString(offset + 10)),
+        IsStatic: reader.GetBoolean(offset + 11),
+        IsAbstract: reader.GetBoolean(offset + 12),
+        IsVirtual: reader.GetBoolean(offset + 13),
+        IsSealed: reader.GetBoolean(offset + 14),
+        IsAsync: reader.GetBoolean(offset + 15),
+        IsOverride: reader.GetBoolean(offset + 16),
+        MemberKind: Enum.Parse<MemberKind>(reader.GetString(offset + 17)),
+        Language: reader.GetString(offset + 18));
 
     private void EnsureSchema()
     {
@@ -1519,7 +1634,8 @@ public sealed class GraphStore : IDisposable
                 is_sealed     BOOLEAN NOT NULL DEFAULT false,
                 is_async      BOOLEAN NOT NULL DEFAULT false,
                 is_override   BOOLEAN NOT NULL DEFAULT false,
-                member_kind   VARCHAR NOT NULL DEFAULT 'Ordinary'
+                member_kind   VARCHAR NOT NULL DEFAULT 'Ordinary',
+                language      VARCHAR NOT NULL DEFAULT 'csharp'
             )
             """);
         Execute("CREATE INDEX IF NOT EXISTS ix_nodes_name ON nodes (name)");
@@ -1551,7 +1667,8 @@ public sealed class GraphStore : IDisposable
                 path        VARCHAR PRIMARY KEY,
                 hash        VARCHAR NOT NULL,
                 size        BIGINT NOT NULL,
-                mtime_ticks BIGINT NOT NULL
+                mtime_ticks BIGINT NOT NULL,
+                language    VARCHAR NOT NULL DEFAULT 'csharp'
             )
             """);
         Execute("CREATE TABLE IF NOT EXISTS meta (key VARCHAR PRIMARY KEY, value VARCHAR NOT NULL)");
@@ -1591,6 +1708,8 @@ public sealed class GraphStore : IDisposable
         EnsureColumn("nodes", "is_async",     "BOOLEAN DEFAULT false");
         EnsureColumn("nodes", "is_override",  "BOOLEAN DEFAULT false");
         EnsureColumn("nodes", "member_kind",  "VARCHAR DEFAULT 'Ordinary'");
+        EnsureColumn("nodes", "language",     "VARCHAR DEFAULT 'csharp'");
+        EnsureColumn("files", "language",     "VARCHAR DEFAULT 'csharp'");
     }
 
     private void EnsureColumn(string table, string column, string definition)
@@ -1598,7 +1717,7 @@ public sealed class GraphStore : IDisposable
         Execute($"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition};");
     }
 
-    private void Execute(string sql, DuckDBTransaction? transaction = null, string? paths = null)
+    private void Execute(string sql, DuckDBTransaction? transaction = null, string? paths = null, string? language = null)
     {
         using var command = _connection.CreateCommand();
         command.Transaction = transaction;
@@ -1606,6 +1725,11 @@ public sealed class GraphStore : IDisposable
         if (paths is not null)
         {
             command.Parameters.Add(P("paths", paths));
+        }
+
+        if (language is not null)
+        {
+            command.Parameters.Add(P("language", language));
         }
 
         command.ExecuteNonQuery();

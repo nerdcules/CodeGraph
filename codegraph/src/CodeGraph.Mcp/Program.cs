@@ -107,20 +107,20 @@ void AddGraph(IServiceCollection services)
                 Name = "codegraph",
                 Title = "CodeGraph",
                 Version = ServerVersion(),
-                Description = "Compiler-built code graph for C# solutions: who calls this, what breaks if it changes, "
+                Description = "Compiler-built code graph for C#, TypeScript, Angular and other codebases: who calls this, what breaks if it changes, "
                             + "which tests guard it, where is the code that does X. Read-only, local, no network.",
                 WebsiteUrl = "https://github.com/nerdcules/CodeGraph",
                 Icons = [new Icon { Source = LogoDataUri(), MimeType = "image/svg+xml", Sizes = ["any"] }],
             };
             options.ServerInstructions =
                 """
-                codegraph answers structural questions about the indexed C# solution from a Roslyn-built graph, so prefer
+                codegraph answers structural questions about the indexed codebase from a compiler-built graph, so prefer
                 it to grepping or opening files. Typical turn: find_symbol (or search_code when you only know what the
                 code does) → impact_of / callers_of / references_to → snippet on the two or three declarations that matter.
-                Ids in [brackets] are Roslyn doc-comment ids; pass them back verbatim. An answer that starts with
+                Ids in [brackets] are opaque (Roslyn doc-comment ids for C#, ts:/java:/scip: prefixes otherwise); pass them back verbatim. An answer that starts with
                 "⚠ STALE INDEX" is from a graph older than the working tree; rows ending in STALE come from edited files.
                 Call impact_of before changing anything shared, and tests_for / covered_by to find the tests that guard it.
-                When codegraph-index --watch is running (live_status), four tools answer from the live Roslyn solution:
+                When codegraph-index --watch is running (live_status), four tools answer from the live compiler (Roslyn, the TypeScript language service, or a language server):
                 symbol_at turns a file position into an id, live_references finds every use of a symbol including
                 framework and NuGet members, diagnostics reports compiler errors, and check_change compiles a proposed
                 file in memory and reports what it would break before you write it.

@@ -14,7 +14,11 @@ public enum NodeKind
 }
 
 /// <summary>More precise classification of a Type node.</summary>
-public enum TypeKind { None, Class, Struct, Record, RecordStruct, Interface, Enum, Delegate }
+/// <summary>
+/// Type shapes across languages. C# uses the first eight; TypeAlias (TypeScript <c>type X = …</c>), Annotation
+/// (Java <c>@interface</c>) and Module (a TypeScript namespace) came with other languages.
+/// </summary>
+public enum TypeKind { None, Class, Struct, Record, RecordStruct, Interface, Enum, Delegate, TypeAlias, Annotation, Module }
 
 /// <summary>Declared accessibility of a member or type.</summary>
 public enum Accessibility { None, Public, Private, Protected, Internal, ProtectedOrInternal, ProtectedAndInternal }
@@ -47,6 +51,21 @@ public enum EdgeKind
     /// from <see cref="Calls"/> so walks over the solution's own call graph scan no more edges than before.
     /// </summary>
     CallsExternal,
+    /// <summary>File to file: an import, <c>import x from './y'</c> or <c>import com.acme.Y</c>.</summary>
+    Imports,
+    /// <summary>A type to a service type it receives through dependency injection (constructor parameter, <c>inject()</c>).</summary>
+    Injects,
+    /// <summary>A component to a component, directive or pipe its template uses (Angular).</summary>
+    Renders,
+}
+
+/// <summary>The language a node came from. A graph can hold several: an Angular front end beside a .NET back end.</summary>
+public static class Languages
+{
+    public const string CSharp = "csharp";
+    public const string TypeScript = "typescript";
+    public const string JavaScript = "javascript";
+    public const string Java = "java";
 }
 
 /// <summary>
@@ -71,7 +90,8 @@ public sealed record GraphNode(
     bool IsSealed = false,
     bool IsAsync = false,
     bool IsOverride = false,
-    MemberKind MemberKind = MemberKind.Ordinary);
+    MemberKind MemberKind = MemberKind.Ordinary,
+    string Language = Languages.CSharp);
 
 public sealed record GraphEdge(string FromId, string ToId, EdgeKind Kind);
 

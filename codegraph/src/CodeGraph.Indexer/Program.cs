@@ -16,6 +16,12 @@ if (args is ["--version"])
     return 0;
 }
 
+// `codegraph-index import [file|-] [--db PATH]` loads another language's extractor output (EXTRACTORS.md).
+if (args is ["import", .. var importArgs])
+{
+    return await ImportCommand.RunAsync(importArgs, Console.In, Log);
+}
+
 // `codegraph-index init [solution|dir]` wires the repo to codegraph (.mcp.json, .gitignore) and then indexes.
 var init = args is ["init", ..];
 if (init)
@@ -438,6 +444,11 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
     using (var store = GraphStore.Open(writePath, readOnly: false, TimeSpan.FromSeconds(60)))
     {
         store.Replace(full, removed, indexer.Nodes, indexer.Edges, indexer.Origins, stamps.Values, meta, indexer.SearchDocuments, embeddings);
+        if (full && store.CopyOtherLanguages(dbPath, Languages.CSharp) is > 0 and var kept)
+        {
+            Log($"kept {kept} node(s) of other languages from the previous graph");
+        }
+
         counts = store.Count();
     }
 
@@ -524,7 +535,8 @@ internal sealed class PreviousIndex
             return null;
         }
 
-        return new PreviousIndex(dbPath, store.IndexedFiles(), store.ProjectFilePaths());
+        // Only C#'s own rows: files another extractor indexed into the same graph are neither changed nor deleted here.
+        return new PreviousIndex(dbPath, store.IndexedFiles(Languages.CSharp), store.ProjectFilePaths(Languages.CSharp));
     }
 
     public IReadOnlySet<string> DependentFiles(IReadOnlyCollection<string> paths)

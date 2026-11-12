@@ -9,7 +9,8 @@ namespace CodeGraph.Mcp;
 
 /// <summary>
 /// The tools Claude sees. Every result is a compact, line-oriented text block: one node per line as
-/// <c>kind  full name  file:start-end  [id]</c>. Ids are Roslyn doc-comment ids and are passed back verbatim.
+/// <c>kind  full name  file:start-end  [id]</c>. Ids are opaque and passed back verbatim: Roslyn doc-comment ids
+/// for C# (<c>M:App.Save(System.String)</c>), and a language prefix for others (<c>ts:</c>, <c>java:</c>, <c>scip:</c>).
 /// Rows whose file was edited since indexing end in <c>STALE</c>; the call-tool filter in Program adds the summary line.
 /// </summary>
 [McpServerToolType]
@@ -281,6 +282,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         [Description("Optional substring to filter by file path, e.g. 'Services' or 'GymX.Core'")] string? file = null,
         [Description("Max results, default 20, max 100")] int limit = 20,
         [Description("auto (hybrid when the graph has embeddings, else lexical), lexical, semantic, or hybrid")] string mode = "auto",
+        [Description("Optional language filter for a graph holding several: csharp, typescript, javascript, java")] string? language = null,
         CancellationToken cancellationToken = default)
     {
         NodeKind? kindFilter = null;
@@ -327,7 +329,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         if (note is not null) sb.AppendLine(note);
         if (vector is null)
         {
-            var hits = store.Search(query, kindFilter, file, limit);
+            var hits = store.Search(query, kindFilter, file, limit, language);
             if (hits.Count == 0)
                 return sb + $"nothing matches [{string.Join(", ", terms)}]. Try other words for the same idea, or find_symbol if you know part of a name.";
 
@@ -336,7 +338,9 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             return sb.ToString();
         }
 
-        var similar = store.VectorSearch(vector, kindFilter, file, mode == "semantic" ? limit : 50);
+        var similar = store.VectorSearch(vector, kindFilter, file, mode == "semantic" ? limit : 50)
+            .Where(h => language is null || string.Equals(h.Node.Language, language, StringComparison.OrdinalIgnoreCase))
+            .ToList();
         if (mode == "semantic")
         {
             sb.AppendLine($"{similar.Count} result(s) by meaning, best first:");
@@ -344,7 +348,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             return sb.ToString();
         }
 
-        var lexical = terms.Count == 0 ? [] : store.Search(query, kindFilter, file, 50).Select(h => h.Node).ToList();
+        var lexical = terms.Count == 0 ? [] : store.Search(query, kindFilter, file, 50, language).Select(h => h.Node).ToList();
         var fused = SearchFusion.Fuse(lexical, similar.Select(h => h.Node).ToList(), limit);
         sb.AppendLine($"{fused.Count} result(s) for '{query}', by words and meaning, best first:");
         sb.Append(Format(fused.Select(f => (f.Node, (string?)$"words #{f.LexicalRank?.ToString(CultureInfo.InvariantCulture) ?? "-"}, meaning #{f.SemanticRank?.ToString(CultureInfo.InvariantCulture) ?? "-"}"))));
@@ -382,7 +386,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         [Description("Name or partial name, e.g. 'SaveWorkout' or 'GymX.Api.Sessions'")] string query,
         [Description("Optional kind filter: Type, Method, Property, Field, Event, File, Project")] string? kind = null,
         [Description("Max results, default 20")] int limit = 20,
-        [Description("Type nodes only — Class, Struct, Record, RecordStruct, Interface, Enum, Delegate")] string? typeKind = null,
+        [Description("Type nodes only — Class, Struct, Record, RecordStruct, Interface, Enum, Delegate, TypeAlias, Annotation, Module")] string? typeKind = null,
         [Description("Accessibility filter — Public, Private, Protected, Internal, ProtectedOrInternal, ProtectedAndInternal")] string? accessibility = null,
         [Description("Filter by static modifier")] bool? isStatic = null,
         [Description("Filter by abstract modifier")] bool? isAbstract = null,
@@ -391,7 +395,8 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         [Description("Filter by override modifier")] bool? isOverride = null,
         [Description("Method nodes only — Ordinary, Constructor, Destructor, Operator")] string? memberKind = null,
         [Description("How to match the query against name/full_name — Contains (default), StartsWith, EndsWith, Exact")] string nameMatch = "Contains",
-        [Description("Skip this many results for paging, default 0")] int offset = 0)
+        [Description("Skip this many results for paging, default 0")] int offset = 0,
+        [Description("Optional language filter for a graph holding several: csharp, typescript, javascript, java")] string? language = null)
     {
         NodeKind? kindFilter = null;
         if (kind is not null)
@@ -431,7 +436,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         var results = store.FindSymbol(
             query, kindFilter, Math.Clamp(limit, 1, 100),
             typeKindFilter, accessibilityFilter, isStatic, isAbstract, isVirtual, isAsync, isOverride, memberKindFilter,
-            nameMatch, Math.Max(0, offset));
+            nameMatch, Math.Max(0, offset), language?.ToLowerInvariant());
         return results.Count == 0
             ? $"no symbols match '{query}'. Try a shorter substring or check the index is up to date."
             : Format(results.Select(n => (n, n.Signature)));
@@ -756,9 +761,10 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         [Description("Minimum caller threshold to include, default 1")] int minCallers = 1,
         [Description("Skip this many results for paging, default 0")] int offset = 0,
         [Description("Rank framework and NuGet members too, default false")] bool includeExternal = false,
-        [Description("Only full names containing this, e.g. 'System.IO.File'")] string? nameFilter = null)
+        [Description("Only full names containing this, e.g. 'System.IO.File'")] string? nameFilter = null,
+        [Description("Optional language filter for a graph holding several: csharp, typescript, javascript, java")] string? language = null)
     {
-        var top = store.MostCalled(Math.Clamp(limit, 1, 100), minCallers, offset, includeExternal, nameFilter);
+        var top = store.MostCalled(Math.Clamp(limit, 1, 100), minCallers, offset, includeExternal, nameFilter, language?.ToLowerInvariant());
 
         if (top.Count == 0)
             return $"no methods with at least {minCallers} callers";
