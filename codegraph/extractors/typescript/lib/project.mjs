@@ -23,6 +23,11 @@ function angularConfigs(workspaceFile) {
   const workspace = readJson(workspaceFile);
   const found = [];
   for (const [name, project] of Object.entries(workspace?.projects ?? {})) {
+    // Newer test builders (vitest, unit-test) often name no tsConfig: the project's spec config is still the one.
+    for (const conventional of ['tsconfig.app.json', 'tsconfig.lib.json', 'tsconfig.spec.json']) {
+      const candidate = path.resolve(root, project?.root ?? '', conventional);
+      if (fs.existsSync(candidate)) found.push({ name, config: candidate });
+    }
     for (const target of Object.values(project?.architect ?? project?.targets ?? {})) {
       for (const options of [target?.options, ...Object.values(target?.configurations ?? {})]) {
         if (typeof options?.tsConfig === 'string') {

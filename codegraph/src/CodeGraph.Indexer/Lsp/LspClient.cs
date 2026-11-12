@@ -19,6 +19,9 @@ internal sealed class LspClient : IAsyncDisposable
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonNode?>> _pending = new();
     private readonly ConcurrentDictionary<string, (int Version, JsonArray Items)> _diagnostics = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, int> _open = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _publishedAt = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _changedAt = new(StringComparer.Ordinal);
+    private double _latencyMs = 1000;
     private readonly Action<string> _log;
     private readonly Task _reader;
     private int _nextId;
@@ -127,6 +130,7 @@ internal sealed class LspClient : IAsyncDisposable
             return;
         }
 
+        _changedAt[uri] = Stopwatch.GetTimestamp();
         await NotifyAsync("textDocument/didOpen", new JsonObject
         {
             ["textDocument"] = new JsonObject { ["uri"] = uri, ["languageId"] = languageId, ["version"] = 1, ["text"] = text },
@@ -139,6 +143,7 @@ internal sealed class LspClient : IAsyncDisposable
         await EnsureOpenAsync(path, languageId, cancellationToken);
         var uri = UriOf(path);
         var version = _open.AddOrUpdate(uri, 2, (_, v) => v + 1);
+        _changedAt[uri] = Stopwatch.GetTimestamp();
         await NotifyAsync("textDocument/didChange", new JsonObject
         {
             ["textDocument"] = new JsonObject { ["uri"] = uri, ["version"] = version },
@@ -157,6 +162,8 @@ internal sealed class LspClient : IAsyncDisposable
     }
 
     public IReadOnlyCollection<string> OpenDocuments => _open.Keys.ToList();
+
+    public bool IsOpen(string path) => _open.ContainsKey(UriOf(path));
 
     public JsonArray? DiagnosticsFor(string uri) => _diagnostics.TryGetValue(uri, out var entry) ? entry.Items : null;
 
@@ -196,34 +203,30 @@ internal sealed class LspClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// Arms a wait for the next diagnostics the server publishes for <paramref name="uri"/>, from now on: for a
-    /// file that is not being edited but whose errors an edit elsewhere can change. Await it after the edit.
+    /// Waits for the server to finish reporting after an edit made at <paramref name="since"/>
+    /// (<see cref="Stopwatch.GetTimestamp"/>). Servers do not say "done": they push diagnostics when they have
+    /// them, often in parts (syntax first, types later), and some push nothing for a file that stays clean. So the
+    /// wait ends early once every file has been re-reported and a quiet spell passes (the server's usual latency,
+    /// 400 ms to 3 s), and otherwise once no file has been reported for three times the
+    /// server's usual report latency (1 to 10 s), counted from the last report: a file that gained errors would
+    /// have been reported by then. Twenty seconds at most.
     /// </summary>
-    public Task<JsonArray> NextDiagnosticsAsync(string uri, TimeSpan timeout, CancellationToken cancellationToken)
+    public async Task SettleAsync(IReadOnlyCollection<string> editedUris, IReadOnlyCollection<string> watchedUris, long since, CancellationToken cancellationToken)
     {
-        var published = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnPublished(string publishedUri)
+        var all = editedUris.Concat(watchedUris).Distinct(StringComparer.Ordinal).ToList();
+        while (Stopwatch.GetElapsedTime(since) < TimeSpan.FromSeconds(20))
         {
-            if (publishedUri == uri)
+            var silence = TimeSpan.FromMilliseconds(Math.Clamp(3 * _latencyMs, 1000, 10_000));
+            var spell = TimeSpan.FromMilliseconds(Math.Clamp(_latencyMs, 400, 3000));
+            var reported = all.Where(uri => _publishedAt.TryGetValue(uri, out var at) && at >= since).ToList();
+            var last = reported.Select(uri => _publishedAt[uri]).Append(since).Max();
+            var quiet = Stopwatch.GetElapsedTime(last);
+            if ((reported.Count == all.Count && quiet > spell) || quiet > silence)
             {
-                published.TrySetResult();
+                return;
             }
-        }
 
-        DiagnosticsPublished += OnPublished;
-        return Wait();
-
-        async Task<JsonArray> Wait()
-        {
-            try
-            {
-                await Task.WhenAny(published.Task, Task.Delay(timeout, cancellationToken));
-                return DiagnosticsFor(uri) ?? [];
-            }
-            finally
-            {
-                DiagnosticsPublished -= OnPublished;
-            }
+            await Task.Delay(50, cancellationToken);
         }
     }
 
@@ -343,6 +346,13 @@ internal sealed class LspClient : IAsyncDisposable
         {
             var version = parameters["version"]?.GetValueKind() == JsonValueKind.Number ? parameters["version"]!.GetValue<int>() : 0;
             _diagnostics[uri] = (version, parameters["diagnostics"]?.DeepClone() as JsonArray ?? []);
+            var now = Stopwatch.GetTimestamp();
+            _publishedAt[uri] = now;
+            // How long this server takes to report after a change: what "no report yet" can safely wait for.
+            if (_changedAt.TryRemove(uri, out var changed) && Stopwatch.GetElapsedTime(changed, now) is { TotalSeconds: < 30 } latency)
+            {
+                _latencyMs = _latencyMs * 0.7 + latency.TotalMilliseconds * 0.3;
+            }
             DiagnosticsPublished?.Invoke(uri);
         }
         else if (json["id"] is { } requestId && method is not null)

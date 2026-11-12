@@ -178,33 +178,27 @@ internal static class GraphImport
     public static string LanguageKey(string language, string key) => $"lang.{language}.{key}";
 
     /// <summary>
-    /// Replaces <paramref name="batch"/>'s language in the graph at <paramref name="dbPath"/>: everything hanging
-    /// off that language's previous files goes, the batch goes in, other languages stay. One transaction, so a
-    /// reader sees the old part or the new one.
+    /// Replaces <paramref name="batch"/>'s languages in the graph at <paramref name="dbPath"/>: the batch goes into a
+    /// fresh file, every other language's rows are copied across from the old graph, and the fresh file is swapped
+    /// in, so a reader sees the old graph or the new one.
     /// </summary>
     public static async Task<(int Nodes, int Edges)> WriteAsync(GraphBatch batch, string dbPath, Action<string> log, CancellationToken cancellationToken)
     {
         var stamps = batch.Files.Where(File.Exists).Select(FileStamp.Of).ToList();
-        var removed = new HashSet<string>(batch.Files, StringComparer.OrdinalIgnoreCase);
-        removed.UnionWith(batch.Nodes.Where(n => n.FilePath is not null).Select(n => n.FilePath!));
+        var languages = batch.Nodes.Select(n => n.Language).Append(batch.Language).Distinct(StringComparer.Ordinal).ToList();
         IReadOnlyDictionary<string, string> previousMeta = new Dictionary<string, string>();
         if (File.Exists(dbPath))
         {
             using var old = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(30));
-            // Every language the batch carries: a SCIP index of a Kotlin and Java project replaces both.
-            foreach (var language in batch.Nodes.Select(n => n.Language).Append(batch.Language).Distinct(StringComparer.Ordinal))
-            {
-                removed.UnionWith(old.LanguagePaths(language));
-            }
             previousMeta = old.ReadMeta();
         }
 
-        var meta = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [MetaKeys.SchemaVersion] = GraphStore.SchemaVersion,
-            [MetaKeys.IndexedAt] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
-            [LanguageKey(batch.Language, "indexed_at")] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
-        };
+        // The graph-wide keys of the previous graph (its solution, commit, embedding model) carry over; this
+        // language's own keys are rewritten below, and other languages' come across with their rows.
+        var meta = previousMeta.Where(m => !m.Key.StartsWith("lang.", StringComparison.Ordinal)).ToDictionary(StringComparer.Ordinal);
+        meta[MetaKeys.SchemaVersion] = GraphStore.SchemaVersion;
+        meta[MetaKeys.IndexedAt] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        meta[LanguageKey(batch.Language, "indexed_at")] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
         foreach (var (key, value) in batch.Meta)
         {
             meta[LanguageKey(batch.Language, key)] = value;
@@ -254,8 +248,20 @@ internal static class GraphImport
             }
         }
 
-        using var store = GraphStore.Open(dbPath, readOnly: false, TimeSpan.FromSeconds(60));
-        store.Replace(full: false, removed, batch.Nodes, batch.Edges, batch.Origins, stamps, meta, batch.Search, embeddings, batch.Language);
+        // A fresh file with this batch and every other language's rows copied from the old graph, swapped in: as
+        // fast as the write itself (deleting one language's rows in place took longer than writing them, and grew
+        // the file), compact, and a reader sees the old graph or the new one, never a half-replaced one.
+        var fresh = GraphFile.Fresh(dbPath);
+        using (var store = GraphStore.Open(fresh, readOnly: false, TimeSpan.FromSeconds(60)))
+        {
+            store.Replace(full: true, [], batch.Nodes, batch.Edges, batch.Origins, stamps, meta, batch.Search, embeddings, batch.Language);
+            if (store.CopyOtherLanguages(dbPath, languages) is > 0 and var kept)
+            {
+                log($"kept {kept} node(s) of other languages from the previous graph");
+            }
+        }
+
+        GraphFile.SwapIn(fresh, dbPath);
         return (batch.Nodes.Count, batch.Edges.Count);
     }
 }

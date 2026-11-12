@@ -42,6 +42,11 @@ latest CodeGraph on request, builds, writes the `.mcp.json` entry as `dotnet run
 <checkout>/src/CodeGraph.Mcp -c Release --no-build`, and indexes with `dotnet run`. See the
 [README](README.md#from-a-source-checkout).
 
+Languages: C# through Roslyn, TypeScript and Angular through the bundled Node extractor (needs Node.js), and
+Java, Kotlin, Scala, Python, Go and Rust through their SCIP indexers. [EXTRACTORS.md](EXTRACTORS.md) lists
+what each records and which live tools answer for it. `find_symbol`, `search_code` and `most_called` take a
+`language` filter when one graph holds several.
+
 ## Configure
 
 `codegraph-index init` writes this. By hand, put one `.mcp.json` at the repo root. Leave out the database path: the server finds

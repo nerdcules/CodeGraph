@@ -68,6 +68,18 @@ if (-not $dotnet) {
     throw 'dotnet SDK not found on PATH. Install .NET 10 from https://dotnet.microsoft.com/download'
 }
 
+# The TypeScript and Angular extractor is a Node program; without Node, C# and the SCIP languages still work.
+$extractor = Join-Path $root 'extractors/typescript'
+$hasNode = (Get-Command node -ErrorAction SilentlyContinue) -and (Get-Command npm -ErrorAction SilentlyContinue)
+if ($hasNode) {
+    Step "Installing the TypeScript extractor's packages (Node $(node --version))"
+    Push-Location $extractor
+    try { npm ci --omit=dev --no-audit --no-fund --loglevel=error } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw 'npm ci failed for the TypeScript extractor' }
+} else {
+    Write-Host 'note: node and npm are not on PATH; TypeScript and Angular indexing is skipped (install Node.js 22.22 or later to add it)'
+}
+
 Step 'Building (warnings are errors)'
 dotnet build (Join-Path $root 'CodeGraph.slnx') -c Release -warnaserror --nologo
 if ($LASTEXITCODE -ne 0) { throw 'build failed' }
@@ -101,6 +113,19 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 foreach ($project in 'src/CodeGraph.Indexer', 'src/CodeGraph.Mcp') {
     dotnet publish (Join-Path $root $project) -c Release -r $rid --self-contained false -p:PublishReadyToRun=true -o $InstallDir --nologo
     if ($LASTEXITCODE -ne 0) { throw "publish of $project failed" }
+}
+
+if ($hasNode) {
+    # codegraph-index looks for extractors/typescript/cli.mjs beside itself.
+    $installedExtractor = Join-Path $InstallDir 'extractors/typescript'
+    if (Test-Path $installedExtractor) { Remove-Item -Recurse -Force $installedExtractor }
+    New-Item -ItemType Directory -Force -Path $installedExtractor | Out-Null
+    foreach ($item in 'cli.mjs', 'lib', 'package.json', 'package-lock.json') {
+        Copy-Item -Recurse -Path (Join-Path $extractor $item) -Destination $installedExtractor
+    }
+    Push-Location $installedExtractor
+    try { npm ci --omit=dev --no-audit --no-fund --loglevel=error } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw 'npm ci failed for the installed TypeScript extractor' }
 }
 
 # The executables find .NET through DOTNET_ROOT or the machine-wide install, not through PATH. With a user-local

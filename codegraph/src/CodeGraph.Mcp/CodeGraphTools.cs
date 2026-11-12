@@ -16,7 +16,8 @@ namespace CodeGraph.Mcp;
 [McpServerToolType]
 public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live, SemanticSearch semantic)
 {
-    // ── Live tools: answered by the Roslyn solution held by codegraph-index --watch, not by the graph ──────────
+    // ── Live tools: answered by codegraph-index --watch, not by the graph: the Roslyn solution for C#, a language
+    // server (typescript-language-server, jdtls, pyright, gopls, rust-analyzer) for the other languages ─────────
 
     [McpServerTool(Name = "live_status", ReadOnly = true, Idempotent = true)]
     [Description("Whether a live daemon (codegraph-index --watch) holds this solution in memory. When it does, symbol_at, live_references, diagnostics and check_change work, and the graph is refreshed within a second of every save. Pass start=true to launch one.")]
@@ -36,7 +37,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "symbol_at", ReadOnly = true, Idempotent = true)]
-    [Description("The symbol at a file position (1-based line and column) from the live Roslyn solution: its graph id to use with the other tools, the enclosing member, and the type of the expression there. Needs the live daemon (see live_status).")]
+    [Description("The symbol at a file position (1-based line and column) from the live compiler (Roslyn for C#, the language server otherwise): its graph id to use with the other tools, the enclosing member, and (C#) the type of the expression there. Needs the live daemon (see live_status).")]
     public Task<string> SymbolAt(
         [Description("Absolute path of the source file")] string file,
         [Description("Line, 1-based")] int line,
@@ -55,7 +56,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         }, cancellationToken);
 
     [McpServerTool(Name = "live_references", ReadOnly = true, Idempotent = true)]
-    [Description("Every use of a symbol in the solution, from the live Roslyn solution, including symbols the graph does not hold: framework and NuGet members ('who calls File.Delete', 'where is HttpClient.SendAsync used'). Takes a graph id or a dotted name (System.IO.File.Delete matches all overloads). Needs the live daemon.")]
+    [Description("Every use of a symbol in the codebase, from the live compiler. For C# (Roslyn) this includes symbols the graph does not hold: framework and NuGet members ('who calls File.Delete', 'where is HttpClient.SendAsync used'). Takes a graph id or a dotted name (System.IO.File.Delete matches all overloads). Needs the live daemon.")]
     public Task<string> LiveReferences(
         [Description("Graph id (M:System.IO.File.Delete(System.String)) or dotted name (System.IO.File.Delete)")] string symbol,
         [Description("Max rows, default 50, max 200")] int limit = 50,
@@ -79,7 +80,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         }, cancellationToken);
 
     [McpServerTool(Name = "diagnostics", ReadOnly = true, Idempotent = true)]
-    [Description("Compiler errors (and optionally warnings) for one file or the whole solution as it is on disk right now, from the live Roslyn solution. Needs the live daemon.")]
+    [Description("Compiler errors (and optionally warnings) for one file or the whole solution as it is on disk right now, from the live compiler (Roslyn, or the language server). Needs the live daemon.")]
     public Task<string> Diagnostics(
         [Description("Absolute path of a source file; omit for the whole solution")] string? file = null,
         [Description("Include warnings, default false")] bool includeWarnings = false,
@@ -96,7 +97,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         }, cancellationToken);
 
     [McpServerTool(Name = "check_change", ReadOnly = true, Idempotent = true)]
-    [Description("What-if compile: the proposed full text of one or more files is applied to the live Roslyn solution in memory, their projects and everything depending on them are compiled, and the new and fixed errors are reported. Also lists the declarations the edit adds, removes or changes, with the graph's dependents and guarding tests for each changed one. Nothing is written to disk. Use before editing a shared file. Needs the live daemon.")]
+    [Description("What-if compile: the proposed full text of one or more files is applied to the live compiler in memory (Roslyn compiles their projects and everything depending on them; for other languages the language server rechecks the edited files and the files the graph says depend on them), and the new and fixed errors are reported. Also lists the declarations the edit adds, removes or changes, with the graph's dependents and guarding tests for each changed one. Nothing is written to disk. Use before editing a shared file. Needs the live daemon.")]
     public Task<string> CheckChange(
         [Description("Absolute path of the file (existing, or new inside a project directory); or use files")] string? file = null,
         [Description("The complete proposed contents of that file")] string? text = null,
@@ -196,7 +197,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         }, cancellationToken);
 
     [McpServerTool(Name = "rename_preview", ReadOnly = true, Idempotent = true)]
-    [Description("Preview a rename with Roslyn's renamer: every line that would change across the solution (declarations, references, interface implementations, overrides), plus any compile errors the rename would cause (name clashes). Nothing is written; apply the edits yourself. Needs the live daemon.")]
+    [Description("Preview a rename with the compiler's renamer (Roslyn's, or the language server's): every line that would change across the codebase (declarations, references, interface implementations, overrides), plus any compile errors the rename would cause (name clashes). Nothing is written; apply the edits yourself. Needs the live daemon.")]
     public Task<string> RenamePreview(
         [Description("Graph id (M:N.Type.Method(System.String)) or dotted name of a source symbol")] string symbol,
         [Description("The new name, a plain identifier")] string newName,

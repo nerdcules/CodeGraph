@@ -2,9 +2,12 @@
 
 # CodeGraph
 
-Roslyn-based code graph indexer plus an MCP server, so Claude Code can answer
+A compiler-built code graph plus an MCP server, so Claude Code can answer
 "who calls this / what breaks if I change it / which tests guard it" from a small
-graph query instead of re-reading source files.
+graph query instead of re-reading source files. C# is indexed by Roslyn; TypeScript,
+JavaScript and Angular by the TypeScript compiler; Java, Kotlin, Scala, Python, Go and
+Rust through their SCIP indexers. One graph can hold several, such as a .NET API and its
+Angular front end. [EXTRACTORS.md](EXTRACTORS.md) says what each records.
 
 [MCP-SERVER.md](MCP-SERVER.md) is the server's reference page: install, configuration, every
 tool with its arguments, output format, staleness, telemetry and troubleshooting.
@@ -12,7 +15,8 @@ tool with its arguments, output format, staleness, telemetry and troubleshooting
 
 ## Quick start
 
-Needs the .NET 10 SDK and git. From a clone of this repo:
+Needs the .NET 10 SDK and git. TypeScript and Angular also need Node.js 22.22 or later, and the
+SCIP languages need their indexer on PATH, such as `scip-java`. From a clone of this repo:
 
 ```bash
 ./install.sh ~/dev/App --add-to-path              # macOS / Linux
@@ -27,12 +31,13 @@ the `codegraph` server, `.gitignore` gets `.codegraph/`, and the first graph is 
 Claude Code in the repo and approve the server. Set up more repos later from inside each one:
 
 ```bash
-codegraph-index init            # finds the solution from the current folder
+codegraph-index init            # finds the solution, angular.json, tsconfig.json or build file from here
 ```
 
 ```
 src/CodeGraph.Core      model + DuckDB store + traversals + full-text search + telemetry
-src/CodeGraph.Indexer   codegraph-index: Roslyn extractor → graph.db (one-shot or --watch) + console progress
+src/CodeGraph.Indexer   codegraph-index: Roslyn extractor, record and SCIP import, LSP live bridge → graph.db
+extractors/typescript   codegraph-ts: TypeScript and Angular extractor (Node), with typescript-language-server
 src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
 src/CodeGraph.Web       graph visualiser UI and its API routes, embedded into codegraph-mcp --web
 tests/CodeGraph.Tests   store, search, telemetry, indexer extraction, watch-mode sync, live daemon
@@ -43,6 +48,7 @@ uninstall.ps1 / .sh     remove the install folder, PATH entry, a repo's .mcp.jso
 nuget.config            nuget.org only, source-mapped, audit on
 assets/logo.svg         the logo; also the web UI's favicon and header mark
 MCP-SERVER.md           reference page for the server and its tools
+EXTRACTORS.md           languages, the extractor record contract, live tools for other languages
 ```
 
 ## Why use the Code-Graph MCP?
@@ -404,6 +410,14 @@ endpoint (a local Ollama, say) it also ranks by meaning and fuses the two rankin
 [MCP-SERVER.md](MCP-SERVER.md#semantic-search). It is off unless `CODEGRAPH_EMBEDDINGS_URL` is set.
 
 ## Not yet
+
+- In a repo with both, `--watch` on the C# solution refreshes only C#. Run a second daemon on the front end
+  with its own `--db`, or re-run `codegraph-index init` to refresh both.
+- TypeScript and the SCIP languages re-index the whole workspace on each save. That is a few seconds for 1,000
+  files, against per-file incremental indexing for C#.
+- There is no native Java extractor: Java goes through scip-java. Its calls and reads are told apart by the
+  target's kind only, and annotations are read from the source line.
+- `data_flow` answers for C# only.
 
 - `--watch` re-reads a project's globs only on a project-file change, so a new file in a
   directory no project covers is picked up by the next cold run.

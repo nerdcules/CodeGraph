@@ -310,7 +310,7 @@ public sealed class GraphStore : IDisposable
     /// Rows are matched by node language and by the files those nodes and their edge origins hang off, the same
     /// scoping <see cref="LanguagePaths"/> gives an importer. A source from before schema 6 holds no other language.
     /// </summary>
-    public int CopyOtherLanguages(string sourceDb, string exceptLanguage)
+    public int CopyOtherLanguages(string sourceDb, params IReadOnlyCollection<string> exceptLanguages)
     {
         if (!File.Exists(sourceDb))
         {
@@ -330,24 +330,26 @@ public sealed class GraphStore : IDisposable
             }
 
             using var transaction = _connection.BeginTransaction();
-            var language = P("language", exceptLanguage);
+            // The languages being rewritten, as a list DuckDB can test membership in.
+            var rewritten = string.Join("\n", exceptLanguages);
             void Run(string sql)
             {
                 using var command = _connection.CreateCommand();
                 command.Transaction = transaction;
                 command.CommandText = sql;
-                command.Parameters.Add(P("language", exceptLanguage));
+                command.Parameters.Add(P("languages", rewritten));
                 command.ExecuteNonQuery();
             }
 
-            const string ForeignNodes = "SELECT id FROM other.nodes WHERE language <> $language";
+            const string Kept = "NOT IN (SELECT unnest(string_split($languages, chr(10))))";
+            const string ForeignNodes = $"SELECT id FROM other.nodes WHERE language {Kept}";
             const string ForeignPaths =
-                "SELECT path FROM other.files WHERE language <> $language " +
-                "UNION SELECT file_path FROM other.nodes WHERE language <> $language AND file_path IS NOT NULL";
+                $"SELECT path FROM other.files WHERE language {Kept} " +
+                $"UNION SELECT file_path FROM other.nodes WHERE language {Kept} AND file_path IS NOT NULL";
             Run("CREATE TEMP TABLE IF NOT EXISTS copy_paths (path VARCHAR);");
             Run("DELETE FROM copy_paths;");
             Run($"INSERT INTO copy_paths {ForeignPaths};");
-            Run($"INSERT INTO nodes ({NodeColumns}) SELECT {NodeColumns} FROM other.nodes WHERE language <> $language ON CONFLICT DO NOTHING;");
+            Run($"INSERT INTO nodes ({NodeColumns}) SELECT {NodeColumns} FROM other.nodes WHERE language {Kept} ON CONFLICT DO NOTHING;");
             Run("INSERT INTO edge_origins SELECT from_id, to_id, kind, file_path FROM other.edge_origins WHERE file_path IN (SELECT path FROM copy_paths) ON CONFLICT DO NOTHING;");
             Run(
                 """
@@ -356,18 +358,18 @@ public sealed class GraphStore : IDisposable
                 WHERE o.file_path IN (SELECT path FROM copy_paths)
                 ON CONFLICT DO NOTHING;
                 """);
-            Run("INSERT INTO files (path, hash, size, mtime_ticks, language) SELECT path, hash, size, mtime_ticks, language FROM other.files WHERE language <> $language ON CONFLICT DO NOTHING;");
+            Run($"INSERT INTO files (path, hash, size, mtime_ticks, language) SELECT path, hash, size, mtime_ticks, language FROM other.files WHERE language {Kept} ON CONFLICT DO NOTHING;");
             Run($"INSERT INTO search_docs SELECT node_id, length FROM other.search_docs WHERE node_id IN ({ForeignNodes}) ON CONFLICT DO NOTHING;");
             Run($"INSERT INTO search_terms SELECT node_id, term, tf FROM other.search_terms WHERE node_id IN ({ForeignNodes}) ON CONFLICT DO NOTHING;");
             Run($"INSERT INTO embeddings SELECT node_id, text_hash, vector FROM other.embeddings WHERE node_id IN ({ForeignNodes}) ON CONFLICT DO NOTHING;");
             // Per-language meta (lang.<language>.*) rides along; the rebuilding language writes its own.
-            Run("INSERT INTO meta SELECT key, value FROM other.meta WHERE key LIKE 'lang.%' AND key NOT LIKE 'lang.' || $language || '.%' ON CONFLICT DO NOTHING;");
+            Run($"INSERT INTO meta SELECT key, value FROM other.meta WHERE key LIKE 'lang.%' AND split_part(key, '.', 2) {Kept} ON CONFLICT DO NOTHING;");
             int copied;
             using (var count = _connection.CreateCommand())
             {
                 count.Transaction = transaction;
-                count.CommandText = "SELECT COUNT(*) FROM nodes WHERE language <> $language;";
-                count.Parameters.Add(language);
+                count.CommandText = $"SELECT COUNT(*) FROM nodes WHERE language {Kept};";
+                count.Parameters.Add(P("languages", rewritten));
                 copied = Convert.ToInt32(count.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
             }
 

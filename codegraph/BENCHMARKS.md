@@ -307,6 +307,61 @@ Same machine, this repo's graph; index times are three runs each.
 Most of the index time is JIT compilation of Roslyn and MSBuild code paths, which ReadyToRun removes; every
 one-shot index and every daemon start pays it. Warm calls are unchanged.
 
+## Round 9: other languages
+
+The same store and tools over TypeScript, Angular and SCIP-indexed code. Same machine; Node 26, TypeScript 6.0.3
+inside the extractor, typescript-language-server 6.0.3.
+
+Indexing, three runs each:
+
+| workspace | files | nodes | edges | extractor | whole run | graph file |
+|---|---|---|---|---|---|---|
+| Angular fixture (`extractors/typescript/test/fixtures`) | 10 | 60 | 129 | 0.8 s | 1.2 s | |
+| RealWorld Angular app (Angular 21, npm packages installed) | 47 | 670 | 2,503 | 1.9 s | 2.7 s | |
+| NestJS monorepo (no npm install) | 1,165 | 10,754 | 28,276 | 4.9 s | 7.0 s | 43 MB, flat across re-imports |
+
+A re-import first deleted the language's rows in place. On NestJS that took 15.8 s instead of 7.0 s, and the file
+grew to 90 MB. It now writes a fresh file, copies the other languages across and swaps it in, as a full C#
+rebuild does, so it costs the same as the first import.
+
+Graph queries, median of 7:
+
+| measurement | RealWorld (670 nodes) | NestJS (10,754 nodes) |
+|---|---|---|
+| callers_of depth 1 | 6.3 ms | 17 ms |
+| impact_of depth 5 | 7.3 ms | 41 ms |
+| impact_of depth 20 | 7.3 ms | 175 ms |
+| covered_by depth 30 | 6.8 ms | 144 ms |
+| find_symbol | 3.0 ms | 11 ms |
+| search_code | 7.4 ms | 15 ms |
+| dead_code_report | 8.9 ms | 24 ms |
+
+Live tools on RealWorld through `--watch` (typescript-language-server ready 4.8 s after start):
+
+| measurement | first version | after fixes |
+|---|---|---|
+| live ping | 14 ms | 0.41 ms |
+| live references, most-called method | 129 ms | 109 ms |
+| live symbol_at | 16 ms | 16 ms |
+| live diagnostics, one file | 0.2 ms | 0.19 ms |
+| live check_change, unchanged or comment-only edit | 20,033 ms | 2,096 ms |
+
+`ping` had opened the graph to count files on every call; it now counts once per index. `check_change` had
+waited out per-file timeouts, because typescript-language-server sends no report for a file that stays clean. It
+now waits for the files to settle. An edit that adds errors returns as soon as they are reported, about a
+second on the fixture. A clean edit waits three times the server's measured report latency, about two seconds
+here.
+
+Native extractor against scip-typescript on RealWorld:
+
+| | codegraph-ts | scip-typescript + import |
+|---|---|---|
+| time | 2.7 s | 2.3 s + 0.4 s |
+| nodes / edges | 670 / 2,503 | 733 / 1,608 |
+| signatures, modifiers | yes | no (modifiers read from source) |
+| Angular templates, DI, routes | yes | no |
+| test nodes | 224 (describe and it blocks) | none |
+
 ## Where it ended up
 
 This repo's own graph, first baseline against the final build of this work, same machine and method. The graph

@@ -511,7 +511,7 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
 
     if (full)
     {
-        SwapIn(writePath, dbPath);
+        GraphFile.SwapIn(writePath, dbPath);
     }
 
     var (nodes, edges) = counts;
@@ -524,28 +524,6 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
 /// Replaces the graph with a freshly written one. Readers open the file per call, so on Windows a short retry
 /// covers the moment one holds it; a write-ahead log left by an older copy must not be replayed into the new file.
 /// </summary>
-static void SwapIn(string source, string destination)
-{
-    var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
-    while (true)
-    {
-        try
-        {
-            File.Delete(destination + ".wal");
-            File.Move(source, destination, overwrite: true);
-            return;
-        }
-        catch (IOException) when (DateTime.UtcNow < deadline)
-        {
-            Thread.Sleep(100);
-        }
-        catch (UnauthorizedAccessException) when (DateTime.UtcNow < deadline)
-        {
-            Thread.Sleep(100);
-        }
-    }
-}
-
 static bool SameStat(FileStamp stamp, string path)
 {
     var info = new FileInfo(path);

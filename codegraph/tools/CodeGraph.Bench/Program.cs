@@ -196,9 +196,17 @@ static async Task LiveRows(List<(string, string)> rows, string dbPath, GraphStor
 
 static async Task<string> MedianAsync(Func<Task> action, int count, int warmups = 1)
 {
-    for (var i = 0; i < warmups; i++)
+    try
     {
-        await action();
+        for (var i = 0; i < warmups; i++)
+        {
+            await action();
+        }
+    }
+    catch (LiveException e)
+    {
+        // A daemon for another language answers some operations differently (data_flow is C#-only).
+        return $"n/a ({e.Message})";
     }
 
     var samples = new List<double>();

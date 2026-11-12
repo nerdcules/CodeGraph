@@ -111,17 +111,23 @@ internal sealed partial class LspLiveService(string target, string dbPath, strin
         };
     }
 
+    private (DateTime? IndexedAt, int Documents) _documents;
+
     private LiveStatus Status()
     {
-        int documents;
-        try
+        // ping is on every tool call's path: count the graph's files once per index, not per ping.
+        var (countedAt, documents) = _documents;
+        if (countedAt != watch.LastIndexedAt && watch.LastIndexedAt is not null)
         {
-            using var store = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5));
-            documents = store.IndexedFiles(language).Count;
-        }
-        catch (Exception e) when (e is FileNotFoundException or IOException or DuckDB.NET.Data.DuckDBException)
-        {
-            documents = 0;
+            try
+            {
+                using var store = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5));
+                documents = store.IndexedFiles(language).Count;
+                _documents = (watch.LastIndexedAt, documents);
+            }
+            catch (Exception e) when (e is FileNotFoundException or IOException or DuckDB.NET.Data.DuckDBException)
+            {
+            }
         }
 
         using var self = Process.GetCurrentProcess();
@@ -224,39 +230,51 @@ internal sealed partial class LspLiveService(string target, string dbPath, strin
         {
             var before = new List<LiveDiagnostic>();
             var after = new List<LiveDiagnostic>();
-            foreach (var file in edited.Concat(dependents))
+            // Files opened now are reported in parts (syntax, then types): settle before taking the "before" picture.
+            var opening = edited.Concat(dependents).Where(f => !client.IsOpen(f)).ToList();
+            var openedAt = Stopwatch.GetTimestamp();
+            foreach (var file in opening)
             {
                 await client.EnsureOpenAsync(file, LspServer.LanguageId(file), cancellationToken);
             }
 
+            if (opening.Count > 0)
+            {
+                await client.SettleAsync(opening.Select(LspClient.UriOf).ToList(), [], openedAt, cancellationToken);
+            }
+
             foreach (var file in edited.Concat(dependents))
             {
-                before.AddRange(Diagnostics(file, await client.WaitForDiagnosticsAsync(LspClient.UriOf(file), null, TimeSpan.FromSeconds(10), cancellationToken)));
+                before.AddRange(Diagnostics(file, client.DiagnosticsFor(LspClient.UriOf(file)) ?? []));
             }
 
-            var next = dependents.ToDictionary(f => f, f => client.NextDiagnosticsAsync(LspClient.UriOf(f), TimeSpan.FromSeconds(10), cancellationToken), StringComparer.Ordinal);
+            var editedUris = edited.Select(LspClient.UriOf).ToList();
+            var dependentUris = dependents.Select(LspClient.UriOf).ToList();
+            var changedAt = Stopwatch.GetTimestamp();
             foreach (var edit in files)
             {
-                var file = Path.GetFullPath(edit.File);
-                var version = await client.ChangeAsync(file, LspServer.LanguageId(file), edit.Text, cancellationToken);
-                after.AddRange(Diagnostics(file, await client.WaitForDiagnosticsAsync(LspClient.UriOf(file), version, TimeSpan.FromSeconds(15), cancellationToken)));
+                await client.ChangeAsync(Path.GetFullPath(edit.File), LspServer.LanguageId(edit.File), edit.Text, cancellationToken);
             }
 
-            foreach (var (file, published) in next)
+            await client.SettleAsync(editedUris, dependentUris, changedAt, cancellationToken);
+            foreach (var file in edited.Concat(dependents))
             {
-                after.AddRange(Diagnostics(file, await published));
+                after.AddRange(Diagnostics(file, client.DiagnosticsFor(LspClient.UriOf(file)) ?? []));
             }
 
-            // Put the server's copy back to what is on disk.
-            var settled = dependents.Select(f => client.NextDiagnosticsAsync(LspClient.UriOf(f), TimeSpan.FromSeconds(5), cancellationToken)).ToList();
-            foreach (var edit in files)
+            // Put the server's copy back to what is on disk. When the edit changed no diagnostic, the revert changes
+            // none either, and the cached ones already describe the disk: no need to wait for it.
+            var revertedAt = Stopwatch.GetTimestamp();
+            foreach (var file in edited)
             {
-                var file = Path.GetFullPath(edit.File);
-                var version = await client.ChangeAsync(file, LspServer.LanguageId(file), File.Exists(file) ? await File.ReadAllTextAsync(file, cancellationToken) : "", cancellationToken);
-                await client.WaitForDiagnosticsAsync(LspClient.UriOf(file), version, TimeSpan.FromSeconds(5), cancellationToken);
+                await client.ChangeAsync(file, LspServer.LanguageId(file), File.Exists(file) ? await File.ReadAllTextAsync(file, cancellationToken) : "", cancellationToken);
             }
 
-            await Task.WhenAll(settled);
+            static string Full(LiveDiagnostic d) => $"{d.File}|{d.Line}|{d.Id}|{d.Message}";
+            if (!before.Select(Full).Order(StringComparer.Ordinal).SequenceEqual(after.Select(Full).Order(StringComparer.Ordinal)))
+            {
+                await client.SettleAsync(editedUris, dependentUris, revertedAt, cancellationToken);
+            }
 
             static string Key(LiveDiagnostic d) => $"{d.File}|{d.Id}|{d.Message}";
             var errorsBefore = before.Where(d => d.Severity == "error").ToList();

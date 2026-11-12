@@ -40,6 +40,17 @@ step() { printf '\n\033[36m==> %s\033[0m\n' "$1"; }
 command -v dotnet >/dev/null || { echo 'dotnet SDK not found on PATH. Install .NET 10 from https://dotnet.microsoft.com/download' >&2; exit 1; }
 install_dir="$(mkdir -p "$install_dir" && cd "$install_dir" && pwd)"
 
+# The TypeScript and Angular extractor is a Node program; without Node, C# and the SCIP languages still work.
+extractor="$root/extractors/typescript"
+has_node=false
+if command -v node >/dev/null && command -v npm >/dev/null; then
+    has_node=true
+    step "Installing the TypeScript extractor's packages (Node $(node --version))"
+    (cd "$extractor" && npm ci --omit=dev --no-audit --no-fund --loglevel=error)
+else
+    echo 'note: node and npm are not on PATH; TypeScript and Angular indexing is skipped (install Node.js 22.22 or later to add it)'
+fi
+
 step 'Building (warnings are errors)'
 dotnet build "$root/CodeGraph.slnx" -c Release -warnaserror --nologo
 
@@ -70,6 +81,13 @@ for project in src/CodeGraph.Indexer src/CodeGraph.Mcp; do
     dotnet publish "$root/$project" -c Release -r "$rid" --self-contained false -p:PublishReadyToRun=true -o "$install_dir" --nologo
 done
 chmod +x "$install_dir/codegraph-index" "$install_dir/codegraph-mcp"
+if [ "$has_node" = true ]; then
+    # codegraph-index looks for extractors/typescript/cli.mjs beside itself.
+    rm -rf "$install_dir/extractors/typescript"
+    mkdir -p "$install_dir/extractors/typescript"
+    cp -R "$extractor/cli.mjs" "$extractor/lib" "$extractor/package.json" "$extractor/package-lock.json" "$install_dir/extractors/typescript/"
+    (cd "$install_dir/extractors/typescript" && npm ci --omit=dev --no-audit --no-fund --loglevel=error)
+fi
 
 # The executables find .NET through DOTNET_ROOT or the machine's default install location, not through PATH.
 # When dotnet comes from a version manager (mise, asdf) or a user-local install, the default location can be

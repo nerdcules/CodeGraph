@@ -164,17 +164,19 @@ public sealed class TypeScriptLiveTests : IDisposable
 
         const string FormatName = "ts:src/app/user.service.ts#UserService.formatName";
         var references = await live.CallAsync<CodeGraph.Core.Live.LiveReferences>("references", new { symbol = FormatName, limit = 50 }, TestContext.Current.CancellationToken);
+        string Log() => File.Exists(Path.Combine(_root, "daemon.log")) ? File.ReadAllText(Path.Combine(_root, "daemon.log")) : "no daemon log";
+        Assert.True(references!.References.Count == 2, $"references: {System.Text.Json.JsonSerializer.Serialize(references)}\n{Log()}");
         Assert.Equal(["ts:src/app/user-card.component.ts#UserCardComponent.display", "ts:src/app/user.service.spec.ts#UserService > formats names"],
-            references!.References.Select(r => r.EnclosingMemberId).Order(StringComparer.Ordinal));
+            references.References.Select(r => r.EnclosingMemberId).Order(StringComparer.Ordinal));
 
         var rename = await live.CallAsync<CodeGraph.Core.Live.LiveRename>("rename_preview", new { symbol = FormatName, newName = "displayName" }, TestContext.Current.CancellationToken);
-        Assert.Equal(3, rename!.Files.Count);
+        Assert.True(rename!.Files.Count == 3, $"rename: {System.Text.Json.JsonSerializer.Serialize(rename)}\n{Log()}");
         Assert.Contains(rename.Files.SelectMany(f => f.Lines), l => l.After.Contains("this.service.displayName(this.user)"));
 
         var service = Path.Combine(workspace, "src", "app", "user.service.ts");
         var text = File.ReadAllText(service).Replace("formatName(user: User): string", "formatName(user: User, upper: boolean): string");
         var check = await live.CallAsync<CodeGraph.Core.Live.LiveCheck>("check_change", new { file = service, text }, TestContext.Current.CancellationToken);
-        Assert.Equal(2, check!.NewErrors.Count);
+        Assert.True(check!.NewErrors.Count == 2, $"check: {System.Text.Json.JsonSerializer.Serialize(check)}\n{Log()}");
         Assert.All(check.NewErrors, e => Assert.Contains("Expected 2 arguments", e.Message));
         Assert.Contains(check.NewErrors, e => e.File!.EndsWith("user-card.component.ts", StringComparison.Ordinal));
     }

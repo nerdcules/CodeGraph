@@ -125,6 +125,7 @@ export class Extractor {
     this.root = root;
     this.log = log;
     this.nodes = new Map();
+    this.externals = new Map();
     this.edges = new Map();
     this.files = new Set();
     this.walked = new Set();
@@ -155,6 +156,7 @@ export class Extractor {
 
   addEdge(from, to, kind, file) {
     if (!from || !to || from === to) return;
+    if (kind === 'CallsExternal' && !this.nodes.has(to) && this.externals.has(to)) this.addNode(this.externals.get(to));
     const key = `${from}\0${to}\0${kind}\0${file}`;
     if (!this.edges.has(key)) this.edges.set(key, { type: 'edge', from, to, kind, file });
   }
@@ -182,7 +184,8 @@ export class Extractor {
     const module = program.isSourceFileDefaultLibrary(sf) ? 'lib' : packageOf(sf.fileName) ?? this.rel(sf.fileName);
     const qualified = qualifiedName(decl);
     const id = `ts:ext:${module}#${qualified}`;
-    this.addNode({ id, kind: 'External', name: qualified.split('.').pop() || qualified, fullName: `${module}.${qualified}`, language: languageOf(sf.fileName) });
+    // Created only when a call reaches it (addEdge): a type merely mentioned, like Promise, is not a node.
+    if (!this.externals.has(id)) this.externals.set(id, { id, kind: 'External', name: qualified.split('.').pop() || qualified, fullName: `${module}.${qualified}`, language: languageOf(sf.fileName) });
     return { id, external: true, decl };
   }
 
@@ -213,11 +216,12 @@ export class Extractor {
     this.addEdge(projectId, frameworkId, 'Contains', config);
     this.files.add(config);
 
-    const roots = new Set(parsed.fileNames.map(f => path.resolve(f)));
+    // Every workspace file the program holds, not only its roots: an Angular CLI app's tsconfig lists just
+    // src/main.ts and reaches the rest through imports.
     let count = 0;
     for (const sf of program.getSourceFiles()) {
       const file = path.resolve(sf.fileName);
-      if (!roots.has(file) || this.walked.has(file) || !this.inSource(sf)) continue;
+      if (this.walked.has(file) || !this.inSource(sf)) continue;
       this.walked.add(file);
       this.walkFile(sf, program, checker, projectId, frameworkId);
       count++;
