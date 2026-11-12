@@ -9,7 +9,9 @@ reads the code with that language's own compiler and writes graph records. Three
 | Node extractor, `extractors/typescript` | TypeScript, JavaScript, Angular | `codegraph-index angular.json` or `tsconfig.json` | typescript-language-server, bundled |
 | SCIP indexers | Java, Kotlin, Scala, Python, Go, Rust | `codegraph-index pom.xml`, `build.gradle`, `pyproject.toml`, `go.mod`, `Cargo.toml` | jdtls, pyright, gopls or rust-analyzer when on PATH |
 
-A folder works as a target too. `codegraph-index init` picks the route from what the repo holds. A C# solution
+SCIP indexers are found on PATH or in the folders their installers use (coursier, `go install`, cargo), since
+coursier does not add its folder to PATH. SCIP ids are `scip:` plus the symbol without its version, so a
+release bump keeps them. A folder works as a target too. `codegraph-index init` picks the route from what the repo holds. A C# solution
 with an Angular `ClientApp/` gets both, in one graph.
 
 ## What each route records

@@ -27,6 +27,12 @@ public sealed class ScipImportTests : IDisposable
         Assert.Equal("price", java.Name);
         Assert.Equal("maven/org.acme/shop", java.Package);
         Assert.Equal("org/acme/Shop.price", java.FullName);
+        Assert.Equal("org.acme.Shop.price", java.FullNameFor(Languages.Java));
+        Assert.Equal("src/app/user.service.ts/UserService.load", symbol.FullNameFor(Languages.TypeScript));
+
+        // Ids drop the version, so a release bump keeps them; doubled spaces stay literal.
+        Assert.Equal("scip:semanticdb maven maven/org.acme/shop org/acme/Shop#price(+1).", ScipImport.IdOf("semanticdb maven maven/org.acme/shop 1.0 org/acme/Shop#price(+1)."));
+        Assert.Equal("scip:s m my  pkg T#", ScipImport.IdOf("s m my  pkg 2.0 T#"));
 
         Assert.Equal("a b", ScipSymbol.Parse("s m p v `a b`#")!.Name);
         Assert.Equal("x`y", ScipSymbol.Parse("s m p v `x``y`#")!.Name);
@@ -44,7 +50,7 @@ public sealed class ScipImportTests : IDisposable
         var db = Path.Combine(_root, "graph.db");
         await GraphImport.WriteAsync(batch, db, _ => { }, TestContext.Current.CancellationToken);
 
-        const string Prefix = "scip:scip-typescript npm . . src/app/";
+        const string Prefix = "scip:scip-typescript npm . src/app/";
         using var store = GraphStore.Open(db, readOnly: true, TimeSpan.FromSeconds(5));
         Assert.Contains(store.Callers(Prefix + "`http.service.ts`/HttpService#get().", 1), h => h.Node.Id == Prefix + "`user.service.ts`/UserService#load().");
         Assert.Contains(store.Walk(Prefix + "`loader.ts`/Loader#", [nameof(EdgeKind.Implements), nameof(EdgeKind.Inherits)], inbound: true, 3), h => h.Node.Name == "UserService");
@@ -133,7 +139,7 @@ public sealed class ScipImportTests : IDisposable
         await GraphImport.WriteAsync(batch, db, _ => { }, TestContext.Current.CancellationToken);
 
         using var store = GraphStore.Open(db, readOnly: true, TimeSpan.FromSeconds(5));
-        var id = (string s) => "scip:" + s;
+        var id = ScipImport.IdOf;
         Assert.True(store.GetNode(id(ShopTest + "pricesAreRounded()."))!.IsTest, "@Test marks a test");
         Assert.Contains(store.TransitiveTests(id(Shop + "round()."), 30), t => t.Node.Name == "pricesAreRounded");
         Assert.Contains(store.EdgesFrom(id(Shop + "price().")), e => e.Kind == EdgeKind.Implements && e.Target.Id == id(Pricing + "price()."));
@@ -145,6 +151,54 @@ public sealed class ScipImportTests : IDisposable
         Assert.Contains(store.EdgesTo(id(Shop + "total().")), e => e.Kind == EdgeKind.InvokedByFramework);
         var (_, dead) = store.DeadCodeReport();
         Assert.DoesNotContain(dead, d => d.Method.Name is "total" or "round");
+    }
+
+    /// <summary>
+    /// A real scip-java 0.12.3 index of <c>Fixtures/java-shop</c> (JDK 27, Maven). scip-java lists a method's
+    /// relationship in both directions and a type's supertypes transitively; the graph keeps C#'s shape.
+    /// </summary>
+    [Fact]
+    public async Task A_real_scip_java_index_gives_one_way_overrides_direct_supertypes_tests_and_dead_code()
+    {
+        // The fixture's project root is neutral; point it at the sources copied beside the tests, which hold the annotations.
+        var sources = Path.Combine(AppContext.BaseDirectory, "Fixtures", "java-shop");
+        var index = Scip.Index.Parser.ParseFrom(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "java-shop.scip")));
+        index.Metadata.ProjectRoot = new Uri(sources + Path.DirectorySeparatorChar).AbsoluteUri;
+        var path = Path.Combine(_root, "index.scip");
+        await File.WriteAllBytesAsync(path, Google.Protobuf.MessageExtensions.ToByteArray(index), TestContext.Current.CancellationToken);
+
+        var batch = ScipImport.Read(path, _ => { });
+        Assert.Equal(Languages.Java, batch.Language);
+        var db = Path.Combine(_root, "graph.db");
+        await GraphImport.WriteAsync(batch, db, _ => { }, TestContext.Current.CancellationToken);
+
+        const string P = "scip:semanticdb maven maven/org.acme/shop org/acme/shop/";
+        using var store = GraphStore.Open(db, readOnly: true, TimeSpan.FromSeconds(5));
+        Assert.Equal("org.acme.shop.Cart.total", store.GetNode(P + "Cart#total().")!.FullName);
+
+        // Overrides point from the override to the base, never back.
+        Assert.Contains(store.EdgesFrom(P + "DiscountPricing#unitPrice()."), e => e.Kind == EdgeKind.Overrides && e.Target.Id == P + "StandardPricing#unitPrice().");
+        Assert.DoesNotContain(store.EdgesFrom(P + "StandardPricing#unitPrice()."), e => e.Kind == EdgeKind.Overrides);
+        Assert.Contains(store.EdgesFrom(P + "StandardPricing#price()."), e => e.Kind == EdgeKind.Implements && e.Target.Id == P + "Pricing#price().");
+        Assert.DoesNotContain(store.EdgesFrom(P + "Pricing#price()."), e => e.Kind is EdgeKind.Overrides or EdgeKind.Implements);
+        Assert.True(store.GetNode(P + "DiscountPricing#unitPrice().")!.IsOverride, "@Override sets the flag");
+
+        // Direct supertypes only: DiscountPricing reaches Pricing through StandardPricing.
+        var discountSupertypes = store.EdgesFrom(P + "DiscountPricing#").Where(e => e.Kind is EdgeKind.Inherits or EdgeKind.Implements).Select(e => e.Target.Id).ToList();
+        Assert.Equal([P + "StandardPricing#"], discountSupertypes);
+        Assert.Contains(store.Walk(P + "Pricing#", [nameof(EdgeKind.Implements), nameof(EdgeKind.Inherits)], inbound: true, 3), h => h.Node.Name == "DiscountPricing" && h.Depth == 2);
+
+        // The JUnit test reaches the base method three calls down; JDK calls are externals with stable ids.
+        Assert.True(store.GetNode(P + "CartTest#totalAppliesTheDiscount().")!.IsTest);
+        Assert.Contains(store.TransitiveTests(P + "StandardPricing#unitPrice().", 30), t => t.Node.Name == "totalAppliesTheDiscount");
+        Assert.Contains(store.EdgesFrom(P + "StandardPricing#unitPrice()."), e => e.Kind == EdgeKind.CallsExternal && e.Target.Id == "scip:semanticdb maven jdk java/lang/Math#abs(+1).");
+        Assert.Contains(store.EdgesFrom(P + "DiscountPricing#`<init>`()."), e => e.Kind == EdgeKind.Calls && e.Target.Id == P + "StandardPricing#`<init>`().");
+
+        // main is an entry point; overrides are reached through dispatch; only the uncalled helper is dead.
+        Assert.Contains(store.EdgesTo(P + "Main#main()."), e => e.Kind == EdgeKind.InvokedByFramework);
+        Assert.DoesNotContain(store.EdgesTo(P + "DiscountPricing#unitPrice()."), e => e.Kind == EdgeKind.InvokedByFramework);
+        var (_, dead) = store.DeadCodeReport(includePublicApi: true);
+        Assert.Equal(["unused"], dead.Select(d => d.Method.Name));
     }
 }
 
@@ -197,5 +251,24 @@ public sealed class ScipRunnerTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_root, "pom.xml"), "<project/>");
         Assert.Equal(Path.Combine(_root, "pom.xml"), RepoSetup.FindTarget(_root, out _));
+    }
+}
+
+/// <summary>Tools installed by coursier, go install or cargo are found even when their folder is not on PATH.</summary>
+public sealed class ToolLocatorTests : IDisposable
+{
+    private readonly string _root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"))).FullName;
+
+    public void Dispose() => TempDb.TryDelete(_root);
+
+    [Fact]
+    public void A_tool_outside_PATH_is_found_in_an_installer_folder()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "coursier", "bin")).FullName;
+        var name = "codegraph-fake-" + Guid.NewGuid().ToString("n")[..8];
+        File.WriteAllText(Path.Combine(bin, OperatingSystem.IsWindows() ? name + ".exe" : name), "");
+        Assert.Equal(Path.Combine(bin, OperatingSystem.IsWindows() ? name + ".exe" : name), ToolLocator.Find(name, [bin]));
+        Assert.Null(ToolLocator.Find(name, [_root]));
+        Assert.Contains(ToolLocator.WellKnownDirectories(), d => d.Contains("oursier", StringComparison.Ordinal));
     }
 }

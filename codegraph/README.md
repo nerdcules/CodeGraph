@@ -16,7 +16,8 @@ tool with its arguments, output format, staleness, telemetry and troubleshooting
 ## Quick start
 
 Needs the .NET 10 SDK and git. TypeScript and Angular also need Node.js 22.22 or later, and the
-SCIP languages need their indexer on PATH, such as `scip-java`. From a clone of this repo:
+SCIP languages need their indexer, such as `scip-java` (`cs install --contrib scip-java`). It is found on PATH
+or where coursier, `go install` and cargo put tools. From a clone of this repo:
 
 ```bash
 ./install.sh ~/dev/App --add-to-path              # macOS / Linux

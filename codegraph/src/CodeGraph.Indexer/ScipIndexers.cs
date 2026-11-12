@@ -5,7 +5,7 @@ namespace CodeGraph.Indexer;
 
 /// <summary>
 /// Languages indexed through their SCIP indexer: codegraph-index runs the tool in the project folder, then imports
-/// the index it writes (<see cref="ScipImport"/>). The tool must be on PATH; each entry says where to get it.
+/// the index it writes (<see cref="ScipImport"/>). The tool must be on PATH or where its installer puts it (<see cref="ToolLocator"/>); each entry says where to get it.
 /// </summary>
 internal static class ScipIndexers
 {
@@ -59,7 +59,7 @@ internal static class ScipIndexers
         var clock = Stopwatch.StartNew();
         try
         {
-            var info = new ProcessStartInfo(indexer.Tool, indexer.Arguments(directory, output))
+            var info = new ProcessStartInfo(ToolLocator.Find(indexer.Tool) ?? indexer.Tool, indexer.Arguments(directory, output))
             {
                 WorkingDirectory = directory,
                 UseShellExecute = false,

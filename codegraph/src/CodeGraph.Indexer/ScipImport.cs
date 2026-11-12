@@ -9,7 +9,7 @@ namespace CodeGraph.Indexer;
 /// indexer (scip-java for Java, Kotlin and Scala, scip-python, scip-go, scip-typescript, rust-analyzer, …) gets
 /// the graph tools. Definitions become nodes; a reference becomes an edge from the innermost definition whose
 /// enclosing range holds it (Calls to methods and members, References to types); <c>is_implementation</c>
-/// relationships become Inherits, Implements and Overrides. Ids are <c>scip:</c> plus the SCIP symbol.
+/// relationships become Inherits, Implements and Overrides. Ids are <c>scip:</c> plus the SCIP symbol without its version (<see cref="IdOf"/>).
 /// Coarser than a native extractor: calls and reads are told apart by the target's kind alone.
 /// </summary>
 internal static class ScipImport
@@ -23,7 +23,10 @@ internal static class ScipImport
         new(@"^\s*@(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate|org\.junit\.[\w.]*Test)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     private static readonly System.Text.RegularExpressions.Regex EntryAnnotation =
-        new(@"^\s*@(RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|Bean|Scheduled|EventListener|KafkaListener|RabbitListener|JmsListener|PostConstruct|PreDestroy|Override)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
+        new(@"^\s*@(RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|Bean|Scheduled|EventListener|KafkaListener|RabbitListener|JmsListener|PostConstruct|PreDestroy)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static readonly System.Text.RegularExpressions.Regex OverrideAnnotation =
+        new(@"^\s*@(Override|java\.lang\.Override)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     public static GraphBatch Read(string path, Action<string> log)
     {
@@ -52,6 +55,7 @@ internal static class ScipImport
         var languages = new Dictionary<string, int>(StringComparer.Ordinal);
         var defined = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
         var definitions = new List<(Document Document, string File, List<(Span Span, string Id, bool IsTest)> Scopes)>();
+        var overrideAnnotated = new List<(string Id, string File)>();
 
         // Pass 1: every definition, so references in any document can tell source from external.
         foreach (var document in index.Documents)
@@ -81,7 +85,7 @@ internal static class ScipImport
 
                 var range = RangeOf(occurrence);
                 var span = EnclosingOf(occurrence) ?? range;
-                var id = "scip:" + occurrence.Symbol;
+                var id = IdOf(occurrence.Symbol);
                 var annotations = Annotations(lines, range.StartLine);
                 var isTest = shape.Kind == NodeKind.Method
                     && ((occurrence.SymbolRoles & TestRole) != 0 || annotations.Any(a => TestAnnotation.IsMatch(a)) || LooksLikeTest(symbol.Name, document.RelativePath, language));
@@ -89,10 +93,12 @@ internal static class ScipImport
                     : symbolInfo?.DisplayName is { Length: > 0 } display ? display
                     : null;
                 var declaration = range.StartLine < lines.Length ? lines[range.StartLine] : "";
-                var node = new GraphNode(id, shape.Kind, shape.Name, symbol.FullName, signature, file, span.StartLine + 1, span.EndLine + 1, isTest,
+                var overrides = Modifier(declaration, range.StartCharacter, "override") || annotations.Any(a => OverrideAnnotation.IsMatch(a));
+                var fullName = symbol.FullNameFor(language);
+                var node = new GraphNode(id, shape.Kind, shape.Name, fullName, signature, file, span.StartLine + 1, span.EndLine + 1, isTest,
                     shape.TypeKind, AccessibilityOf(declaration, range.StartCharacter, shape.Name, language, symbol.Parent is not null),
                     IsStatic: Modifier(declaration, range.StartCharacter, "static"), IsAbstract: Modifier(declaration, range.StartCharacter, "abstract"),
-                    IsAsync: Modifier(declaration, range.StartCharacter, "async"), IsOverride: Modifier(declaration, range.StartCharacter, "override"),
+                    IsAsync: Modifier(declaration, range.StartCharacter, "async"), IsOverride: overrides,
                     MemberKind: shape.MemberKind, Language: language);
                 if (!defined.TryAdd(occurrence.Symbol, node))
                 {
@@ -101,19 +107,23 @@ internal static class ScipImport
 
                 batch.Nodes.Add(node);
                 scopes.Add((span, id, isTest));
-                var parent = symbol.Parent is { } parentSymbol && defined.ContainsKey(parentSymbol) ? "scip:" + parentSymbol : fileId;
+                var parent = symbol.Parent is { } parentSymbol && defined.TryGetValue(parentSymbol, out var parentNode) ? parentNode.Id : fileId;
                 Edge(batch, parent, id, EdgeKind.Contains, file);
                 if (shape.Kind == NodeKind.Method && (annotations.Any(a => EntryAnnotation.IsMatch(a)) || symbol.Name == "main"))
                 {
                     Edge(batch, frameworkId, id, EdgeKind.InvokedByFramework, file);
                 }
+                else if (shape.Kind == NodeKind.Method && overrides)
+                {
+                    overrideAnnotated.Add((id, file));
+                }
 
-                if (SearchText.Document(id, [(shape.Name, 3), (symbol.FullName, 1), (signature, 2), (string.Join(" ", symbolInfo?.Documentation ?? []), 2)]) is { } search)
+                if (SearchText.Document(id, [(shape.Name, 3), (fullName, 1), (signature, 2), (string.Join(" ", symbolInfo?.Documentation ?? []), 2)]) is { } search)
                 {
                     batch.Search.Add(search);
                 }
 
-                batch.EmbeddingTexts[id] = $"{shape.Kind} {symbol.FullName}\n{signature}\n{string.Join("\n", symbolInfo?.Documentation ?? [])}";
+                batch.EmbeddingTexts[id] = $"{shape.Kind} {fullName}\n{signature}\n{string.Join("\n", symbolInfo?.Documentation ?? [])}";
             }
 
             // Innermost first: of two scopes holding a reference, the later-starting and earlier-ending one.
@@ -157,10 +167,11 @@ internal static class ScipImport
                 }
                 else if (ScipSymbol.Parse(occurrence.Symbol) is { IsMethod: true } external)
                 {
-                    var id = "scip:" + occurrence.Symbol;
+                    var id = IdOf(occurrence.Symbol);
                     if (externals.Add(id))
                     {
-                        batch.Nodes.Add(new GraphNode(id, NodeKind.External, external.Name, external.Package is "." ? external.FullName : $"{external.Package}.{external.FullName}",
+                        var externalName = DottedNamespaces(batch.Language) || external.Package is "." ? external.FullNameFor(batch.Language) : $"{external.Package}.{external.FullName}";
+                        batch.Nodes.Add(new GraphNode(id, NodeKind.External, external.Name, externalName,
                             null, null, 0, 0, false, Language: batch.Language));
                     }
 
@@ -169,31 +180,86 @@ internal static class ScipImport
             }
         }
 
-        // Relationships: what a type extends or implements, what a member overrides or implements.
+        // Relationships: what a type extends or implements, what a member overrides or implements. Indexers differ:
+        // scip-java lists a type's supertypes transitively and a method's relationship in both directions (the base
+        // names its implementation too). Keep the subtype-to-supertype direction and only direct supertypes, as C# does.
+        var related = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         foreach (var (symbol, symbolInfo) in info)
         {
-            if (!defined.TryGetValue(symbol, out var source))
+            if (defined.ContainsKey(symbol))
             {
-                continue;
-            }
-
-            foreach (var relationship in symbolInfo.Relationships.Where(r => r.IsImplementation))
-            {
-                if (!defined.TryGetValue(relationship.Symbol, out var target) || target.Id == source.Id)
+                foreach (var relationship in symbolInfo.Relationships.Where(r => r.IsImplementation && r.Symbol != symbol && defined.ContainsKey(r.Symbol)))
                 {
-                    continue;
+                    (related.TryGetValue(symbol, out var set) ? set : related[symbol] = new(StringComparer.Ordinal)).Add(relationship.Symbol);
                 }
+            }
+        }
 
+        bool IsSupertype(string? sub, string? super) =>
+            sub is not null && super is not null && related.TryGetValue(sub, out var supers) && supers.Contains(super);
+        foreach (var (symbol, targets) in related)
+        {
+            var parent = ScipSymbol.Parse(symbol)?.Parent;
+            targets.RemoveWhere(t => IsSupertype(ScipSymbol.Parse(t)?.Parent, parent)); // the base pointing at its override
+        }
+
+        var overridesInSource = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (symbol, targets) in related)
+        {
+            var source = defined[symbol];
+            foreach (var targetSymbol in targets.Where(t => !targets.Any(m => m != t && IsSupertype(m, t))))
+            {
+                var target = defined[targetSymbol];
                 var kind = source.Kind == NodeKind.Type
                     ? (target.TypeKind == TypeKind.Interface ? EdgeKind.Implements : EdgeKind.Inherits)
-                    : (ParentKind(relationship.Symbol, defined) == TypeKind.Interface ? EdgeKind.Implements : EdgeKind.Overrides);
+                    : (ParentKind(targetSymbol, defined) == TypeKind.Interface ? EdgeKind.Implements : EdgeKind.Overrides);
                 Edge(batch, source.Id, target.Id, kind, source.FilePath!);
+                overridesInSource.Add(source.Id);
             }
+        }
+
+        // An @Override whose base is outside the source (toString, Runnable.run, a framework interface) is called by
+        // code the graph does not hold, so it is a framework entry point rather than dead code.
+        foreach (var (id, file) in overrideAnnotated.Where(o => !overridesInSource.Contains(o.Id)))
+        {
+            Edge(batch, frameworkId, id, EdgeKind.InvokedByFramework, file);
         }
 
         log($"scip: {index.Documents.Count} document(s) from {tool}, {defined.Count} definitions, {externals.Count} external symbols");
         return batch;
     }
+
+    /// <summary>
+    /// <c>scip:</c> plus the symbol without its version field, so a release bump (<c>1.0</c> to <c>1.1</c>, JDK 21 to
+    /// 27) keeps every id: <c>scip:semanticdb maven maven/org.acme/shop org/acme/Shop#price().</c>
+    /// </summary>
+    internal static string IdOf(string symbol)
+    {
+        // scheme, manager, package, version: skip three separators (a doubled space is a literal space), then drop the fourth field.
+        var i = 0;
+        int[] separators = new int[4];
+        for (var f = 0; f < 4; f++)
+        {
+            while (i < symbol.Length && !(symbol[i] == ' ' && (i + 1 >= symbol.Length || symbol[i + 1] != ' ')))
+            {
+                i += symbol[i] == ' ' ? 2 : 1;
+            }
+
+            if (i >= symbol.Length)
+            {
+                return ScipPrefix + symbol;
+            }
+
+            separators[f] = i++;
+        }
+
+        return ScipPrefix + symbol[..separators[2]] + symbol[separators[3]..];
+    }
+
+    internal const string ScipPrefix = "scip:";
+
+    /// <summary>JVM languages name packages with dots: <c>org.acme.shop.Cart.add</c>, not <c>org/acme/shop/Cart.add</c>.</summary>
+    internal static bool DottedNamespaces(string language) => language is Languages.Java or "kotlin" or "scala";
 
     private static TypeKind ParentKind(string symbol, Dictionary<string, GraphNode> defined) =>
         ScipSymbol.Parse(symbol)?.Parent is { } parent && defined.TryGetValue(parent, out var node) ? node.TypeKind : TypeKind.None;
@@ -451,6 +517,9 @@ internal sealed record ScipSymbol(string Scheme, string Package, IReadOnlyList<(
             return sb.ToString().TrimEnd('/');
         }
     }
+
+    /// <summary><see cref="FullName"/>, with namespaces dotted for the languages that write them so.</summary>
+    public string FullNameFor(string language) => ScipImport.DottedNamespaces(language) ? FullName.Replace('/', '.') : FullName;
 
     public static ScipSymbol? Parse(string symbol)
     {

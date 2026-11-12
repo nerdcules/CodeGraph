@@ -4,7 +4,7 @@ namespace CodeGraph.Indexer.Lsp;
 
 /// <summary>
 /// Which language server answers the live tools for a language. TypeScript's ships with the extractor
-/// (typescript-language-server on the bundled TypeScript); the others must be on PATH. CODEGRAPH_LSP overrides
+/// (typescript-language-server on the bundled TypeScript); the others must be on PATH or in an installer's usual folder (<see cref="ToolLocator"/>). CODEGRAPH_LSP overrides
 /// the command for any language ("jdtls -data /tmp/ws", say).
 /// </summary>
 internal sealed record LspServer(IReadOnlyList<string> Command, JsonObject? InitializationOptions, string Display)
@@ -49,16 +49,13 @@ internal sealed record LspServer(IReadOnlyList<string> Command, JsonObject? Init
 
     private static LspServer? OnPath(string tool, string[] command, Action<string> log)
     {
-        var found = (Environment.GetEnvironmentVariable("PATH") ?? "")
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Any(dir => File.Exists(Path.Combine(dir, tool)) || File.Exists(Path.Combine(dir, tool + ".exe")) || File.Exists(Path.Combine(dir, tool + ".cmd")));
-        if (!found)
+        if (ToolLocator.Find(tool) is not { } found)
         {
             log($"live: {tool} is not on PATH; live tools are off for this language (graph tools still work)");
             return null;
         }
 
-        return new LspServer(command, null, tool);
+        return new LspServer([found, .. command.Skip(1)], null, tool);
     }
 
     private static string Hash(string text) =>

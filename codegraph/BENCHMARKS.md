@@ -362,6 +362,22 @@ Native extractor against scip-typescript on RealWorld:
 | Angular templates, DI, routes | yes | no |
 | test nodes | 224 (describe and it blocks) | none |
 
+Java, on `tests/CodeGraph.Tests/Fixtures/java-shop` (a Maven project with an interface, two levels of
+inheritance and a JUnit 5 test), Temurin JDK 27, Maven 3.10, scip-java 0.12.3:
+
+| step | time |
+|---|---|
+| `codegraph-index init` (scip-java runs `mvn clean verify`, then the import) | 5.6 s |
+| import of the index alone | 0.3 s |
+| `--watch` re-index after a save | 5.6 s |
+
+The real index showed two things a synthetic one had not. scip-java records a method's relationship in both
+directions, so every base method looked like it overrode its own override, and `impact_of` listed a method
+among its own dependents. It also lists a type's supertypes transitively. The importer now keeps the
+subtype-to-supertype direction and direct supertypes only, as the C# extractor does. Ids also dropped the
+version field, because `1.0` in every id would have changed with each release, and JDK calls with each JDK.
+Java names now read `org.acme.shop.Cart.total`.
+
 ## Where it ended up
 
 This repo's own graph, first baseline against the final build of this work, same machine and method. The graph
