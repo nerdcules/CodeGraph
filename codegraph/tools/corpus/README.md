@@ -6,6 +6,29 @@ an entry point, planted dead code, and Angular components, services and template
 language (C#, Java, TypeScript, JavaScript, Angular, Go, Rust or Python), in one construction. `expected.json` lists every method, type and edge the graph should hold.
 `check.py` indexes the codebase, exports the graph (`codegraph-index export --dead-code`) and scores it.
 
+After scoring, each run also tests the Obsidian side.
+
+- **The vault** ([vault_check.py](vault_check.py)). It runs `codegraph-index export obsidian` and checks:
+  - every wikilink points at a note that exists, and every `#heading` is a heading in it;
+  - every type has a note and every member a heading, nested members included;
+  - frontmatter parses, source links point at real lines, and the export manifest matches the files on disk;
+  - a second export writes nothing;
+  - the folder's lifecycle: emptied, then rebuilt, with a person's note and a hand-edited note in it, deletes only
+    notes the exporter wrote.
+- **The plugin's live path** ([live.py](live.py), [live_check.cjs](live_check.cjs)). When `codegraph-mcp` and the
+  plugin are mounted, it drives the real server through the plugin's own MCP client. It checks:
+  - `find_symbol` finds each target, and every row of `callers_of`, `tests_for` and `impact_of` parses and links to
+    a note;
+  - callers agree with the answer key;
+  - a source edit turns the answers stale, a re-index makes them fresh again, and the export afterwards rewrites
+    nothing but the index;
+  - a server that can't start fails with its reason.
+
+  Callers precision is below 100 on purpose: `callers_of` counts a call to an interface or base member as a call to
+  every implementation, and the answer key holds direct calls only.
+
+Real Obsidian is tested separately, in [tools/obsidian-e2e](../obsidian-e2e/README.md).
+
 ```bash
 python3 tools/corpus/run.py --base <local image with the .NET 10 SDK, Node 22.22+ and Python 3> --jobs 4 --seeds 1,2
 python3 tools/corpus/run.py --langs java --profiles large      # one slice
