@@ -175,4 +175,29 @@ public sealed class ImportTests : IDisposable
         var batch = Batch("""{"type":"file","path":"/a.ts"}""");
         Assert.Contains(batch.Problems, p => p.Contains("header"));
     }
+
+    /// <summary>export writes what import reads: one language's nodes and edges, with dead-code candidates on request.</summary>
+    [Fact]
+    public async Task Export_writes_one_language_as_import_records_with_dead_code_candidates()
+    {
+        Source("src/user.service.ts");
+        WriteCSharp(Source("Api.cs"));
+        await Import(TypeScriptBatch());
+
+        var output = new StringWriter();
+        Assert.Equal(0, ExportCommand.Run(["--db", DbPath, "--language", "typescript", "--dead-code"], output, _ => { }));
+        var records = output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => System.Text.Json.JsonDocument.Parse(l).RootElement).ToList();
+
+        var nodes = records.Where(r => r.GetProperty("type").GetString() == "node").ToList();
+        Assert.All(nodes, n => Assert.Equal("typescript", n.GetProperty("language").GetString()));
+        Assert.DoesNotContain(nodes, n => n.GetProperty("id").GetString() == "T:App.Api");
+        Assert.Contains(records, r => r.GetProperty("type").GetString() == "edge" && r.GetProperty("kind").GetString() == "Calls"
+            && r.GetProperty("to").GetString() == "ts:src/user.service.ts#UserService.save");
+        Assert.Contains(records, r => r.GetProperty("type").GetString() == "dead" && r.GetProperty("node").GetString() == "ts:src/user.service.ts#UserService.load");
+
+        // The node records read back through import unchanged.
+        var header = $$"""{"type":"header","language":"typescript","tool":"export","root":"{{_root.Replace("\\", "/")}}","target":"tsconfig.json"}""";
+        var batch = GraphBatch.Read(new StringReader(header + "\n" + output));
+        Assert.Contains(batch.Nodes, n => n.Id == "ts:src/user.service.ts#UserService.save" && n.IsAsync && n.Signature == "save(user: User): Promise<void>");
+    }
 }

@@ -169,6 +169,36 @@ public sealed class DispatchTests
         Assert.Contains(graph.Edges, e => e.ToId == entry.Id && e.Kind == EdgeKind.Contains && e.FromId.StartsWith("F:"));
     }
 
+    /// <summary>Found by the generated corpus (tools/corpus): every static Main was reported as dead code.</summary>
+    [Fact]
+    public async Task A_static_Main_is_the_entry_point_and_another_Main_is_not()
+    {
+        var graph = await ConsoleAppAsync(("Program.cs", """
+            namespace N;
+            public static class Program { public static void Main() { Helper.Go(); } }
+            public static class Helper { public static void Go() { } public static void Main(int unused) { } }
+            """));
+
+        Assert.Contains(graph.Edges, e => e.ToId == "M:N.Program.Main" && e.Kind == EdgeKind.InvokedByFramework);
+        Assert.DoesNotContain(graph.Edges, e => e.ToId == "M:N.Helper.Main(System.Int32)" && e.Kind == EdgeKind.InvokedByFramework);
+    }
+
+    /// <summary>Found by the generated corpus (tools/corpus): a base constructor was never called by its subclasses.</summary>
+    [Fact]
+    public async Task Constructor_initializers_and_primary_constructor_bases_call_the_constructor_they_name()
+    {
+        var graph = await Indexed.OfAsync("""
+            namespace N;
+            public class Base { public Base(int a) { } public Base() : this(1) { } }
+            public class Derived : Base { public Derived(int a) : base(a) { } }
+            public class Primary(int a) : Base(a);
+            """);
+
+        Assert.True(graph.HasEdge("M:N.Derived.#ctor(System.Int32)", "M:N.Base.#ctor(System.Int32)", EdgeKind.Calls));
+        Assert.True(graph.HasEdge("M:N.Base.#ctor", "M:N.Base.#ctor(System.Int32)", EdgeKind.Calls));
+        Assert.Contains(graph.Edges, e => e.ToId == "M:N.Base.#ctor(System.Int32)" && e.Kind == EdgeKind.Calls && e.FromId.StartsWith("M:N.Primary"));
+    }
+
     [Fact]
     public async Task Ambiguous_candidates_from_different_types_are_not_guessed()
     {

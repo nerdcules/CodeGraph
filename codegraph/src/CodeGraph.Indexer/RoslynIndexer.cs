@@ -349,6 +349,20 @@ public sealed partial class RoslynIndexer
                 {
                     IndexMember(member, model, typeId, origin, frameworkRootId, cancellationToken);
                 }
+
+                // A primary constructor has no member declaration: it is the type's parameter list, and its
+                // `: Base(a)` in the base list is its body, calling the base constructor.
+                if (declaration.ParameterList is not null
+                    && type.InstanceConstructors.FirstOrDefault(c => c.DeclaringSyntaxReferences.Any(r => r.GetSyntax(cancellationToken) == declaration)) is { } primaryCtor
+                    && IdOf(primaryCtor) is { } primaryCtorId)
+                {
+                    AddNode(NodeFor(primaryCtor, primaryCtorId, NodeKind.Method, declaration, isTest: false));
+                    AddEdge(new GraphEdge(typeId, primaryCtorId, EdgeKind.Contains), origin);
+                    foreach (var baseCall in declaration.BaseList?.Types.OfType<PrimaryConstructorBaseTypeSyntax>() ?? [])
+                    {
+                        IndexBody(baseCall, model, primaryCtorId, callerIsTest: false, origin, cancellationToken);
+                    }
+                }
             }
             else if (typeDeclaration is DelegateDeclarationSyntax @delegate)
             {
@@ -436,7 +450,9 @@ public sealed partial class RoslynIndexer
                 (BodyText(member), 1),
             ]);
 
-            if (symbol is IMethodSymbol method && HasFrameworkEntrypointAttribute(method))
+            // The runtime calls the program's entry point (static Main); top-level statements are handled apart.
+            if (symbol is IMethodSymbol method && (HasFrameworkEntrypointAttribute(method)
+                || (method is { IsStatic: true, Name: "Main" } && SymbolEqualityComparer.Default.Equals(method, model.Compilation.GetEntryPoint(cancellationToken)))))
             {
                 AddEdge(new GraphEdge(frameworkRootId, memberId, EdgeKind.InvokedByFramework), origin);
             }
@@ -472,7 +488,10 @@ public sealed partial class RoslynIndexer
 
             switch (node)
             {
-                case InvocationExpressionSyntax or ObjectCreationExpressionSyntax or ImplicitObjectCreationExpressionSyntax:
+                // `: base(a)`, `: this(a)` and a primary constructor's `: Base(a)` call a constructor the source names
+                // only by its type.
+                case InvocationExpressionSyntax or ObjectCreationExpressionSyntax or ImplicitObjectCreationExpressionSyntax
+                    or ConstructorInitializerSyntax or PrimaryConstructorBaseTypeSyntax:
                     var info = model.GetSymbolInfo(node, cancellationToken);
                     AddCall(callerId, info.Symbol ?? Unambiguous(info.CandidateSymbols), callerIsTest, origin);
                     break;
