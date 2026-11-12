@@ -1,0 +1,15 @@
+{
+  "name": "codegraph-obsidian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Obsidian plugin for CodeGraph: generated code notes and a live panel over codegraph-mcp",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/",
+    "install-plugin": "node install-plugin.mjs"
+  },
+  "license": "MIT"
+}

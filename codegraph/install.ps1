@@ -21,6 +21,9 @@
 .PARAMETER Live
     The MCP server starts the live daemon itself on its first call (CODEGRAPH_DAEMON=auto in .mcp.json).
 
+.PARAMETER ObsidianVault
+    Also install the Obsidian plugin into this vault folder (needs Node.js; see obsidian-plugin/README.md).
+
 .PARAMETER SkipTests
     Publish without running the test suite.
 
@@ -38,6 +41,7 @@ param(
     [string] $InstallDir,
     [switch] $AddToPath,
     [switch] $Live,
+    [string] $ObsidianVault,
     [switch] $SkipTests,
     [switch] $Force
 )
@@ -185,6 +189,17 @@ foreach ($target in $Repo) {
     if ($Live) { $initArgs += '--live' }
     Invoke-WithRoot $(if ($rootFor) { $rootFor } else { $env:DOTNET_ROOT }) $indexExe $initArgs
     if ($LASTEXITCODE -ne 0) { $failed++ }
+}
+
+if ($ObsidianVault) {
+    Step "Installing the Obsidian plugin into $ObsidianVault"
+    if (Get-Command node -ErrorAction SilentlyContinue) {
+        & node (Join-Path $PSScriptRoot 'obsidian-plugin/install-plugin.mjs') $ObsidianVault
+        if ($LASTEXITCODE -ne 0) { $failed++ }
+    } else {
+        Write-Warning "Node.js is not on PATH; install it, then run: node obsidian-plugin/install-plugin.mjs `"$ObsidianVault`""
+        $failed++
+    }
 }
 
 Step 'Installed'

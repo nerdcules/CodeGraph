@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Builds, tests and installs codegraph-index and codegraph-mcp, then sets up repos to use them (macOS / Linux).
 #
-#   ./install.sh [REPO_OR_SOLUTION]... [--install-dir DIR] [--add-to-path] [--live] [--skip-tests] [--force]
+#   ./install.sh [REPO_OR_SOLUTION]... [--install-dir DIR] [--add-to-path] [--live] [--obsidian-vault DIR] [--skip-tests] [--force]
 #
 #   REPO_OR_SOLUTION  a repo folder or a .sln / .slnx / .csproj to set up: writes .mcp.json, adds .codegraph/ to
 #                     .gitignore and builds the graph (codegraph-index init). Asked for when none is given.
 #   --install-dir     default ~/.codegraph/bin
 #   --add-to-path     append the install dir to PATH in ~/.bashrc and ~/.zshrc
 #   --live            the MCP server starts the live daemon itself on its first call (CODEGRAPH_DAEMON=auto)
+#   --obsidian-vault  also install the Obsidian plugin into that vault (needs Node.js; see obsidian-plugin/README.md)
 #   --skip-tests      publish without running the test suite
 #   --force           stop running codegraph processes before overwriting them
 #
@@ -20,6 +21,7 @@ skip_tests=false
 add_to_path=false
 force=false
 live=false
+obsidian_vault=""
 repos=()
 
 while [ $# -gt 0 ]; do
@@ -29,7 +31,8 @@ while [ $# -gt 0 ]; do
         --add-to-path) add_to_path=true; shift ;;
         --force)       force=true; shift ;;
         --live)        live=true; shift ;;
-        -h|--help)     sed -n '2,15p' "$0"; exit 0 ;;
+        --obsidian-vault) obsidian_vault="$2"; shift 2 ;;
+        -h|--help)     sed -n '2,16p' "$0"; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 1 ;;
         *)  repos+=("$1"); shift ;;
     esac
@@ -133,6 +136,16 @@ for repo in ${repos[@]+"${repos[@]}"}; do
     step "Setting up $repo"
     index init "$repo" ${init_args[@]+"${init_args[@]}"} || failed=$((failed + 1))
 done
+
+if [ -n "$obsidian_vault" ]; then
+    step "Installing the Obsidian plugin into $obsidian_vault"
+    if command -v node >/dev/null 2>&1; then
+        node "$root/obsidian-plugin/install-plugin.mjs" "$obsidian_vault" || failed=$((failed + 1))
+    else
+        echo "Node.js is not on PATH; install it, then run: node $root/obsidian-plugin/install-plugin.mjs \"$obsidian_vault\"" >&2
+        failed=$((failed + 1))
+    fi
+fi
 
 if [ "$needs_root" = true ]; then
     root_hint="DOTNET_ROOT=\"$dotnet_root\" "

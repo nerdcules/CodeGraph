@@ -110,6 +110,7 @@ if (usage || targetArg is null)
     Console.Error.WriteLine("               Cargo.toml (through that language's SCIP indexer); or a folder holding one of them");
     Console.Error.WriteLine("       codegraph-index import <records.ndjson | index.scip | -> [--db <path>]");
     Console.Error.WriteLine("       codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]");
+    Console.Error.WriteLine("       codegraph-index export obsidian --out <vault>/<folder> [--db <path>] [--language <name>] [--link-root <path>]");
     Console.Error.WriteLine("       codegraph-index init [solution|dir] [--live] [--no-index] [index options]");
     Console.Error.WriteLine("       default db: <git worktree root>/.codegraph/graph.db (solution dir outside a repo)");
     Console.Error.WriteLine("       re-walks only files whose hash changed, plus files that depend on them;");
