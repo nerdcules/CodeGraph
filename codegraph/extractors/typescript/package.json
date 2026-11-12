@@ -3,13 +3,23 @@
   "version": "0.1.0",
   "description": "TypeScript and Angular extractor for CodeGraph: writes the graph records codegraph-index import reads",
   "type": "module",
-  "bin": { "codegraph-ts": "cli.mjs" },
-  "files": ["cli.mjs", "lib/"],
-  "engines": { "node": ">=20" },
-  "scripts": { "test": "node --test test/" },
+  "bin": {
+    "codegraph-ts": "cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "lib/"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
   "license": "MIT",
   "dependencies": {
     "@angular/compiler": "22.2.6",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "typescript-language-server": "6.0.3"
   }
 }

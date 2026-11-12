@@ -87,3 +87,95 @@ public sealed class TypeScriptIndexTests : IDisposable
         Assert.Equal(before, again.Count());
     }
 }
+
+/// <summary>
+/// The TypeScript daemon end to end: codegraph-index --watch on a copy of the fixture, then live requests over the
+/// graph's pipe, answered by typescript-language-server. Skipped where Node or the extractor's packages are missing.
+/// </summary>
+public sealed class TypeScriptLiveTests : IDisposable
+{
+    private readonly string _root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"))).FullName;
+    private System.Diagnostics.Process? _daemon;
+
+    public void Dispose()
+    {
+        if (_daemon is { HasExited: false })
+        {
+            _daemon.Kill(entireProcessTree: true);
+            _daemon.WaitForExit(10_000);
+        }
+
+        _daemon?.Dispose();
+        TempDb.TryDelete(_root);
+    }
+
+    private static void Copy(string from, string to)
+    {
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.GetFiles(from))
+        {
+            File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
+        }
+
+        foreach (var dir in Directory.GetDirectories(from))
+        {
+            Copy(dir, Path.Combine(to, Path.GetFileName(dir)));
+        }
+    }
+
+    [Fact]
+    public async Task References_rename_and_a_what_if_edit_come_from_the_language_server()
+    {
+        string? package = null;
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null && package is null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, "extractors", "typescript");
+            if (File.Exists(Path.Combine(candidate, "node_modules", "typescript-language-server", "lib", "cli.mjs")))
+            {
+                package = candidate;
+            }
+        }
+
+        Assert.SkipWhen(package is null, "the extractor's npm packages are not installed");
+        var workspace = Path.Combine(_root, "shop");
+        Copy(Path.Combine(package, "test", "fixtures", "angular-app"), workspace);
+        Directory.CreateDirectory(Path.Combine(workspace, ".git"));
+        var db = Path.Combine(workspace, ".codegraph", "graph.db");
+        var dotnet = Path.Combine(CodeGraph.Core.DotnetRuntime.Root()!, OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
+        _daemon = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dotnet,
+            [Path.Combine(AppContext.BaseDirectory, "codegraph-index.dll"), workspace, "--watch", "--idle-exit", "5", "--log", Path.Combine(_root, "daemon.log")])
+        {
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        })!;
+
+        var live = new CodeGraph.Core.Live.LiveClient(db);
+        var ready = DateTime.UtcNow + TimeSpan.FromSeconds(90);
+        CodeGraph.Core.Live.LiveStatus? status = null;
+        while (DateTime.UtcNow < ready && status is not { Loading: false })
+        {
+            await Task.Delay(500, TestContext.Current.CancellationToken);
+            status = await live.PingAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(status is { Loading: false }, File.Exists(Path.Combine(_root, "daemon.log")) ? File.ReadAllText(Path.Combine(_root, "daemon.log")) : "no daemon log");
+
+        const string FormatName = "ts:src/app/user.service.ts#UserService.formatName";
+        var references = await live.CallAsync<CodeGraph.Core.Live.LiveReferences>("references", new { symbol = FormatName, limit = 50 }, TestContext.Current.CancellationToken);
+        Assert.Equal(["ts:src/app/user-card.component.ts#UserCardComponent.display", "ts:src/app/user.service.spec.ts#UserService > formats names"],
+            references!.References.Select(r => r.EnclosingMemberId).Order(StringComparer.Ordinal));
+
+        var rename = await live.CallAsync<CodeGraph.Core.Live.LiveRename>("rename_preview", new { symbol = FormatName, newName = "displayName" }, TestContext.Current.CancellationToken);
+        Assert.Equal(3, rename!.Files.Count);
+        Assert.Contains(rename.Files.SelectMany(f => f.Lines), l => l.After.Contains("this.service.displayName(this.user)"));
+
+        var service = Path.Combine(workspace, "src", "app", "user.service.ts");
+        var text = File.ReadAllText(service).Replace("formatName(user: User): string", "formatName(user: User, upper: boolean): string");
+        var check = await live.CallAsync<CodeGraph.Core.Live.LiveCheck>("check_change", new { file = service, text }, TestContext.Current.CancellationToken);
+        Assert.Equal(2, check!.NewErrors.Count);
+        Assert.All(check.NewErrors, e => Assert.Contains("Expected 2 arguments", e.Message));
+        Assert.Contains(check.NewErrors, e => e.File!.EndsWith("user-card.component.ts", StringComparison.Ordinal));
+    }
+}

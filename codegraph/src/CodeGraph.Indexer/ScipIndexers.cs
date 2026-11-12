@@ -112,7 +112,11 @@ internal static class ScipIndexers
         }
     }
 
-    public static Task<int> WatchAsync(Indexer indexer, string marker, string dbPath, Action<string> log, CancellationToken cancellationToken) =>
-        ReindexWatch.RunAsync(Path.GetDirectoryName(Path.GetFullPath(marker))!, new HashSet<string>(indexer.Extensions, StringComparer.OrdinalIgnoreCase),
-            token => IndexAsync(indexer, marker, dbPath, log, token), log, cancellationToken);
+    /// <summary><c>--watch</c>: re-index on every save; the language's server (jdtls, pyright, gopls, rust-analyzer), when on PATH, answers the live tools.</summary>
+    public static Task<int> WatchAsync(Indexer indexer, string marker, string dbPath, double? idleExitMinutes, Action<string> log)
+    {
+        var root = Path.GetDirectoryName(Path.GetFullPath(marker))!;
+        return ExternalDaemon.RunAsync(marker, dbPath, indexer.Language, new HashSet<string>(indexer.Extensions, StringComparer.OrdinalIgnoreCase),
+            token => IndexAsync(indexer, marker, dbPath, log, token), Lsp.LspServer.For(indexer.Language, root, log), idleExitMinutes, log);
+    }
 }

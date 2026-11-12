@@ -836,6 +836,26 @@ public sealed class GraphStore : IDisposable
         return ReadNodes(command);
     }
 
+    /// <summary>
+    /// The innermost declaration spanning <paramref name="line"/> (one-based) of <paramref name="file"/>: the member
+    /// a reference sits in, for live answers that arrive as file positions (a language server's locations).
+    /// </summary>
+    public GraphNode? NodeAt(string file, int line)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT {NodeColumns} FROM nodes
+             WHERE file_path = $file AND start_line <= $line AND end_line >= $line AND kind NOT IN ('File', 'Project', 'External')
+             ORDER BY end_line - start_line, start_line DESC
+             LIMIT 1;
+             """;
+        command.Parameters.Add(P("file", file));
+        command.Parameters.Add(P("line", line));
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadNode(reader) : null;
+    }
+
     /// <summary>Direct children via Contains edges (project to files, file to types, type to members).</summary>
     public IReadOnlyList<GraphNode> Children(string id)
     {

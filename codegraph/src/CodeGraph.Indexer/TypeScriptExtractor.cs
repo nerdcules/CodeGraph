@@ -175,11 +175,15 @@ internal static class TypeScriptExtractor
         ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".html", ".json",
     };
 
-    /// <summary><c>--watch</c> for a TypeScript workspace: re-index on every save.</summary>
-    public static Task<int> WatchAsync(string target, string dbPath, Action<string> log, CancellationToken cancellationToken)
+    /// <summary>
+    /// <c>--watch</c> for a TypeScript workspace: re-index on every save, and answer the live tools through
+    /// typescript-language-server (bundled with the extractor) on the graph's pipe.
+    /// </summary>
+    public static Task<int> WatchAsync(string target, string dbPath, double? idleExitMinutes, Action<string> log)
     {
-        var root = Directory.Exists(target) ? Path.GetFullPath(target) : Path.GetDirectoryName(Path.GetFullPath(target))!;
-        return ReindexWatch.RunAsync(root, SourceExtensions, token => IndexAsync(target, dbPath, log, token), log, cancellationToken);
+        var root = Path.GetDirectoryName(Path.GetFullPath(target))!;
+        return ExternalDaemon.RunAsync(target, dbPath, Languages.TypeScript, SourceExtensions, token => IndexAsync(target, dbPath, log, token),
+            Lsp.LspServer.For(Languages.TypeScript, root, log), idleExitMinutes, log);
     }
 
     internal static bool Relevant(string path) => ReindexWatch.Relevant(path, SourceExtensions);

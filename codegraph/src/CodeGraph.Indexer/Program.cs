@@ -162,7 +162,7 @@ if (TypeScriptExtractor.IsTarget(target))
         stopping.Cancel();
     };
     var code = watch
-        ? await TypeScriptExtractor.WatchAsync(target, dbPath, Log, stopping.Token)
+        ? await TypeScriptExtractor.WatchAsync(target, dbPath, idleExitMinutes, Log)
         : await TypeScriptExtractor.IndexAsync(target, dbPath, Log, stopping.Token);
     if (init && code == 0)
     {
@@ -182,7 +182,7 @@ if (ScipIndexers.For(target) is { } scip)
         stopping.Cancel();
     };
     var code = watch
-        ? await ScipIndexers.WatchAsync(scip.Indexer, scip.Marker, dbPath, Log, stopping.Token)
+        ? await ScipIndexers.WatchAsync(scip.Indexer, scip.Marker, dbPath, idleExitMinutes, Log)
         : await ScipIndexers.IndexAsync(scip.Indexer, scip.Marker, dbPath, Log, stopping.Token);
     if (init && code == 0)
     {
