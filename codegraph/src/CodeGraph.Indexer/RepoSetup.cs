@@ -23,7 +23,8 @@ internal static class RepoSetup
     /// <summary>
     /// What to index from a file or a directory: the file itself; else the one solution in the directory; else the
     /// one solution below it (three levels, skipping build output and hidden folders); else, from a subfolder of a
-    /// repo, the one solution at or below the worktree root; else the one project in the directory.
+    /// repo, the one solution at or below the worktree root; else the one project in the directory; else a TypeScript
+    /// workspace (angular.json, nx.json, or tsconfig.json) in it or below it.
     /// When <c>App.sln</c> and <c>App.slnx</c> sit side by side the .slnx wins. Null with <paramref name="problem"/> set otherwise.
     /// </summary>
     public static string? FindTarget(string path, out string? problem)
@@ -53,6 +54,8 @@ internal static class RepoSetup
         }
 
         candidates.Add(() => Directory.GetFiles(full, "*.csproj").Order(StringComparer.Ordinal).ToList());
+        // No C#: a TypeScript or Angular workspace (angular.json, nx.json, tsconfig.json) here or below.
+        candidates.Add(() => TypeScriptExtractor.IsTarget(full) ? [TypeScriptExtractor.WorkspaceFile(full)] : TypeScriptExtractor.WorkspacesUnder(full).ToList());
         foreach (var search in candidates)
         {
             var found = search();
@@ -68,7 +71,7 @@ internal static class RepoSetup
             }
         }
 
-        problem = $"no .slnx, .sln or .csproj in {full}; pass the solution to index";
+        problem = $"no .slnx, .sln, .csproj, angular.json or tsconfig.json in {full}; pass what to index";
         return null;
     }
 

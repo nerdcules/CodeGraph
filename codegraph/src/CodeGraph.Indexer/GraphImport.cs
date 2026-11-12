@@ -153,7 +153,7 @@ internal sealed class GraphBatch
         Str(record, name) is { Length: > 0 } value ? value : throw new FormatException($"missing '{name}'");
 
     private static int Int(JsonElement record, string name) =>
-        record.TryGetProperty(name, out var value) && value.TryGetInt32(out var number) ? number : 0;
+        record.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) ? number : 0;
 
     private static bool Bool(JsonElement record, string name) =>
         record.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;

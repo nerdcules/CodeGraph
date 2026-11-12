@@ -1,0 +1,4 @@
+{
+  // comments are allowed, as in real workspaces
+  "compilerOptions": { "strict": true, "target": "ES2022", "module": "ES2022", "moduleResolution": "bundler", "experimentalDecorators": true, "lib": ["ES2022", "DOM"], "paths": { "@angular/core": ["./stubs/angular-core.d.ts"] } },
+}

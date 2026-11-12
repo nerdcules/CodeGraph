@@ -123,7 +123,7 @@ if (logArg is not null)
     Console.SetError(new StreamWriter(new FileStream(logArg, FileMode.Append, FileAccess.Write, FileShare.ReadWrite)) { AutoFlush = true });
 }
 
-var target = Path.GetFullPath(targetArg);
+var target = TypeScriptExtractor.WorkspaceFile(Path.GetFullPath(targetArg));
 if (!File.Exists(target))
 {
     Console.Error.WriteLine($"not found: {target}");
@@ -147,6 +147,26 @@ if (init)
     }
 }
 
+if (TypeScriptExtractor.IsTarget(target))
+{
+    // TypeScript, JavaScript and Angular: the Node extractor writes the records, the importer writes the graph.
+    using var stopping = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        stopping.Cancel();
+    };
+    var code = watch
+        ? await TypeScriptExtractor.WatchAsync(target, dbPath, Log, stopping.Token)
+        : await TypeScriptExtractor.IndexAsync(target, dbPath, Log, stopping.Token);
+    if (init && code == 0)
+    {
+        Console.WriteLine(ReadyMessage(target));
+    }
+
+    return code;
+}
+
 // MSBuildLocator must run before the JIT touches any Microsoft.CodeAnalysis.MSBuild type,
 // which is why the actual work lives in a separate, non-inlined method.
 MSBuildLocator.RegisterDefaults();
@@ -159,14 +179,26 @@ if (watch)
 var exit = await RunAsync(target, dbPath, forceFull);
 if (init && exit == 0)
 {
-    Console.WriteLine($"""
+    // A front end beside the solution (an Angular ClientApp, a web/ folder) goes into the same graph.
+    foreach (var workspace in TypeScriptExtractor.WorkspacesUnder(RepoSetup.RepoRoot(target)))
+    {
+        Log($"typescript workspace: {workspace}");
+        if (await TypeScriptExtractor.IndexAsync(workspace, dbPath, Log, CancellationToken.None) != 0)
+        {
+            Log($"typescript: {workspace} was not indexed; the C# graph is complete");
+        }
+    }
 
-        Ready. Start Claude Code in {RepoSetup.RepoRoot(target)} (or run /mcp in an open session) and approve the codegraph server.
-        Keep the graph fresh while you work:  codegraph-index "{target}" --watch
-        """);
+    Console.WriteLine(ReadyMessage(target));
 }
 
 return exit;
+
+static string ReadyMessage(string target) => $"""
+
+    Ready. Start Claude Code in {RepoSetup.RepoRoot(target)} (or run /mcp in an open session) and approve the codegraph server.
+    Keep the graph fresh while you work:  codegraph-index "{target}" --watch
+    """;
 
 [MethodImpl(MethodImplOptions.NoInlining)]
 static async Task<int> RunAsync(string target, string dbPath, bool forceFull)

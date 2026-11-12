@@ -30,3 +30,6 @@ indexing.log
 # OS
 .DS_Store
 Thumbs.db
+
+# Node (extractors/typescript)
+node_modules/

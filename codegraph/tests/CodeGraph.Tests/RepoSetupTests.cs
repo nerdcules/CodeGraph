@@ -82,6 +82,7 @@ public sealed class RepoSetupTests : IDisposable
     {
         Assert.Null(RepoSetup.FindTarget(_root, out var problem));
         Assert.Contains("no .slnx", problem);
+        Assert.Contains("angular.json", problem);
     }
 
     [Fact]
