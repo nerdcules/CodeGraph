@@ -77,10 +77,11 @@ def host_tools() -> dict[str, str]:
 
 
 def build(base: str | None, out: str):
-    print("publishing codegraph-index …", flush=True)
-    p = sh(["dotnet", "publish", os.path.join(REPO, "src", "CodeGraph.Indexer"), "-c", "Release", "-o", out, "-v", "q", "-nologo"])
-    if p.returncode != 0:
-        sys.exit(p.stdout[-3000:])
+    print("publishing codegraph-index and codegraph-mcp …", flush=True)
+    for project, folder in (("CodeGraph.Indexer", out), ("CodeGraph.Mcp", out + "-mcp")):
+        p = sh(["dotnet", "publish", os.path.join(REPO, "src", project), "-c", "Release", "-o", folder, "-v", "q", "-nologo"])
+        if p.returncode != 0:
+            sys.exit(p.stdout[-3000:])
     print(f"building image {IMAGE} …", flush=True)
     args = ["docker", "build", "-q", "-t", IMAGE, HERE]
     if base:
@@ -96,6 +97,8 @@ def run_one(job, publish: str, results: str, mounts: dict, cpus: str, memory: st
     args = ["docker", "run", "--rm", "--name", f"cg-corpus-{name}-{os.getpid()}", f"--network={network}",
             f"--cpus={cpus}", f"--memory={memory}", "--user", f"{os.getuid()}:{os.getgid()}",
             "-v", f"{publish}:/opt/codegraph/index:ro",
+            "-v", f"{publish}-mcp:/opt/codegraph/mcp:ro",
+            "-v", f"{os.path.join(REPO, 'obsidian-plugin')}:/opt/codegraph/obsidian-plugin:ro",
             "-v", f"{os.path.join(REPO, 'extractors', 'typescript')}:/opt/codegraph/extractors/typescript:ro",
             "-v", f"{results}:/results"]
     for host, container in mounts.items():
@@ -115,19 +118,37 @@ def pct(v: float) -> str:
     return f"{v * 100:.1f}" if v < 1 else "100"
 
 
+def vault_cell(v: dict | None) -> str:
+    if not v:
+        return "–"
+    if not v.get("ok"):
+        return "**fail**"
+    return f"{v['notes']} notes, {v['links']['links']} links, {v['export_seconds']}s"
+
+
+def live_cell(v: dict | None) -> str:
+    if not v:
+        return "–"
+    if not v.get("ok"):
+        return "**fail**"
+    c = v["callers"]
+    return f"{v['calls']} calls, {v['median_ms']} ms median, callers R={pct(c['recall'])}"
+
+
 def summarise(results: list[dict], out: str):
     kinds = ["Calls", "Overrides", "Implements", "Supertype", "TestedBy", "Injects", "Renders", "TemplateCalls"]
-    lines = ["| language | profile | methods | calls | files | lines | index s | methods found | " + " | ".join(f"{k} P/R" for k in kinds) + " | dead found | live reported |",
-             "|" + "---|" * (10 + len(kinds))]
+    lines = ["| language | profile | methods | calls | files | lines | index s | methods found | " + " | ".join(f"{k} P/R" for k in kinds) + " | dead found | live reported | vault | plugin live |",
+             "|" + "---|" * (12 + len(kinds))]
     for r in sorted(results, key=lambda r: (r["language"], list(PROFILES).index(r["profile"]), r.get("seed", 1))):
         if not r.get("ok"):
-            lines.append(f"| {r['language']} | {r['profile']} | | | | | | **failed**: {r.get('error', '')[:120].replace('|', '/').replace(chr(10), ' ')} |" + " |" * (len(kinds) + 2))
+            lines.append(f"| {r['language']} | {r['profile']} | | | | | | **failed**: {r.get('error', '')[:120].replace('|', '/').replace(chr(10), ' ')} |" + " |" * (len(kinds) + 4))
             continue
         s, e = r["stats"], r["edges"]
         cells = [f"{pct(e[k]['precision'])}/{pct(e[k]['recall'])}" if k in e else "–" for k in kinds]
         d = r["dead_code"]
         lines.append(f"| {r['language']} | {r['profile']}{'' if r.get('seed', 1) == 1 else ' s' + str(r['seed'])} | {s['methods']} | {s['calls']} | {s['files']} | {s['lines']} | "
-                     f"{r['index_seconds']} | {r['methods']['found']}/{r['methods']['expected']} | " + " | ".join(cells) + f" | {d['found']}/{d['planted']} | {d['live_reported']} |")
+                     f"{r['index_seconds']} | {r['methods']['found']}/{r['methods']['expected']} | " + " | ".join(cells) + f" | {d['found']}/{d['planted']} | {d['live_reported']} | "
+                     f"{vault_cell(r.get('vault'))} | {live_cell(r.get('live'))} |")
     findings = []
     for r in results:
         if not r.get("ok"):
@@ -140,6 +161,9 @@ def summarise(results: list[dict], out: str):
             findings.append(f"- {r['language']}/{r['profile']} dead code: {r['dead_code']['live_reported']} live methods reported, e.g. {r['dead_code']['live_reported_sample'][:3]}")
         if r["dead_code"]["missed"]:
             findings.append(f"- {r['language']}/{r['profile']} dead code: planted methods not reported, e.g. {r['dead_code']['missed'][:3]}")
+        for part in ("vault", "live"):
+            if r.get(part) and not r[part].get("ok"):
+                findings.append(f"- {r['language']}/{r['profile']} {part}: {', '.join(r[part].get('problems') or [r[part].get('error', '')[:200]])}")
         if r["methods"]["missing"]:
             findings.append(f"- {r['language']}/{r['profile']} methods: {r['methods']['expected'] - r['methods']['found']} not in the graph, e.g. {r['methods']['missing'][:3]}")
     text = "# Corpus results\n\nP/R is precision/recall in percent.\n\n" + "\n".join(lines) + "\n\n## Differences\n\n" + ("\n".join(findings) or "None.") + "\n"

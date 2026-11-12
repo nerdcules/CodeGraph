@@ -19,6 +19,6 @@ ENV HOME=/home/runner \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     CODEGRAPH_TS=/opt/codegraph/extractors/typescript/cli.mjs \
     MAVEN_ARGS=--offline
-COPY run_one.sh gen.py check.py /opt/corpus/
+COPY run_one.sh gen.py check.py vault_check.py live.py live_check.cjs /opt/corpus/
 RUN chmod 755 /opt/corpus/run_one.sh
 ENTRYPOINT ["/opt/corpus/run_one.sh"]

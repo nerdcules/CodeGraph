@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-**Home** · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
+**Home** · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
 
 ---
 
@@ -25,6 +25,16 @@ An AI assistant can then ask "who calls this method" or "what breaks if I change
 It gets a short, exact answer from the graph.
 It does not have to read many source files to find the answer.
 
+This saves tokens.
+Each file that an assistant opens goes into its context, and the assistant pays for each token.
+On this repository, "what breaks if I change `GraphStore.Replace`" costs about 5,300 tokens with CodeGraph.
+To open the 23 files that contain `.Replace(` costs about 105,000 tokens.
+[Why it saves tokens](../README.md#why-it-saves-tokens) gives the details.
+
+Obsidian is optional.
+CodeGraph and Claude Code do not need it.
+The [Obsidian](obsidian.md) plugin only shows the graph to people as notes.
+
 ![Architecture: extractors write graph.db, the MCP server reads it, the live daemon keeps it current](images/architecture.svg)
 
 ## The pages
@@ -33,6 +43,7 @@ It does not have to read many source files to find the answer.
 |---|---|
 | [Installation](installation.md) | Install CodeGraph and connect a repository to Claude Code. |
 | [Usage](usage.md) | Build a graph, keep it current, and use the tools. |
+| [Obsidian](obsidian.md) | Read the graph as linked notes in Obsidian, with a live panel. |
 | [Use cases](use-cases.md) | Find the tool for a question about your code. |
 | [How it works](how-it-works.md) | Learn how the indexer builds the graph and how the server answers. |
 | [Performance](performance.md) | See the measured times for indexing and for tool calls. |

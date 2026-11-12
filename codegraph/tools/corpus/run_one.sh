@@ -1,6 +1,7 @@
 #!/bin/sh
 # Inside the container: run_one.sh <language> <profile> [seed]
-# Expects codegraph-index at /opt/codegraph/index, the TypeScript extractor at /opt/codegraph/extractors/typescript
+# Expects codegraph-index at /opt/codegraph/index (and codegraph-mcp at /opt/codegraph/mcp with the Obsidian
+# plugin at /opt/codegraph/obsidian-plugin, for the plugin's live checks), the TypeScript extractor at /opt/codegraph/extractors/typescript
 # and, for Java, a JDK at /opt/jdk, Maven at /opt/maven and scip-java at /opt/coursier/bin; for Go, a GOROOT at
 # /opt/go and scip-go in /opt/gobin; for Rust, a toolchain (with rust-analyzer) at /opt/rust. Or all on PATH.
 set -eu
@@ -25,7 +26,10 @@ export JAVA_TOOL_OPTIONS="-Duser.home=$HOME" COURSIER_CACHE="$HOME/.cache/coursi
 if [ -d /seed/m2 ] && [ ! -d "$HOME/.m2" ]; then cp -r /seed/m2 "$HOME/.m2"; fi
 work=$(mktemp -d)
 python3 /opt/corpus/gen.py --lang "$lang" --profile "$profile" --seed "$seed" --out "$work/$name"
-python3 /opt/corpus/check.py --corpus "$work/$name" --indexer "dotnet /opt/codegraph/index/codegraph-index.dll" \
-  --out "/results/$name.json" || status=$?
+set -- --corpus "$work/$name" --indexer "dotnet /opt/codegraph/index/codegraph-index.dll" --out "/results/$name.json"
+if [ -f /opt/codegraph/mcp/codegraph-mcp.dll ] && [ -d /opt/codegraph/obsidian-plugin/lib ]; then
+  set -- "$@" --mcp "dotnet /opt/codegraph/mcp/codegraph-mcp.dll" --plugin-lib /opt/codegraph/obsidian-plugin/lib
+fi
+python3 /opt/corpus/check.py "$@" || status=$?
 cp "$work/$name/expected.json" "/results/$name.expected.json" 2>/dev/null || true
 exit ${status:-0}

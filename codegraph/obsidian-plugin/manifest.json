@@ -1,0 +1,9 @@
+{
+  "id": "codegraph",
+  "name": "CodeGraph",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Turns a CodeGraph code graph into linked notes for projects, types and tests, with a live panel for callers, impact and tests.",
+  "author": "CodeGraph",
+  "isDesktopOnly": true
+}

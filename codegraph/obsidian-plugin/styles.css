@@ -1,0 +1,98 @@
+.codegraph-panel {
+  padding: var(--size-4-3);
+  /* full names, signatures and paths have no spaces to break at */
+  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+}
+
+.codegraph-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.codegraph-title {
+  font-weight: var(--font-semibold);
+  font-size: var(--font-ui-medium);
+}
+
+.codegraph-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1);
+}
+
+.codegraph-tabs button.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.codegraph-rows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1);
+}
+
+.codegraph-rows li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--size-4-2);
+  padding: var(--size-4-1) 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.codegraph-kind,
+.codegraph-extra,
+.codegraph-muted {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.codegraph-kind {
+  min-width: 4.5em;
+}
+
+.codegraph-source {
+  margin-left: auto;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+
+.codegraph-badge {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-warning);
+}
+
+.codegraph-stale {
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--color-orange);
+  border-radius: var(--radius-s);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  align-items: center;
+}
+
+.codegraph-error {
+  color: var(--text-error);
+}
+
+.codegraph-modal .codegraph-config {
+  max-height: 16em;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.codegraph-modal .codegraph-buttons {
+  display: flex;
+  gap: 0.5em;
+  justify-content: flex-end;
+  margin-top: 1em;
+}

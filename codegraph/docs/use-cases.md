@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · **Use cases** · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · **Use cases** · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
 
 ---
 
@@ -13,6 +13,7 @@
 - [Find the tests for a change](#find-the-tests-for-a-change)
 - [Find dead code](#find-dead-code)
 - [Learn a codebase that is new to you](#learn-a-codebase-that-is-new-to-you)
+- [Share the structure of the code with people who do not code](#share-the-structure-of-the-code-with-people-who-do-not-code)
 - [Find code when you do not know its name](#find-code-when-you-do-not-know-its-name)
 - [Make sure that an edit compiles before you save it](#make-sure-that-an-edit-compiles-before-you-save-it)
 - [Rename a symbol safely](#rename-a-symbol-safely)
@@ -82,6 +83,18 @@ It also does not show framework entry points, for example `Main`, test methods, 
 | `depends_on`, `dependents_of` | The project references. |
 | `path_between` | The shortest call chain from one method to another. |
 
+## Share the structure of the code with people who do not code
+
+Architects, testers and product people can read the graph in Obsidian.
+They do not need an IDE or an MCP client.
+
+1. Export the graph into a vault. See [Obsidian](obsidian.md).
+2. Start from `_code/Index.md`. It has a section for each audience.
+3. Use the reports: Project map for architects, Test coverage and Untested public surface for testers.
+4. Write feature notes and decisions outside `_code/`, and link them to the code with **Insert code link**.
+
+![The live panel in Obsidian shows the callers of a method as links](images/obsidian-member-callers.png)
+
 ## Find code when you do not know its name
 
 **Question:** "Where is the code that sends the invoice email?"
@@ -149,4 +162,4 @@ Thus it does not connect an HTTP call in TypeScript to the C# controller that it
 
 ---
 
-← Previous: [Usage](usage.md) · Next: [How it works](how-it-works.md) →
+← Previous: [Obsidian](obsidian.md) · Next: [How it works](how-it-works.md) →

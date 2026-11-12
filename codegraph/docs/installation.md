@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · **Installation** · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · **Installation** · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
 
 ---
 
@@ -116,6 +116,7 @@ PowerShell 7 can also run `install.ps1` on macOS and Linux.
 | `--live` | `-Live` | Let the server start the live daemon itself. |
 | `--skip-tests` | `-SkipTests` | Do not run the test suite. |
 | `--force` | `-Force` | Stop running `codegraph-mcp` processes before the copy. |
+| `--obsidian-vault DIR` | `-ObsidianVault DIR` | Also install the Obsidian plugin into this vault. It needs Node.js. See [Obsidian](obsidian.md). |
 
 The script does these steps:
 
@@ -124,6 +125,7 @@ The script does these steps:
 3. It publishes `codegraph-index` and `codegraph-mcp` as ReadyToRun executables for your platform.
 4. It makes sure that both executables start.
 5. It runs `codegraph-index init` on each repository that you give.
+6. With `--obsidian-vault`, it installs the Obsidian plugin into that vault.
 
 ## Set up more repositories
 

@@ -13,6 +13,11 @@ internal static class ExportCommand
 {
     public static int Run(string[] args, TextWriter stdout, Action<string> log)
     {
+        if (args is ["obsidian", .. var obsidianArgs])
+        {
+            return ObsidianExport.Run(obsidianArgs, stdout, log);
+        }
+
         string? db = null;
         string? language = null;
         string? output = null;
@@ -37,6 +42,7 @@ internal static class ExportCommand
                     Console.Error.WriteLine("usage: codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]");
                     Console.Error.WriteLine("       writes the graph's nodes and edges as import records (EXTRACTORS.md) to stdout or a file;");
                     Console.Error.WriteLine("       --dead-code adds a {\"type\":\"dead\",\"node\":id} record per dead_code_report candidate, public API included");
+                    Console.Error.WriteLine("       codegraph-index export obsidian --out <folder>  writes notes for an Obsidian vault (export obsidian --help)");
                     return 1;
                 default:
                     Console.Error.WriteLine($"unexpected argument: {args[i]}");

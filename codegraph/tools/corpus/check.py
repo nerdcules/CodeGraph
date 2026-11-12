@@ -93,6 +93,9 @@ def main():
     ap.add_argument("--corpus", required=True)
     ap.add_argument("--indexer", default="codegraph-index", help="command that runs codegraph-index")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--no-vault", action="store_true", help="skip the Obsidian export checks")
+    ap.add_argument("--mcp", help="command that runs codegraph-mcp; with --plugin-lib, checks the plugin's live path")
+    ap.add_argument("--plugin-lib", help="the Obsidian plugin's lib/ folder")
     a = ap.parse_args()
     corpus = os.path.abspath(a.corpus)
     key = json.load(open(os.path.join(corpus, "expected.json")))
@@ -180,12 +183,21 @@ def main():
                                missed=sorted(planted - reported)[:SAMPLES],
                                live_reported=len(reported & live), live_reported_sample=sorted(reported & live)[:SAMPLES])
     result["graph"] = dict(nodes=len(nodes), edges=len(edges), db_mb=round(os.path.getsize(db) / 1e6, 2))
+    if not a.no_vault:
+        from vault_check import check_vault
+        with open(a.out + ".log", "a") as log:
+            result["vault"] = check_vault(run, indexer, corpus, db, nodes, edges, log)
+            if a.mcp and a.plugin_lib and result["vault"].get("first_run"):
+                from live import check_live
+                result["live"] = check_live(run, indexer, shlex.split(a.mcp), a.plugin_lib, corpus, db, key, nodes, normalise, log)
     result["ok"] = True
     json.dump(result, open(a.out, "w"), indent=1)
     worst = min((v["recall"] for v in result["edges"].values()), default=1.0)
     print(f"{key['language']}/{key['profile']}: {result['methods']['found']}/{len(methods)} methods, "
           f"calls P={result['edges']['Calls']['precision']:.3f} R={result['edges']['Calls']['recall']:.3f}, worst recall {worst:.3f}, "
-          f"dead {result['dead_code']['found']}/{len(planted)} (+{result['dead_code']['live_reported']} live), {result['index_seconds']}s")
+          f"dead {result['dead_code']['found']}/{len(planted)} (+{result['dead_code']['live_reported']} live), {result['index_seconds']}s"
+          + (f", vault {'ok' if result['vault']['ok'] else 'FAIL ' + ','.join(result['vault'].get('problems', [result['vault'].get('error', '')]))}" if "vault" in result else "")
+          + (f", live {'ok' if result['live']['ok'] else 'FAIL ' + ','.join(result['live'].get('problems', [result['live'].get('error', '')]))}" if "live" in result else ""))
     return 0
 
 
