@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="420" viewBox="0 0 880 420" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+  <title>The first five minutes: install, ask, see what it did</title>
+  <rect width="880" height="420" rx="10" fill="#1e2127"/>
+  <circle cx="20" cy="18" r="6" fill="#ff5f57"/><circle cx="40" cy="18" r="6" fill="#febc2e"/><circle cx="60" cy="18" r="6" fill="#28c840"/>
+  <text x="440" y="23" fill="#8b949e" text-anchor="middle" font-size="12">the first five minutes</text>
+
+  <text x="24" y="56" fill="#8b949e">1  install, with the repository to set up</text>
+  <text x="24" y="78" fill="#e6edf3"><tspan fill="#7ee787">$</tspan> curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/App</text>
+  <text x="24" y="98" fill="#8b949e">==> Downloading codegraph-linux-x64.tar.gz (latest)   checksum ok</text>
+  <text x="24" y="116" fill="#8b949e">==> Setting up /home/me/dev/App   indexed 2880 nodes, 16903 edges in 10.6s</text>
+  <text x="24" y="134" fill="#8b949e">Ready. Start Claude Code in /home/me/dev/App and approve the codegraph server.</text>
+
+  <text x="24" y="170" fill="#8b949e">2  ask, in Claude Code</text>
+  <text x="24" y="192" fill="#e6edf3"><tspan fill="#d2a8ff">&gt;</tspan> What breaks if I change GraphStore.Replace, and which tests cover it?</text>
+  <text x="24" y="214" fill="#8b949e">  find_symbol → impact_of  (35 ms)</text>
+  <text x="24" y="232" fill="#e6edf3">  impact of GraphStore.Replace(...): <tspan fill="#ffa657">11 dependents, 33 guarding tests</tspan></text>
+  <text x="24" y="250" fill="#e6edf3">  method  GraphImport.WriteAsync(...)        depth 1  src/CodeGraph.Indexer/GraphImport.cs:185-266</text>
+  <text x="24" y="268" fill="#e6edf3">  method  ImportCommand.RunAsync(...)        depth 2  src/CodeGraph.Indexer/GraphImport.cs:272-333</text>
+  <text x="24" y="286" fill="#e6edf3">  method  ScipIndexers.IndexAsync(...)       depth 2  src/CodeGraph.Indexer/ScipIndexers.cs:197-265</text>
+  <text x="24" y="304" fill="#e6edf3">  tests:  BulkWriteTests.A_full_replace_leaves_nothing_of_the_previous_graph()  depth 1  ...</text>
+  <text x="24" y="322" fill="#8b949e">  Claude opens only the members it will change, with snippet. About 5,300 tokens, not 105,000.</text>
+
+  <text x="24" y="358" fill="#8b949e">3  a week later</text>
+  <text x="24" y="380" fill="#e6edf3"><tspan fill="#7ee787">$</tspan> codegraph-index usage</text>
+  <text x="24" y="398" fill="#e6edf3">last 7 days: 143 tool calls answered; ... so about <tspan fill="#ffa657">1,180,000 tokens stayed out of the context</tspan></text>
+</svg>

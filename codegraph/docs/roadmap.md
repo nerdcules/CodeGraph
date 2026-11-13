@@ -41,8 +41,8 @@ and that stranger still using it a week later. Version 1.0.0 closed the first it
    the front end needs a second daemon or a re-run of `init`.
 7. **`data_flow` answers for C# only.** Java goes through scip-java, which tells calls and reads apart
    by the target's kind only.
-8. **A recording of the first five minutes.** The README shows the answer as text. A short film of the
-   install, the question and the answer would do more.
+8. **A recording of the first five minutes.** The README shows the three steps as a picture of a terminal
+   and the answer as text. A real recording, with the cursor moving, would do more.
 
 ## How to help
 

@@ -25,6 +25,8 @@ API and its Angular front end.
 
 ## Your first five minutes
 
+![Install with one line, ask one question, see the answer, and a week later see what it saved](docs/images/first-five-minutes.svg)
+
 **1. Install.** The script downloads the release for your platform, checks its checksum, and sets up the
 repository you name: it writes the `codegraph` server into the repo's `.mcp.json`, ignores `.codegraph/`,
 and builds the first graph.
