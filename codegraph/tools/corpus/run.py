@@ -33,12 +33,12 @@ IMAGE = "codegraph-corpus"
 # Older toolchains (toolchains/README.md): the languages each serves, the level its SDK accepts, and which of the
 # host's tool mounts it replaces. The image provides the language toolchain; the host still lends the indexers.
 TOOLCHAINS = {
-    "dotnet8": dict(langs=["csharp"], level="net8.0", provides=[]),
-    "node20": dict(langs=["typescript", "javascript", "angular"], level=None, provides=[]),
-    "jdk17": dict(langs=["java"], level="17", provides=["/opt/jdk", "/opt/maven"]),
-    "go121": dict(langs=["go"], level="1.21", provides=["/opt/go"]),
-    "rust170": dict(langs=["rust"], level=None, provides=["/opt/rust"]),
-    "python38": dict(langs=["python"], level=None, provides=[]),
+    "dotnet8": dict(langs=["csharp"], level="net8.0", provides=[], title=".NET 8 SDK"),
+    "node20": dict(langs=["typescript", "javascript", "angular"], level=None, provides=[], title="Node 20"),
+    "jdk17": dict(langs=["java"], level="17", provides=["/opt/jdk", "/opt/maven"], title="JDK 17, Maven 3.9"),
+    "go121": dict(langs=["go"], level="1.21", provides=["/opt/go"], title="Go 1.21"),
+    "rust170": dict(langs=["rust"], level=None, provides=["/opt/rust"], title="Rust 1.70, rust-analyzer 1.70"),
+    "python38": dict(langs=["python"], level=None, provides=[], title="Python 3.8"),
 }
 
 
@@ -192,6 +192,16 @@ def profile_cell(r: dict) -> str:
 
 
 def summarise(results: list[dict], out: str):
+    """summary.md, summary.json and versions.svg over every result in the folder, so partial reruns add to a matrix rather than replace it."""
+    names = {f"{r['language']}-{r['profile']}-s{r.get('seed', 1)}-{r.get('dialect', 'modern')}-{r.get('toolchain') or ''}" for r in results}
+    for path in sorted(os.listdir(out)):
+        if path.endswith(".json") and not path.endswith(".expected.json") and path != "summary.json":
+            try:
+                r = json.load(open(os.path.join(out, path)))
+            except (OSError, ValueError):
+                continue
+            if "language" in r and f"{r['language']}-{r['profile']}-s{r.get('seed', 1)}-{r.get('dialect', 'modern')}-{r.get('toolchain') or ''}" not in names:
+                results = [*results, r]
     kinds = ["Calls", "Overrides", "Implements", "Supertype", "TestedBy", "Injects", "Renders", "TemplateCalls"]
     lines = ["| language | profile | methods | calls | files | lines | index s | methods found | " + " | ".join(f"{k} P/R" for k in kinds) + " | dead found | live reported | vault | plugin live | read with |",
              "|" + "---|" * (13 + len(kinds))]
@@ -222,9 +232,12 @@ def summarise(results: list[dict], out: str):
                 findings.append(f"- {r['language']}/{r['profile']} {part}: {', '.join(r[part].get('problems') or [r[part].get('error', '')[:200]])}")
         if r["methods"]["missing"]:
             findings.append(f"- {r['language']}/{r['profile']} methods: {r['methods']['expected'] - r['methods']['found']} not in the graph, e.g. {r['methods']['missing'][:3]}")
-    text = "# Corpus results\n\nP/R is precision/recall in percent.\n\n" + "\n".join(lines) + "\n\n## Differences\n\n" + ("\n".join(findings) or "None.") + "\n"
+    text = "# Corpus results\n\n![Results by language, toolchain and dialect](versions.svg)\n\nP/R is precision/recall in percent.\n\n" + "\n".join(lines) + "\n\n## Differences\n\n" + ("\n".join(findings) or "None.") + "\n"
     open(os.path.join(out, "summary.md"), "w").write(text)
     json.dump(results, open(os.path.join(out, "summary.json"), "w"), indent=1)
+    # The same results as a chart, one cell per language, toolchain and dialect.
+    from versions_chart import results_svg
+    open(os.path.join(out, "versions.svg"), "w").write(results_svg(results))
     return text
 
 

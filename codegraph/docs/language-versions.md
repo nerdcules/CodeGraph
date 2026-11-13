@@ -19,6 +19,11 @@
 
 ## What each route reads with
 
+![The compiler of each route, the oldest and newest language level the corpus writes, the oldest SDK image and the current SDK](images/language-versions.svg)
+
+The chart is drawn from the code by `tools/corpus/versions_chart.py`, and a test fails when a pinned version changes without a redraw.
+Each corpus run also draws its results the same way, as `versions.svg` next to `summary.md`.
+
 The indexer reads code with a compiler.
 Each compiler knows some language versions and not the versions after them.
 The table gives the compiler of each route, where its version is set, and what it reads.
@@ -135,6 +140,13 @@ The toolchain runs also pin the framework or SDK level that the image accepts, f
 The answer key is the same for both, so a difference between them is a bug.
 The `read with` column in the summary shows the compiler and the language level that each run exercised.
 [tools/corpus/toolchains/README.md](../tools/corpus/toolchains/README.md) lists the images.
+
+Each run also draws its results as a chart, `versions.svg` beside `summary.md`.
+These are the charts of the last runs (BENCHMARKS.md, round 10):
+
+![The standard corpus image, both dialects: every language in full](images/corpus-results.svg)
+
+![The older toolchains, both dialects: every language in full except rust-analyzer 1.70 at 87 percent call recall](images/toolchain-results.svg)
 
 ## What stays the same
 

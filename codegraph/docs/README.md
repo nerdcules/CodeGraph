@@ -63,7 +63,10 @@ The [Obsidian](obsidian.md) plugin only shows the graph to people as notes.
 
 One graph can hold more than one language.
 For example, a .NET API and its Angular front end can share one graph.
-[Language versions](language-versions.md) gives the language versions that each route reads.
+
+![The compiler of each route and the language and SDK versions the corpus tests against](images/language-versions.svg)
+
+[Language versions](language-versions.md) gives the language versions that each route reads, and how the chart is kept current.
 
 ## Conventions in these pages
 

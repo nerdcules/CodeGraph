@@ -76,7 +76,9 @@ both; a difference between them is a bug.
 Each result records what the graph says it was read with (`codegraph-index export` writes each language's
 compiler facts as meta records): the compiler, the language versions the build files asked for, compile errors,
 unmapped shapes and notes. The summary shows them in a `read with` column, so a run on an older toolchain says
-which compiler and language level it exercised.
+which compiler and language level it exercised, and `versions.svg` beside `summary.md` draws the same results as
+a grid of language by toolchain and dialect. `versions_chart.py --out docs/images/language-versions.svg` draws the
+coverage chart in the docs from the versions the code pins; a test in CodeGraph.Tests fails when they drift.
 
 ## Older toolchains
 

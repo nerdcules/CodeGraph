@@ -412,6 +412,8 @@ with an older SDK and the .NET 10 runtime beside it. Four profiles, both dialect
 | python38 (Python 3.8) | python | classic, modern | 6/6 | 528/528 | 100/100 | scip-python 0.6.8; Python >=3.8 |
 | rust170 (Rust 1.70, rust-analyzer 1.70) | rust | classic, modern | 8/8 | 738/738 | 100/87.1 | rust-analyzer 0.1; note: older than the 1.99.1 tested |
 
+![Results by language and toolchain, a line per dialect](docs/images/toolchain-results.svg)
+
 What the matrix found, in the order it found it:
 
 - On the .NET 8 image MSBuildLocator finds only SDK 8, so Roslyn 5.9's build host loads MSBuild 17.8 into a
@@ -439,6 +441,13 @@ classic C# dialect pinned `net8.0`, whose reference pack the offline image does 
 (588 errors, `System.Object did not resolve`, "run dotnet restore"). The dialect now keeps the SDK's framework
 (the language level is LangVersion; `--level net8.0` is for the .NET 8 image), and the classic C# runs are 100
 percent like the rest: the same answer key holds on old syntax and on new, on old SDKs and on new.
+
+![The standard corpus, both dialects](docs/images/corpus-results.svg)
+
+The versions all of this tests against, drawn from the code (`tools/corpus/versions_chart.py`; a test fails when
+a pinned version changes without a redraw):
+
+![Language and SDK versions tested](docs/images/language-versions.svg)
 
 ## Where it ended up
 

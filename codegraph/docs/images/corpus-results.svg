@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 548" width="900" height="548" role="img" aria-labelledby="title desc">
+<title id="title">Corpus results by language, toolchain and dialect</title>
+<desc id="desc">One cell per language and toolchain, a line per dialect: runs that scored in full, the worst recall when not, and the compiler the graph was read with. Green when every run scored in full, amber otherwise, red when a run failed.</desc>
+<style>
+  text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
+  .h { font-weight: 600; font-size: 14px; }
+  .m { fill: #59636e; font-size: 11.5px; }
+  .chip { font-size: 12px; }
+  .bg { fill: #ffffff; }
+  .grid { stroke: #d1d9e0; stroke-width: 1; }
+  .c1 { fill: #ddf4ff; stroke: #0969da; } .c2 { fill: #fff8c5; stroke: #9a6700; } .c3 { fill: #dafbe1; stroke: #1a7f37; }
+  .c4 { fill: #fbefff; stroke: #8250df; } .c5 { fill: #f6f8fa; stroke: #d1d9e0; }
+  .ok { fill: #dafbe1; stroke: #1a7f37; } .warn { fill: #fff8c5; stroke: #9a6700; } .bad { fill: #ffebe9; stroke: #cf222e; } .none { fill: #f6f8fa; stroke: #d1d9e0; }
+</style>
+<rect class="bg" width="900" height="548"/>
+<text class="h" x="16" y="28">Corpus results by language, toolchain and dialect</text>
+<text class="m" x="16" y="46">green: every run in full · amber: worst recall shown · red: a run failed · each line: dialect, runs, the compiler the graph says it was read with</text>
+<text class="m" x="110" y="62">standard image</text>
+<text class="h" x="16" y="96">C#</text>
+<rect class="ok" x="110" y="80" width="348" height="44" rx="6"/>
+<text class="m" x="118" y="96">modern 10/10 · Roslyn 5.9.0; C# 14</text>
+<text class="m" x="118" y="112">classic 10/10 · Roslyn 5.9.0; C# 7.3</text>
+<text class="h" x="16" y="150">TypeScript</text>
+<rect class="ok" x="110" y="134" width="348" height="44" rx="6"/>
+<text class="m" x="118" y="150">modern 10/10 · typescript 6.0.3; ES2022</text>
+<text class="m" x="118" y="166">classic 10/10 · typescript 6.0.3; ES5</text>
+<text class="h" x="16" y="204">JavaScript</text>
+<rect class="ok" x="110" y="188" width="348" height="44" rx="6"/>
+<text class="m" x="118" y="204">modern 9/9 · typescript 6.0.3; ES2022</text>
+<text class="m" x="118" y="220">classic 9/9 · typescript 6.0.3; ES5</text>
+<text class="h" x="16" y="258">Angular</text>
+<rect class="ok" x="110" y="242" width="348" height="44" rx="6"/>
+<text class="m" x="118" y="258">modern 9/9 · typescript 6.0.3; ES2022</text>
+<text class="m" x="118" y="274">classic 9/9 · typescript 6.0.3; ES2015</text>
+<text class="h" x="16" y="312">Java</text>
+<rect class="ok" x="110" y="296" width="348" height="44" rx="6"/>
+<text class="m" x="118" y="312">modern 9/9 · scip-java 0.12.3; Java 21</text>
+<text class="m" x="118" y="328">classic 9/9 · scip-java 0.12.3; Java 8</text>
+<text class="h" x="16" y="366">Go</text>
+<rect class="ok" x="110" y="350" width="348" height="44" rx="6"/>
+<text class="m" x="118" y="366">modern 8/8 · scip-go 0.2.9; Go 1.22</text>
+<text class="m" x="118" y="382">classic 8/8 · scip-go 0.2.9; Go 1.18</text>
+<text class="h" x="16" y="420">Rust</text>
+<rect class="ok" x="110" y="404" width="348" height="44" rx="6"/>
+<text class="m" x="118" y="420">modern 9/9 · rust-analyzer 1.99.1; Rust edition 2021</text>
+<text class="m" x="118" y="436">classic 9/9 · rust-analyzer 1.99.1; Rust edition 2018</text>
+<text class="h" x="16" y="474">Python</text>
+<rect class="ok" x="110" y="458" width="348" height="44" rx="6"/>
+<text class="m" x="118" y="474">modern 8/8 · scip-python 0.6.8</text>
+<text class="m" x="118" y="490">classic 8/8 · scip-python 0.6.8; Python &gt;=3.8</text>
+</svg>
