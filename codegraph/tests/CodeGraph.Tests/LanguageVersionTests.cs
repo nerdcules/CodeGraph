@@ -103,3 +103,30 @@ public sealed class LanguageVersionTests
         Assert.Equal(["csharp    : (no compiler facts recorded; re-index to add them)"], lines);
     }
 }
+
+public sealed class UnrestoredProjectTests
+{
+    [Fact]
+    public async Task A_project_whose_core_types_do_not_resolve_is_named_as_unrestored_not_left_as_hundreds_of_errors()
+    {
+        var indexed = await Indexed.Unrestored("namespace N; class C { void M() { System.Console.WriteLine(1); } }");
+
+        var note = Assert.Single(indexed.Indexer.Notes);
+        Assert.StartsWith("Demo: System.Object did not resolve", note);
+        Assert.Contains("dotnet restore", note);
+        Assert.True(indexed.Indexer.CompileErrors >= 1);
+        Assert.NotNull(indexed.Indexer.FirstCompileError);
+        Assert.Contains(indexed.Indexer.CompilerSummary(), line => line.Contains("first: Test.cs("));
+        // The walk still records what source says.
+        Assert.True(indexed.Has("M:N.C.M"));
+    }
+
+    [Fact]
+    public async Task A_restored_project_has_no_note()
+    {
+        var indexed = await Indexed.OfAsync("namespace N; class C { }");
+
+        Assert.Empty(indexed.Indexer.Notes);
+        Assert.Null(indexed.Indexer.FirstCompileError);
+    }
+}

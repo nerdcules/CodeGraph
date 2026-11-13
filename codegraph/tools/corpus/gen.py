@@ -19,6 +19,7 @@ import json
 import os
 import random
 import re
+import uuid
 from dataclasses import dataclass, field
 
 LANGS = ["csharp", "java", "typescript", "javascript", "angular", "go", "rust", "python"]
@@ -31,6 +32,23 @@ UNSUPPORTED = {("javascript", "single-file"), ("java", "single-file"), ("angular
                # Python: one module per file, and one project root per scip-python run.
                ("python", "single-file"), ("python", "multi-project")}
 NO_INHERITANCE = {"go", "rust"}
+
+# The dialect axis: the same model, the same answer key, written at another language level. "modern" is what a new
+# repo gets today; "classic" is the oldest level the toolchains still accept, in the oldest syntax the key can be
+# expressed in (C# 7.3 on a .sln, ES5 CommonJS with node resolution, Java 8, Go 1.18, Rust 2018, Python 3.8).
+# The level is what the build file pins (TargetFramework, maven.compiler.release, tsconfig target, go, edition,
+# requires-python); --level overrides it so a run can match the SDK in its container (net8.0 on the .NET 8 image).
+DIALECTS = ["modern", "classic"]
+LEVELS = {
+    "csharp": {"modern": "net10.0", "classic": "net8.0"},
+    "java": {"modern": "21", "classic": "8"},
+    "typescript": {"modern": "ES2022", "classic": "ES5"},
+    "javascript": {"modern": "ES2022", "classic": "ES5"},
+    "angular": {"modern": "ES2022", "classic": "ES2015"},
+    "go": {"modern": "1.22", "classic": "1.18"},
+    "rust": {"modern": "2021", "classic": "2018"},
+    "python": {"modern": None, "classic": ">=3.8"},
+}
 
 # Size and shape of each profile. Probabilities are per class or per method; counts are per module.
 PROFILES: dict[str, dict] = {
@@ -444,11 +462,14 @@ class Model:
 class Writer:
     """Emits one language. Subclasses fill files{} and give each type and member the name its extractor reports."""
 
-    def __init__(self, model: Model):
+    def __init__(self, model: Model, dialect: str = "modern", level: str | None = None):
         self.m = model
         self.files: dict[str, str] = {}
         self.layout = model.p.get("layout", "class")
         self.multi = model.p.get("multi", False)
+        self.dialect = dialect
+        self.classic = dialect == "classic"
+        self.level = level or LEVELS[model.lang][dialect]
 
     def type_fq(self, t: Type) -> str: ...
 
@@ -548,9 +569,11 @@ class CSharp(Writer):
 
     def write(self, root: str):
         support = "namespace Xunit\n{\n    [System.AttributeUsage(System.AttributeTargets.Method)]\n    public sealed class FactAttribute : System.Attribute { }\n}\n"
+        # classic: the oldest C# a current Roslyn still parses, pinned, on whatever framework the level names.
         project = lambda exe, refs: (
-            '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <TargetFramework>net10.0</TargetFramework>\n'
-            f'    <OutputType>{"Exe" if exe else "Library"}</OutputType>\n    <Nullable>disable</Nullable>\n'
+            f'<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <TargetFramework>{self.level}</TargetFramework>\n'
+            + ('    <LangVersion>7.3</LangVersion>\n' if self.classic else '')
+            + f'    <OutputType>{"Exe" if exe else "Library"}</OutputType>\n    <Nullable>disable</Nullable>\n'
             '    <NoWarn>CS0114;CS0219;CS8321</NoWarn>\n  </PropertyGroup>\n'
             + ("  <ItemGroup>\n" + "".join(f'    <ProjectReference Include="../{r}/{r}.csproj" />\n' for r in refs) + "  </ItemGroup>\n" if refs else "")
             + "</Project>\n")
@@ -575,7 +598,20 @@ class CSharp(Writer):
             self.files["All.cs"] = support + "\n".join(namespace_block(m, m.types) for m in self.m.modules)
         elif not self.multi:
             self.files["Support.cs"] = support
-        if self.multi:
+        if self.multi and self.classic:
+            # The classic solution format, as every repo older than 2025 has it.
+            guid = lambda n: "{" + str(uuid.uuid5(uuid.NAMESPACE_URL, f"corpus/{n}")).upper() + "}"
+            sln = ["Microsoft Visual Studio Solution File, Format Version 12.00", "# Visual Studio Version 17"]
+            for n in names:
+                sln += [f'Project("{{9A19103F-16F7-4668-BE54-9A1E7A4F7556}}") = "{n}", "{n}\\{n}.csproj", "{guid(n)}"', "EndProject"]
+            sln += ["Global", "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution", "\t\tDebug|Any CPU = Debug|Any CPU", "\t\tRelease|Any CPU = Release|Any CPU", "\tEndGlobalSection",
+                    "\tGlobalSection(ProjectConfigurationPlatforms) = postSolution"]
+            for n in names:
+                sln += [f"\t\t{guid(n)}.{c}|Any CPU.{k} = {c}|Any CPU" for c in ("Debug", "Release") for k in ("ActiveCfg", "Build.0")]
+            sln += ["\tEndGlobalSection", "EndGlobal", ""]
+            self.files["Corpus.sln"] = "\n".join(sln)
+            self.target = "Corpus.sln"
+        elif self.multi:
             self.files["Corpus.slnx"] = "<Solution>\n" + "".join(f'  <Project Path="{n}/{n}.csproj" />\n' for n in names) + "</Solution>\n"
             self.target = "Corpus.slnx"
         else:
@@ -658,7 +694,7 @@ class Java(Writer):
     def write(self, root: str):
         junit = ("  <dependencies>\n    <dependency>\n      <groupId>org.junit.jupiter</groupId>\n      <artifactId>junit-jupiter</artifactId>\n"
                  "      <version>5.11.4</version>\n      <scope>test</scope>\n    </dependency>\n{extra}  </dependencies>\n")
-        props = ("  <properties>\n    <maven.compiler.release>21</maven.compiler.release>\n"
+        props = (f"  <properties>\n    <maven.compiler.release>{self.level}</maven.compiler.release>\n"
                  "    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>\n  </properties>\n")
         head = '<?xml version="1.0" encoding="UTF-8"?>\n<project xmlns="http://maven.apache.org/POM/4.0.0">\n  <modelVersion>4.0.0</modelVersion>\n'
         for module in self.m.modules:
@@ -693,8 +729,8 @@ class Java(Writer):
 class TypeScript(Writer):
     ext = "ts"
 
-    def __init__(self, model: Model):
-        super().__init__(model)
+    def __init__(self, model: Model, dialect: str = "modern", level: str | None = None):
+        super().__init__(model, dialect, level)
         self.typed = model.lang != "javascript"
 
     def kebab(self, name: str) -> str:
@@ -868,8 +904,15 @@ class TypeScript(Writer):
             self.files[f"{here}.{self.ext}"] = "\n".join(head + ([""] if head else []) + lines + [""])
         if not self.typed:
             self.files = {k.replace(".ts", ".js"): v for k, v in self.files.items()}
-        options = {"strict": False, "target": "ES2022", "module": "ES2022", "moduleResolution": "bundler", "noEmit": True,
-                   "experimentalDecorators": True, "lib": ["ES2022", "DOM"]}
+        if self.classic:
+            # A tsconfig from the TypeScript 2 era: CommonJS output, node resolution, the level's lib; TypeScript 6 calls
+            # ES5 and node10 deprecated (an error that does not stop the program), and the extractor records that as a note.
+            es = self.level.upper()
+            options = {"strict": False, "target": es, "module": "commonjs" if es == "ES5" else es, "moduleResolution": "node", "noEmit": True,
+                       "experimentalDecorators": True, "lib": [es, "DOM"]}
+        else:
+            options = {"strict": False, "target": self.level, "module": self.level, "moduleResolution": "bundler", "noEmit": True,
+                       "experimentalDecorators": True, "lib": [self.level, "DOM"]}
         if not self.typed:
             options.update(allowJs=True, checkJs=False)
         self.files["src/globals.d.ts"] = "declare function describe(name: string, fn: () => void): void;\ndeclare function it(name: string, fn: () => void): void;\n"
@@ -1027,13 +1070,13 @@ class Go(Writer):
             # A module per package, joined by a go.work: requires on the lower modules, the workspace resolves them.
             for module in self.m.modules:
                 requires = "".join(f"require {self.pkg(x)} v0.0.0\n" for x in self.m.modules[: module.index])
-                self.files[f"{module.name}/go.mod"] = f"module {self.pkg(module)}\n\ngo 1.22\n\n{requires}"
+                self.files[f"{module.name}/go.mod"] = f"module {self.pkg(module)}\n\ngo {self.level}\n\n{requires}"
             requires = "".join(f"require {self.pkg(x)} v0.0.0\n" for x in self.m.modules)
-            self.files["cmd/app/go.mod"] = f"module {self.MODULE}/cmd/app\n\ngo 1.22\n\n{requires}"
-            self.files["go.work"] = "go 1.22\n\nuse (\n" + "".join(f"\t./{m.name}\n" for m in self.m.modules) + "\t./cmd/app\n)\n"
+            self.files["cmd/app/go.mod"] = f"module {self.MODULE}/cmd/app\n\ngo {self.level}\n\n{requires}"
+            self.files["go.work"] = f"go {self.level}\n\nuse (\n" + "".join(f"\t./{m.name}\n" for m in self.m.modules) + "\t./cmd/app\n)\n"
             self.target = "go.work"
         else:
-            self.files["go.mod"] = f"module {self.MODULE}\n\ngo 1.22\n"
+            self.files["go.mod"] = f"module {self.MODULE}\n\ngo {self.level}\n"
             self.target = "go.mod"
 
 
@@ -1143,14 +1186,14 @@ class Rust(Writer):
         if self.multi:
             for module in self.m.modules:
                 deps = "".join(f'{x.name} = {{ path = "../{x.name}" }}\n' for x in self.m.modules[: module.index])
-                self.files[f"{module.name}/Cargo.toml"] = f'[package]\nname = "{module.name}"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n{deps}'
+                self.files[f"{module.name}/Cargo.toml"] = f'[package]\nname = "{module.name}"\nversion = "0.1.0"\nedition = "{self.level}"\n\n[dependencies]\n{deps}'
                 inline = self.module_files(module, f"{module.name}/src/")
                 if inline is None:
                     self.files[f"{module.name}/src/lib.rs"] = f"{allow}\npub mod {module.name};\n"
                 else:
                     self.files[f"{module.name}/src/lib.rs"] = f"{allow}\npub mod {module.name} {{\n" + "\n".join("    " + l for l in inline) + "\n}\n"
             deps = "".join(f'{x.name} = {{ path = "../{x.name}" }}\n' for x in self.m.modules)
-            self.files["app/Cargo.toml"] = f'[package]\nname = "app"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n{deps}'
+            self.files["app/Cargo.toml"] = f'[package]\nname = "app"\nversion = "0.1.0"\nedition = "{self.level}"\n\n[dependencies]\n{deps}'
             self.files["app/src/main.rs"] = "\n".join([allow, ""] + main)
             members = ", ".join(f'"{m.name}"' for m in self.m.modules) + ', "app"'
             self.files["Cargo.toml"] = f'[workspace]\nmembers = [{members}]\nresolver = "2"\n'
@@ -1166,7 +1209,7 @@ class Rust(Writer):
                     self.files[f"src/{module.name}/mod.rs"] = "\n".join(inline)
                     lines.append(f"mod {module.name};")
             self.files["src/main.rs"] = "\n".join(lines + [""] + main)
-            self.files["Cargo.toml"] = '[package]\nname = "corpus"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n'
+            self.files["Cargo.toml"] = f'[package]\nname = "corpus"\nversion = "0.1.0"\nedition = "{self.level}"\n\n[dependencies]\n'
         self.target = "Cargo.toml"
 
 
@@ -1289,7 +1332,8 @@ class Python(Writer):
                 self.files[f"tests/test_{module.name}.py"] = "\n".join(lines)
         program = next(t for m in self.m.modules for t in m.types if t.program)
         self.files["corpus/__main__.py"] = "\n".join(["def main():"] + [f"    {line}" for line in self.body(program.methods[0])] + ["    print(r)", "", "", 'if __name__ == "__main__":', "    main()", ""])
-        self.files["pyproject.toml"] = '[project]\nname = "corpus"\nversion = "0.1.0"\n\n[tool.setuptools]\npackages = ["corpus"]\n'
+        requires = f'requires-python = "{self.level}"\n' if self.level else ""
+        self.files["pyproject.toml"] = f'[project]\nname = "corpus"\nversion = "0.1.0"\n{requires}\n[tool.setuptools]\npackages = ["corpus"]\n'
         self.files = {k: v for k, v in self.files.items()}
         self.target = "pyproject.toml"
 
@@ -1392,11 +1436,13 @@ def main():
     ap.add_argument("--profile", choices=sorted(PROFILES), required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--dialect", choices=DIALECTS, default="modern", help="the language level and syntax era to write the same model in")
+    ap.add_argument("--level", help="override the build file's language level pin (net8.0, 17, ES2015, 1.21, 2018, >=3.8)")
     a = ap.parse_args()
     if (a.lang, a.profile) in UNSUPPORTED:
         ap.error(f"{a.lang} cannot express the {a.profile} construction")
     model = Model(a.lang, a.profile, a.seed)
-    writer = WRITERS[a.lang](model)
+    writer = WRITERS[a.lang](model, a.dialect, a.level)
     writer.write(a.out)
     os.makedirs(a.out, exist_ok=True)
     for rel, text in writer.files.items():
@@ -1405,10 +1451,11 @@ def main():
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
     key = answer_key(model, writer)
+    key.update(dialect=a.dialect, level=writer.level)
     with open(os.path.join(a.out, "expected.json"), "w", encoding="utf-8") as f:
         json.dump(key, f, indent=1)
     s = key["stats"]
-    print(f"{a.lang}/{a.profile}: {s['modules']} modules, {s['types']} types, {s['methods']} methods, {s['calls']} calls, {s['files']} files, {s['lines']} lines → {a.out}")
+    print(f"{a.lang}/{a.profile} ({a.dialect}, {writer.level}): {s['modules']} modules, {s['types']} types, {s['methods']} methods, {s['calls']} calls, {s['files']} files, {s['lines']} lines → {a.out}")
 
 
 if __name__ == "__main__":

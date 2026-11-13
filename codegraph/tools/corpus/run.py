@@ -26,7 +26,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
-from gen import LANGS, PROFILES, UNSUPPORTED  # noqa: E402
+from gen import DIALECTS, LANGS, PROFILES, UNSUPPORTED  # noqa: E402
 
 IMAGE = "codegraph-corpus"
 
@@ -91,11 +91,12 @@ def build(base: str | None, out: str):
         sys.exit(p.stdout[-3000:])
 
 
-def run_one(job, publish: str, results: str, mounts: dict, cpus: str, memory: str, network: str) -> dict:
-    lang, profile, seed = job
-    name = f"{lang}-{profile}-s{seed}"
+def run_one(job, publish: str, results: str, mounts: dict, cpus: str, memory: str, network: str, level: str | None = None, tag: str | None = None, no_live: bool = False, image: str = IMAGE) -> dict:
+    lang, profile, seed, dialect = job
+    name = f"{lang}-{profile}-s{seed}" + (f"-{dialect}" if dialect != "modern" else "") + (f"-{tag}" if tag else "")
     args = ["docker", "run", "--rm", "--name", f"cg-corpus-{name}-{os.getpid()}", f"--network={network}",
             f"--cpus={cpus}", f"--memory={memory}", "--user", f"{os.getuid()}:{os.getgid()}",
+            *(["-e", f"CORPUS_TAG={tag}"] if tag else []), *(["-e", "CORPUS_NO_LIVE=1"] if no_live else []),
             "-v", f"{publish}:/opt/codegraph/index:ro",
             "-v", f"{publish}-mcp:/opt/codegraph/mcp:ro",
             "-v", f"{os.path.join(REPO, 'obsidian-plugin')}:/opt/codegraph/obsidian-plugin:ro",
@@ -104,10 +105,10 @@ def run_one(job, publish: str, results: str, mounts: dict, cpus: str, memory: st
     for host, container in mounts.items():
         args += ["-v", f"{host}:{container}:ro"]
     started = time.monotonic()
-    p = sh(args + [IMAGE, lang, profile, str(seed)])
+    p = sh(args + [image, lang, profile, str(seed), dialect, *([level] if level else [])])
     path = os.path.join(results, f"{name}.json")
     result = json.load(open(path)) if os.path.exists(path) else dict(language=lang, profile=profile, ok=False, error=p.stdout[-1500:])
-    result.update(seed=seed, wall_seconds=round(time.monotonic() - started, 1))
+    result.update(seed=seed, dialect=dialect, toolchain=tag, wall_seconds=round(time.monotonic() - started, 1))
     json.dump(result, open(path, "w"), indent=1)
     line = p.stdout.strip().splitlines()[-1] if p.stdout.strip() else ""
     print(f"  [{result['wall_seconds']:6.1f}s] {name:38} {'ok ' if result.get('ok') else 'ERR'} {line[:150]}", flush=True)
@@ -135,20 +136,44 @@ def live_cell(v: dict | None) -> str:
     return f"{v['calls']} calls, {v['median_ms']} ms median, callers R={pct(c['recall'])}"
 
 
+def compiler_cell(r: dict) -> str:
+    """What the graph was read with: compiler and language level, plus any count that means missing code."""
+    facts = r.get("compiler") or {}
+    by = lambda suffix: next((v for k, v in facts.items() if k.endswith("." + suffix)), None)
+    parts = [p for p in (by("compiler"), by("language_versions")) if p]
+    for suffix in ("compile_errors", "language_version_errors"):
+        if by(suffix) not in (None, "0"):
+            parts.append(f"**{by(suffix)} {suffix.replace('_', ' ')}**")
+    if by("unmapped"):
+        parts.append(f"**unmapped {by('unmapped')}**")
+    if by("notes"):
+        parts.append(f"note: {by('notes')}")
+    return "; ".join(parts).replace("|", "/") or "–"
+
+
+def profile_cell(r: dict) -> str:
+    cell = r["profile"] + ("" if r.get("seed", 1) == 1 else " s" + str(r["seed"]))
+    if r.get("dialect", "modern") != "modern" or r.get("level"):
+        cell += f" ({r.get('dialect', 'modern')}" + (f", {r['level']}" if r.get("level") else "") + ")"
+    if r.get("toolchain"):
+        cell += f" on {r['toolchain']}"
+    return cell
+
+
 def summarise(results: list[dict], out: str):
     kinds = ["Calls", "Overrides", "Implements", "Supertype", "TestedBy", "Injects", "Renders", "TemplateCalls"]
-    lines = ["| language | profile | methods | calls | files | lines | index s | methods found | " + " | ".join(f"{k} P/R" for k in kinds) + " | dead found | live reported | vault | plugin live |",
-             "|" + "---|" * (12 + len(kinds))]
-    for r in sorted(results, key=lambda r: (r["language"], list(PROFILES).index(r["profile"]), r.get("seed", 1))):
+    lines = ["| language | profile | methods | calls | files | lines | index s | methods found | " + " | ".join(f"{k} P/R" for k in kinds) + " | dead found | live reported | vault | plugin live | read with |",
+             "|" + "---|" * (13 + len(kinds))]
+    for r in sorted(results, key=lambda r: (r["language"], list(PROFILES).index(r["profile"]), r.get("seed", 1), r.get("dialect", ""), r.get("toolchain") or "")):
         if not r.get("ok"):
-            lines.append(f"| {r['language']} | {r['profile']} | | | | | | **failed**: {r.get('error', '')[:120].replace('|', '/').replace(chr(10), ' ')} |" + " |" * (len(kinds) + 4))
+            lines.append(f"| {r['language']} | {profile_cell(r)} | | | | | | **failed**: {r.get('error', '')[:120].replace('|', '/').replace(chr(10), ' ')} |" + " |" * (len(kinds) + 5))
             continue
         s, e = r["stats"], r["edges"]
         cells = [f"{pct(e[k]['precision'])}/{pct(e[k]['recall'])}" if k in e else "–" for k in kinds]
         d = r["dead_code"]
-        lines.append(f"| {r['language']} | {r['profile']}{'' if r.get('seed', 1) == 1 else ' s' + str(r['seed'])} | {s['methods']} | {s['calls']} | {s['files']} | {s['lines']} | "
+        lines.append(f"| {r['language']} | {profile_cell(r)} | {s['methods']} | {s['calls']} | {s['files']} | {s['lines']} | "
                      f"{r['index_seconds']} | {r['methods']['found']}/{r['methods']['expected']} | " + " | ".join(cells) + f" | {d['found']}/{d['planted']} | {d['live_reported']} | "
-                     f"{vault_cell(r.get('vault'))} | {live_cell(r.get('live'))} |")
+                     f"{vault_cell(r.get('vault'))} | {live_cell(r.get('live'))} | {compiler_cell(r)} |")
     findings = []
     for r in results:
         if not r.get("ok"):
@@ -177,6 +202,10 @@ def main():
     ap.add_argument("--langs", default=",".join(LANGS))
     ap.add_argument("--profiles", default=",".join(PROFILES))
     ap.add_argument("--seeds", default="1")
+    ap.add_argument("--dialects", default="modern", help="comma separated: modern, classic (see gen.py LEVELS)")
+    ap.add_argument("--level", help="pin every run's language level to this (net8.0, 17, ES2015, 1.21, 2018, >=3.8); default per dialect")
+    ap.add_argument("--tag", help="a suffix for result names, such as the toolchain the runs are on")
+    ap.add_argument("--no-live", action="store_true", help="skip the MCP live checks")
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     ap.add_argument("--cpus", default="2", help="CPUs per container")
     ap.add_argument("--memory", default="4g", help="memory per container")
@@ -195,13 +224,14 @@ def main():
     if "python" in langs and a.base and not shutil.which("scip-python"):
         print("skipping python: scip-python is not installed (npm install -g @sourcegraph/scip-python)", flush=True)
         langs.remove("python")
-    jobs = [(l, p, int(s)) for l in langs for p in a.profiles.split(",") for s in a.seeds.split(",") if (l, p) not in UNSUPPORTED]
+    dialects = [d for d in a.dialects.split(",") if d in DIALECTS] or ["modern"]
+    jobs = [(l, p, int(s), d) for l in langs for p in a.profiles.split(",") for s in a.seeds.split(",") for d in dialects if (l, p) not in UNSUPPORTED]
     # The largest first, so the long runs overlap the short ones.
     jobs.sort(key=lambda j: -PROFILES[j[1]]["modules"] * PROFILES[j[1]]["classes"])
     print(f"{len(jobs)} runs, {a.jobs} at a time ({a.cpus} CPUs, {a.memory} each), network {network}", flush=True)
     started = time.monotonic()
     with cf.ThreadPoolExecutor(a.jobs) as pool:
-        done = list(pool.map(lambda j: run_one(j, publish, results, mounts, a.cpus, a.memory, network), jobs))
+        done = list(pool.map(lambda j: run_one(j, publish, results, mounts, a.cpus, a.memory, network, a.level, a.tag, a.no_live), jobs))
     text = summarise(done, results)
     print(f"\n{len(done)} runs in {time.monotonic() - started:.0f}s; {sum(1 for r in done if not r.get('ok'))} failed → {results}/summary.md\n")
     print(text)

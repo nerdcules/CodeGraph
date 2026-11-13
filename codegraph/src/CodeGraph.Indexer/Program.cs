@@ -485,6 +485,8 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
         [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.CompileErrors)] = indexer.CompileErrors.ToString(CultureInfo.InvariantCulture),
         [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.LanguageVersionErrors)] = indexer.LanguageVersionErrors.ToString(CultureInfo.InvariantCulture),
         [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.FirstLanguageVersionError)] = indexer.FirstLanguageVersionError ?? "",
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.FirstCompileError)] = indexer.FirstCompileError ?? "",
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.Notes)] = string.Join("; ", indexer.Notes),
         [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.Unmapped)] = indexer.UnmappedSummary(),
         [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.IndexedAt)] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
     };

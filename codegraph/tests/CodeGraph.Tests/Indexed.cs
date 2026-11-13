@@ -62,7 +62,12 @@ internal sealed class Indexed
     /// <summary>Indexes the project but walks only the files named in <paramref name="walk"/> (all when null).</summary>
     public static Task<Indexed> OfAsync(IReadOnlyCollection<string>? walk, params (string Name, string Source)[] files) => OfAsync(walk, version: null, files);
 
-    public static async Task<Indexed> OfAsync(IReadOnlyCollection<string>? walk, LanguageVersion? version, params (string Name, string Source)[] files)
+    public static Task<Indexed> OfAsync(IReadOnlyCollection<string>? walk, LanguageVersion? version, params (string Name, string Source)[] files) => OfAsync(walk, version, withReferences: true, files);
+
+    /// <summary>Indexes without framework references, which is what an unrestored project looks like to the indexer.</summary>
+    public static Task<Indexed> Unrestored(string source) => OfAsync(walk: null, version: null, withReferences: false, ("Test.cs", source));
+
+    private static async Task<Indexed> OfAsync(IReadOnlyCollection<string>? walk, LanguageVersion? version, bool withReferences, params (string Name, string Source)[] files)
     {
         using var workspace = new AdhocWorkspace();
         var projectId = ProjectId.CreateNewId();
@@ -80,7 +85,7 @@ internal sealed class Indexed
                 name: file.Name,
                 loader: TextLoader.From(TextAndVersion.Create(SourceText.From(file.Source), VersionStamp.Default)),
                 filePath: Path.Combine(root, file.Name))),
-            metadataReferences: FrameworkReferences,
+            metadataReferences: withReferences ? FrameworkReferences : [],
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable),
             // Default is what a project without <LangVersion> gets from this Roslyn: its latest major.
             parseOptions: new CSharpParseOptions(version ?? LanguageVersion.Default));

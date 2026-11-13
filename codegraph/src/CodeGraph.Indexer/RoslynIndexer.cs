@@ -117,6 +117,18 @@ public sealed partial class RoslynIndexer
     /// <summary>The first language-version error, as <c>File.cs(12): message</c>.</summary>
     public string? FirstLanguageVersionError { get; private set; }
 
+    /// <summary>The first compile error of any kind, the same way, so a count is never without an example.</summary>
+    public string? FirstCompileError { get; private set; }
+
+    private readonly List<string> _notes = [];
+
+    /// <summary>
+    /// What went wrong at the project level rather than in a file: a project whose core types did not resolve
+    /// because it was never restored, or its target framework is not installed. Every declaration in it then
+    /// errors, and calls into the framework and other projects are missing. Semicolon separated for the meta row.
+    /// </summary>
+    public IReadOnlyList<string> Notes => _notes;
+
     /// <summary>
     /// Shapes the compiler produced that this walker has no mapping for, with how often: <c>TypeKind.Extension</c>,
     /// <c>SymbolKind.X</c>, <c>SyntaxKind.Y</c>. A new language release shows up here before anyone notices a
@@ -150,7 +162,7 @@ public sealed partial class RoslynIndexer
     public IEnumerable<string> CompilerSummary()
     {
         var versions = _languageVersions.Count == 0 ? "no project walked" : $"projects use {string.Join(", ", _languageVersions)}";
-        yield return $"compiler: {CompilerVersion} (up to {NewestLanguageVersion}); {versions}; {CompileErrors} compile error(s) in declarations";
+        yield return $"compiler: {CompilerVersion} (up to {NewestLanguageVersion}); {versions}; {CompileErrors} compile error(s) in declarations" + (FirstCompileError is null ? "" : $", first: {FirstCompileError}");
         if (LanguageVersionErrors > 0)
         {
             yield return $"\u26a0 {LanguageVersionErrors} error(s) say the code needs a newer C# than it parses with; declarations under them are missing from the graph. First: {FirstLanguageVersionError}";
@@ -319,6 +331,12 @@ public sealed partial class RoslynIndexer
             _languageVersions.Add(Display(parseOptions.LanguageVersion));
         }
 
+        if (compilation.GetSpecialType(SpecialType.System_Object).TypeKind == RoslynTypeKind.Error)
+        {
+            _notes.Add($"{project.Name}: System.Object did not resolve, so the project has no framework references; it was not restored (no obj/project.assets.json) or its target framework is not installed. Run dotnet restore and index again");
+            _log($"\u26a0 {_notes[^1]}");
+        }
+
         if (_sourceTypeNames is null)
         {
             (_sourceTypeNames, _sourceMemberNames) = await SourceNamesAsync(solution, cancellationToken);
@@ -365,6 +383,7 @@ public sealed partial class RoslynIndexer
             }
 
             CompileErrors++;
+            FirstCompileError ??= $"{Path.GetFileName(path)}({diagnostic.Location.GetLineSpan().StartLinePosition.Line + 1}): {diagnostic.Id} {diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture)}";
             if (IsLanguageVersionError(diagnostic))
             {
                 LanguageVersionErrors++;
