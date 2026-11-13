@@ -54,6 +54,12 @@ internal static class ScipImport
 
         var languages = new Dictionary<string, int>(StringComparer.Ordinal);
         var defined = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
+        // What the indexer said, under the keys every route records: the tool is the compiler, its diagnostics are
+        // the compile errors, and a symbol kind this importer has no case for (a newer scip.proto, a new language
+        // construct) is counted rather than dropped in silence.
+        var compileErrors = 0;
+        string? firstCompileError = null;
+        var unmapped = new Dictionary<string, int>(StringComparer.Ordinal);
         var definitions = new List<(Document Document, string File, List<(Span Span, string Id, bool IsTest)> Scopes, string[] Lines)>();
         var overrideAnnotated = new List<(string Id, string File)>();
         // Rust: the trait each `impl Trait for Type` header names, by file and line, to resolve impl members exactly.
@@ -80,6 +86,12 @@ internal static class ScipImport
             var scopes = new List<(Span, string, bool)>();
             foreach (var occurrence in document.Occurrences)
             {
+                foreach (var diagnostic in occurrence.Diagnostics.Where(d => d.Severity == Severity.Error))
+                {
+                    compileErrors++;
+                    firstCompileError ??= $"{document.RelativePath}({RangeOf(occurrence).StartLine + 1}): {diagnostic.Code} {diagnostic.Message}".Trim();
+                }
+
                 var at = (occurrence.SymbolRoles & DefinitionRole) == 0 && occurrence.Symbol.EndsWith('#') ? RangeOf(occurrence).StartLine : -1;
                 if (at >= 0 && at < lines.Length && System.Text.RegularExpressions.Regex.IsMatch(lines[at], @"^\s*(unsafe\s+)?impl\b.*\bfor\b"))
                 {
@@ -95,7 +107,7 @@ internal static class ScipImport
                 }
 
                 var symbolInfo = info.GetValueOrDefault(occurrence.Symbol);
-                if (Shape(symbol, symbolInfo) is not { } shape)
+                if (Shape(symbol, symbolInfo, unmapped) is not { } shape)
                 {
                     continue;
                 }
@@ -318,7 +330,43 @@ internal static class ScipImport
         }
 
         log($"scip: {index.Documents.Count} document(s) from {tool}, {defined.Count} definitions, {externals.Count} external symbols");
+        batch.Meta[LanguageMetaKeys.Compiler] = tool;
+        batch.Meta[LanguageMetaKeys.CompileErrors] = compileErrors.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (firstCompileError is not null)
+        {
+            batch.Meta[LanguageMetaKeys.FirstCompileError] = firstCompileError;
+        }
+
+        if (unmapped.Count > 0)
+        {
+            batch.Meta[LanguageMetaKeys.Unmapped] = string.Join(", ", unmapped.OrderByDescending(u => u.Value).ThenBy(u => u.Key, StringComparer.Ordinal).Select(u => $"{u.Key} x{u.Value}"));
+        }
+
         return batch;
+    }
+
+    /// <summary>
+    /// Lines for the log once an index is read: the tool, the language versions the build file names, errors the
+    /// indexer reported, and the kinds this importer has no case for. Loud when the graph is missing code.
+    /// </summary>
+    public static IEnumerable<string> CompilerSummary(GraphBatch batch)
+    {
+        var versions = batch.Meta.GetValueOrDefault(LanguageMetaKeys.LanguageVersions) is { Length: > 0 } v ? $"code uses {v}" : "language version not named by the build file";
+        yield return $"compiler: {batch.Meta.GetValueOrDefault(LanguageMetaKeys.Compiler, batch.Tool ?? "scip")}; {versions}; {batch.Meta.GetValueOrDefault(LanguageMetaKeys.CompileErrors, "0")} error(s) reported by the indexer";
+        if (batch.Meta.GetValueOrDefault(LanguageMetaKeys.FirstCompileError) is { Length: > 0 } first)
+        {
+            yield return $"\u26a0 the indexer reported errors; declarations under them may be missing. First: {first}";
+        }
+
+        foreach (var note in (batch.Meta.GetValueOrDefault(LanguageMetaKeys.Notes) ?? "").Split("; ", StringSplitOptions.RemoveEmptyEntries))
+        {
+            yield return $"note: {note}";
+        }
+
+        if (batch.Meta.GetValueOrDefault(LanguageMetaKeys.Unmapped) is { Length: > 0 } unmapped)
+        {
+            yield return $"\u26a0 symbol kinds this importer has no case for: {unmapped} (a newer indexer or language construct; the node is not recorded)";
+        }
     }
 
     /// <summary>
@@ -407,10 +455,25 @@ internal static class ScipImport
 
     private sealed record NodeShape(NodeKind Kind, TypeKind TypeKind, MemberKind MemberKind, string Name);
 
-    private static NodeShape? Shape(ScipSymbol symbol, SymbolInformation? info)
+    // Kinds that are not nodes by design: parameters, scopes, and constructs no route records.
+    private static readonly HashSet<SymbolInformation.Types.Kind> KindsWithoutNodes =
+    [
+        SymbolInformation.Types.Kind.UnspecifiedKind, SymbolInformation.Types.Kind.Parameter, SymbolInformation.Types.Kind.TypeParameter,
+        SymbolInformation.Types.Kind.SelfParameter, SymbolInformation.Types.Kind.ThisParameter, SymbolInformation.Types.Kind.ParameterLabel,
+        SymbolInformation.Types.Kind.File, SymbolInformation.Types.Kind.Package, SymbolInformation.Types.Kind.Namespace, SymbolInformation.Types.Kind.Module,
+        SymbolInformation.Types.Kind.PackageObject, SymbolInformation.Types.Kind.Library, SymbolInformation.Types.Kind.Macro, SymbolInformation.Types.Kind.Modifier,
+    ];
+
+    private static NodeShape? Shape(ScipSymbol symbol, SymbolInformation? info, Dictionary<string, int> unmapped)
     {
         var kind = info?.Kind ?? SymbolInformation.Types.Kind.UnspecifiedKind;
         var name = symbol.Name;
+        if (!Enum.IsDefined(kind))
+        {
+            // A kind from a newer scip.proto than the vendored one: the suffix still says what it is, and the number says what to add.
+            unmapped[$"SymbolKind.{(int)kind}"] = unmapped.GetValueOrDefault($"SymbolKind.{(int)kind}") + 1;
+        }
+
         switch (kind)
         {
             case SymbolInformation.Types.Kind.Class or SymbolInformation.Types.Kind.Object or SymbolInformation.Types.Kind.SingletonClass:
@@ -442,8 +505,8 @@ internal static class ScipImport
                 return null;
         }
 
-        // No kind (older indexers): the descriptor suffix says enough.
-        return symbol.Suffix switch
+        // No kind (older indexers), or a kind without a case above (Function, Method, Event, Operator): the descriptor suffix says enough.
+        NodeShape? bySuffix = symbol.Suffix switch
         {
             ScipSuffix.Type => new(NodeKind.Type, TypeKind.Class, MemberKind.Ordinary, name),
             ScipSuffix.Method when name is "<init>" or "<constructor>" or "__init__" => new(NodeKind.Method, TypeKind.None, MemberKind.Constructor, "constructor"),
@@ -451,6 +514,12 @@ internal static class ScipImport
             ScipSuffix.Term => new(NodeKind.Field, TypeKind.None, MemberKind.Ordinary, name),
             _ => null,
         };
+        if (bySuffix is null && Enum.IsDefined(kind) && !KindsWithoutNodes.Contains(kind))
+        {
+            unmapped[$"SymbolKind.{kind}"] = unmapped.GetValueOrDefault($"SymbolKind.{kind}") + 1;
+        }
+
+        return bySuffix;
     }
 
     /// <summary>

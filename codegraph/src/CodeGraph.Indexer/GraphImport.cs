@@ -299,6 +299,10 @@ internal static class ImportCommand
         if (source is not null && source.EndsWith(".scip", StringComparison.OrdinalIgnoreCase))
         {
             batch = ScipImport.Read(source, log);
+            foreach (var line in ScipImport.CompilerSummary(batch))
+            {
+                log(line);
+            }
         }
         else if (source is null or "-")
         {
