@@ -38,9 +38,11 @@ NO_INHERITANCE = {"go", "rust"}
 # expressed in (C# 7.3 on a .sln, ES5 CommonJS with node resolution, Java 8, Go 1.18, Rust 2018, Python 3.8).
 # The level is what the build file pins (TargetFramework, maven.compiler.release, tsconfig target, go, edition,
 # requires-python); --level overrides it so a run can match the SDK in its container (net8.0 on the .NET 8 image).
+# C#'s level stays the SDK's framework in both dialects: the language level is LangVersion, and a framework the
+# machine has no reference pack for cannot be restored offline.
 DIALECTS = ["modern", "classic"]
 LEVELS = {
-    "csharp": {"modern": "net10.0", "classic": "net8.0"},
+    "csharp": {"modern": "net10.0", "classic": "net10.0"},
     "java": {"modern": "21", "classic": "8"},
     "typescript": {"modern": "ES2022", "classic": "ES5"},
     "javascript": {"modern": "ES2022", "classic": "ES5"},

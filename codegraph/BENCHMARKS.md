@@ -378,6 +378,68 @@ subtype-to-supertype direction and direct supertypes only, as the C# extractor d
 version field, because `1.0` in every id would have changed with each release, and JDK calls with each JDK.
 Java names now read `org.acme.shop.Cart.total`.
 
+## Round 10: language versions and older toolchains
+
+The question was how to tell when a repo is on a language version the indexer does not know, and how to keep
+older repos indexing when the compilers move on. The answer has three parts, each measured here.
+
+**What the graph says it was read with.** Every route now records its compiler, the language versions the
+projects asked for, compile errors with the first one named, the "feature X needs C# N" subset, declaration
+shapes it has no mapping for, and notes (`lang.<language>.*` meta rows, EXTRACTORS.md). `index_status` prints
+a line per language. The cost on this repo's own solution: none measurable (12.9 s full index before and
+after; the parse already happened, and the walk already binds every declaration).
+
+**A version axis in the tests.** `CSharpVersionMatrixTests` indexes one fixture per C# 10 to C# 14 feature at
+every version Roslyn knows; a declaration-level feature used one version too early is reported, not hidden;
+the same code gives the same graph on every version that accepts it. The matrix found its first gap at once: a
+C# 14 extension block was a nameless type of kind None. The TypeScript legacy fixture (ES5, CommonJS,
+namespaces, `import = require`) found that `import X = require()` produced no `Imports` edge.
+
+**The same answer key on old syntax and old SDKs.** The corpus writes each codebase in two dialects (`classic`:
+C# 7.3 on a `.sln`, ES5 CommonJS, Java 8, Go 1.18, Rust 2018, Python 3.8) and runs them on six Docker images
+with an older SDK and the .NET 10 runtime beside it. Four profiles, both dialects, seed 1:
+
+| toolchain | language | dialect | runs | methods found | Calls P/R (worst run) | read with |
+|---|---|---|---|---|---|---|
+| dotnet8 (.NET 8 SDK) | csharp | classic | 4/4 | 551/551 | 100/100 | Roslyn 5.9.0; C# 7.3 |
+| dotnet8 | csharp | modern | 4/4 | 551/551 | 100/100 | Roslyn 5.9.0; C# 12 |
+| node20 (Node 20) | typescript | classic | 4/4 | 441/441 | 100/100 | typescript 6.0.3; ES5; note: target=ES5 deprecated |
+| node20 | typescript | modern | 4/4 | 441/441 | 100/100 | typescript 6.0.3; ES2022 |
+| node20 | javascript | classic, modern | 8/8 | 640/640 | 100/100 | typescript 6.0.3; ES5, ES2022 |
+| node20 | angular | classic, modern | 8/8 | 1,240/1,240 | 100/100 | typescript 6.0.3, @angular/compiler 22.2.6; ES2015, ES2022 |
+| jdk17 (Temurin 17, Maven 3.9) | java | classic, modern | 8/8 | 1,020/1,020 | 100/100 | scip-java 0.12.3; Java 17 |
+| go121 (Go 1.21) | go | classic, modern | 8/8 | 784/784 | 100/100 | scip-go 0.2.9; Go 1.21 |
+| python38 (Python 3.8) | python | classic, modern | 6/6 | 528/528 | 100/100 | scip-python 0.6.8; Python >=3.8 |
+| rust170 (Rust 1.70, rust-analyzer 1.70) | rust | classic, modern | 8/8 | 738/738 | 100/87.1 | rust-analyzer 0.1; note: older than the 1.99.1 tested |
+
+What the matrix found, in the order it found it:
+
+- On the .NET 8 image MSBuildLocator finds only SDK 8, so Roslyn 5.9's build host loads MSBuild 17.8 into a
+  .NET 10 process. It works: `net8.0` projects index at 100 percent whether their LangVersion is the SDK's
+  default (C# 12) or pinned to 7.3, and the graph says which.
+- A `net8.0` repo on a machine without that reference pack, never restored, gave 588 declaration errors and lost
+  every cross-project heritage edge, with nothing saying why. The indexer now names such a project as
+  unrestored (System.Object did not resolve), and the corpus restores C# codebases first, as a checkout is.
+- TypeScript 6 reports `target: ES5` and `moduleResolution: node` as errors but still builds the program; an
+  ES5 workspace indexes in full and the deprecations are notes.
+- The JDK 17 image's Maven 3.9 defaults to plugin versions the host's `~/.m2` did not hold, so offline runs
+  failed before javac ran. The image now warms its own repository at build time.
+- rust-analyzer 1.70 has no `--output` on `scip`, writes a file module's path reversed (`invoice0/m0/` for
+  `src/m0/invoice0.rs`), names trait impl members `Type#Trait#member()`, records no symbol kinds and no
+  enclosing ranges. The importer reads all of that now (ids come out the same as from a current
+  rust-analyzer), and method recall went from 1 of 14 to 14 of 14. What stays missing is calls through
+  `dyn Trait`, which that version did not resolve: 87 to 90 percent call recall, and trait methods reported
+  dead. The graph's note says the indexer is older than the tested one.
+- Brace matching for indexes without enclosing ranges helps any older indexer, not only rust-analyzer: a
+  reference lands in the member that holds it instead of being dropped.
+
+The standard corpus then ran in both dialects on the usual image (.NET 10 SDK, Node 22, JDK 27, Go 1.27, Rust
+1.99, Python 3.15): 144 runs, 383,212 expected edges, 906 s with 3 containers at a time. One difference: the
+classic C# dialect pinned `net8.0`, whose reference pack the offline image does not have, and the graph said so
+(588 errors, `System.Object did not resolve`, "run dotnet restore"). The dialect now keeps the SDK's framework
+(the language level is LangVersion; `--level net8.0` is for the .NET 8 image), and the classic C# runs are 100
+percent like the rest: the same answer key holds on old syntax and on new, on old SDKs and on new.
+
 ## Where it ended up
 
 This repo's own graph, first baseline against the final build of this work, same machine and method. The graph

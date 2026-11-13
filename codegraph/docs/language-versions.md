@@ -131,6 +131,7 @@ python3 tools/corpus/run.py --toolchains dotnet8,node20,jdk17,go121,rust170,pyth
 The generator writes each codebase in two dialects.
 `modern` is what a new repository gets today.
 `classic` is the oldest language level that the toolchains still accept: C# 7.3 on a `.sln`, ES5 CommonJS, Java 8, Go 1.18, Rust 2018 and Python 3.8.
+The toolchain runs also pin the framework or SDK level that the image accepts, for example `net8.0` on the .NET 8 image.
 The answer key is the same for both, so a difference between them is a bug.
 The `read with` column in the summary shows the compiler and the language level that each run exercised.
 [tools/corpus/toolchains/README.md](../tools/corpus/toolchains/README.md) lists the images.

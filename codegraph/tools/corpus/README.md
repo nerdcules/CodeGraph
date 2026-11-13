@@ -67,9 +67,11 @@ calls to an interface member go to the interface, and calls inside a lambda belo
 ## Dialects and language levels
 
 `gen.py --dialect classic` writes the same model, with the same answer key, at the oldest language level the
-toolchains still accept: C# 7.3 on a `.sln` and `net8.0`, ES5 CommonJS with `moduleResolution: node`, Java 8,
-Go 1.18, Rust 2018 and Python 3.8 (`LEVELS` in gen.py). `--level` overrides the build file's pin so a run can
-match the SDK in its container. `run.py --dialects modern,classic` runs both; a difference between them is a bug.
+toolchains still accept: C# 7.3 on a `.sln`, ES5 CommonJS with `moduleResolution: node`, Java 8, Go 1.18,
+Rust 2018 and Python 3.8 (`LEVELS` in gen.py). `--level` overrides the build file's pin so a run can match the
+SDK in its container (`net8.0` on the .NET 8 image; by default C# keeps the SDK's framework, since a framework
+without its reference pack on the machine cannot be restored offline). `run.py --dialects modern,classic` runs
+both; a difference between them is a bug.
 
 Each result records what the graph says it was read with (`codegraph-index export` writes each language's
 compiler facts as meta records): the compiler, the language versions the build files asked for, compile errors,
