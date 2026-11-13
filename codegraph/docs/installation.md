@@ -25,12 +25,16 @@ You must have these items:
 
 | Item | Version | Necessary for |
 |---|---|---|
-| .NET SDK | 10 | All languages. The indexer and the server are .NET executables. |
+| .NET SDK | 10 or later | All languages. The indexer and the server are .NET executables. `global.json` rolls forward to the latest major. |
 | git | any | All languages. The indexer finds the worktree root with git. |
 | Node.js | 22.22 or later | TypeScript, JavaScript and Angular. |
 | A language indexer | see below | Java, Kotlin, Scala, Go, Rust and Python. |
 
 You also need a clone of the CodeGraph repository.
+
+The repositories that you index can be on older versions.
+A project on .NET 8, a `tsconfig` from the TypeScript 2 era, or a `go.mod` that says `go 1.18` indexes in full.
+[Language versions](language-versions.md) gives the versions that each route reads.
 
 ## Install the language tools
 

@@ -16,7 +16,7 @@ export GOTOOLCHAIN=local GOPATH="$HOME/go" GOCACHE="$HOME/go-build" CARGO_HOME="
 [ -d /opt/go ] && export GOROOT=/opt/go
 [ -d /opt/jdk ] && export JAVA_HOME=/opt/jdk
 # scip-python is an npm package mounted at /opt/scip-python: give it a launcher on PATH.
-if [ -f /opt/scip-python/package.json ]; then
+if [ -f /opt/scip-python/package.json ] && command -v node >/dev/null; then
   mkdir -p "$HOME/bin"
   entry=$(node -p 'const b = require("/opt/scip-python/package.json").bin; typeof b === "string" ? b : Object.values(b)[0]')
   printf '#!/bin/sh\nexec node "/opt/scip-python/%s" "$@"\n' "$entry" > "$HOME/bin/scip-python"

@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-**Home** · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
+**Home** · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
 
 ---
 
@@ -46,6 +46,7 @@ The [Obsidian](obsidian.md) plugin only shows the graph to people as notes.
 | [Obsidian](obsidian.md) | Read the graph as linked notes in Obsidian, with a live panel. |
 | [Use cases](use-cases.md) | Find the tool for a question about your code. |
 | [How it works](how-it-works.md) | Learn how the indexer builds the graph and how the server answers. |
+| [Language versions](language-versions.md) | See which language versions each route reads, how older and newer code is read, and how to check a new version. |
 | [Performance](performance.md) | See the measured times for indexing and for tool calls. |
 | [Architecture](architecture.md) | Learn the components, the data model and the extension points. |
 
@@ -62,6 +63,7 @@ The [Obsidian](obsidian.md) plugin only shows the graph to people as notes.
 
 One graph can hold more than one language.
 For example, a .NET API and its Angular front end can share one graph.
+[Language versions](language-versions.md) gives the language versions that each route reads.
 
 ## Conventions in these pages
 
