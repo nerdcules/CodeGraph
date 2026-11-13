@@ -162,7 +162,7 @@ public sealed class ImportTests : IDisposable
 
         Assert.Single(batch.Nodes);
         Assert.Single(batch.Edges);
-        Assert.Equal("/src/B.java", batch.Origins.Single().FilePath);
+        Assert.Equal(Path.GetFullPath("/src/B.java"), batch.Origins.Single().FilePath);
         Assert.Contains(batch.Problems, p => p.StartsWith("line 2: unknown kind 'Gadget'", StringComparison.Ordinal));
         Assert.Contains(batch.Problems, p => p.StartsWith("line 3:", StringComparison.Ordinal));
         Assert.Contains(batch.Problems, p => p.StartsWith("line 5:", StringComparison.Ordinal) && p.Contains("no file"));

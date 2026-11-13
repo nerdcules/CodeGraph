@@ -382,7 +382,8 @@ public sealed class ScipRunnerTests : IDisposable
         await process.WaitForExitAsync(TestContext.Current.CancellationToken);
 
         Assert.True(process.ExitCode == 0, await error);
-        Assert.Equal(module, File.ReadAllText(Path.Combine(_root, "cwd")).Trim());
+        // The shell prints the resolved path, which on macOS puts /private in front of the temp folder.
+        Assert.Equal(TempDb.RealPath(module), File.ReadAllText(Path.Combine(_root, "cwd")).Trim());
         using var store = GraphStore.Open(db, readOnly: true, TimeSpan.FromSeconds(5));
         Assert.Equal(Path.Combine(module, "go.mod"), store.ReadMeta()[MetaKeys.Solution]);
         Assert.NotEmpty(store.FindSymbol("formatName"));

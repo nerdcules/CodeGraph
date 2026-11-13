@@ -27,6 +27,22 @@ internal sealed class TempDb : IDisposable
     /// Removes a temp directory, tolerating a DuckDB file handle that can outlive Dispose on Windows.
     /// A leftover temp file is not worth failing a test over.
     /// </summary>
+    /// <summary>The path with every symbolic link in it resolved, as a shell's <c>pwd</c> prints it.</summary>
+    public static string RealPath(string path)
+    {
+        var current = Path.GetPathRoot(path)!;
+        foreach (var part in path[current.Length..].Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, part);
+            if (new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true) is { } target)
+            {
+                current = target.FullName;
+            }
+        }
+
+        return current;
+    }
+
     public static void TryDelete(string directory)
     {
         try
