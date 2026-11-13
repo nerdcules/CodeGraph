@@ -34,6 +34,13 @@ Indexers differ in what they put in the index, and the importer evens that out:
   subtype-to-supertype direction and direct supertypes are kept.
 - **rust-analyzer** emits no relationships and names impl members `impl#[Self][Trait]member()`. The member goes
   to its self type, and the trait in the descriptor becomes `Implements` edges. `#[test]` marks a test.
+  A rust-analyzer from 2023 (1.70) is read too: it has no `--output` (the indexer runs it the old way), writes
+  a file module's path reversed (restored from the file path), names impl members `Type#Trait#member()` (read
+  as the form above, so ids match), records no symbol kinds (a trait is told from its `trait` line) and no
+  enclosing ranges (member bodies are found by brace matching). It does not resolve calls through `dyn Trait`;
+  those stay missing, and the graph's notes say the indexer is older than the tested one.
+- **Any indexer without enclosing ranges** gets member bodies by brace matching in the source (the indented block
+  for Python), so references still land in the member that holds them; the graph's notes say so.
 - **scip-go** calls interface members `MethodSpecification`; they are methods. Go's generated test main lies
   outside the module and is skipped. A `go.work` root is indexed through each module it uses.
 - **scip-python** writes declarations as a fenced block in the documentation, which becomes the signature. It

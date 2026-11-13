@@ -25,7 +25,9 @@ if [ -f /opt/scip-python/package.json ] && command -v node >/dev/null; then
 fi
 # The JVM takes its home folder from the user database, not $HOME; coursier and Maven must look in $HOME.
 export JAVA_TOOL_OPTIONS="-Duser.home=$HOME" COURSIER_CACHE="$HOME/.cache/coursier/v1"
-# Maven writes to its local repository, so each container gets its own copy of the seeded one.
+# Maven writes to its local repository, so each container gets its own copy of the seeded one: the image's own
+# (an older-toolchain image warms one for its Maven) before the host's.
+if [ -d /opt/m2-seed ] && [ ! -d "$HOME/.m2" ]; then cp -r /opt/m2-seed "$HOME/.m2"; fi
 if [ -d /seed/m2 ] && [ ! -d "$HOME/.m2" ]; then cp -r /seed/m2 "$HOME/.m2"; fi
 work=$(mktemp -d)
 python3 /opt/corpus/gen.py --lang "$lang" --profile "$profile" --seed "$seed" --dialect "$dialect" ${level:+--level "$level"} --out "$work/$name"

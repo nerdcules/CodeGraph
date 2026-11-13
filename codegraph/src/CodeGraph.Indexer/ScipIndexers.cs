@@ -187,6 +187,13 @@ internal static class ScipIndexers
         return null;
     }
 
+    /// <summary>
+    /// rust-analyzer before 1.72 has no <c>--output</c> on <c>scip</c>: it writes <c>index.scip</c> into the working
+    /// directory. The retry runs it from the output's folder, so the index lands beside where it was expected.
+    /// </summary>
+    internal static bool NeedsLegacyInvocation(Indexer indexer, string stderr) =>
+        indexer.Tool == "rust-analyzer" && stderr.Contains("unexpected flag: `--output`", StringComparison.Ordinal);
+
     public static async Task<int> IndexAsync(Indexer indexer, string marker, string dbPath, Action<string> log, CancellationToken cancellationToken)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(marker))!;
@@ -194,39 +201,34 @@ internal static class ScipIndexers
         var clock = Stopwatch.StartNew();
         try
         {
-            var info = new ProcessStartInfo(ToolLocator.Find(indexer.Tool) ?? indexer.Tool, indexer.Arguments(directory, output))
+            var exit = await RunAsync(indexer, indexer.Arguments(directory, output), directory, output, log, cancellationToken);
+            if (exit is { Code: not 0 } && NeedsLegacyInvocation(indexer, exit.Stderr))
             {
-                WorkingDirectory = directory,
-                UseShellExecute = false,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            };
-            Process process;
-            try
-            {
-                process = Process.Start(info) ?? throw new InvalidOperationException("Process.Start returned null");
+                log($"{indexer.Language}: this {indexer.Tool} has no --output; running it the old way, from a folder of its own");
+                var legacyDir = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"codegraph-{Guid.NewGuid():n}")).FullName;
+                try
+                {
+                    exit = await RunAsync(indexer, ["scip", directory], legacyDir, Path.Combine(legacyDir, "index.scip"), log, cancellationToken);
+                    if (exit is { Code: 0 })
+                    {
+                        File.Move(Path.Combine(legacyDir, "index.scip"), output, overwrite: true);
+                    }
+                }
+                finally
+                {
+                    try { Directory.Delete(legacyDir, recursive: true); } catch (IOException) { }
+                }
             }
-            catch (Exception e) when (e is Win32Exception or InvalidOperationException)
+
+            if (exit is null)
             {
-                log($"{indexer.Language}: {indexer.Tool} is not on PATH ({e.Message}). Install it: {indexer.Install}");
                 return 1;
             }
 
-            using (process)
+            if (exit.Code != 0 || !File.Exists(output))
             {
-                process.StandardInput.Close();
-                process.OutputDataReceived += (_, e) => { if (e.Data is { Length: > 0 } line) log($"{indexer.Tool}: {line}"); };
-                process.ErrorDataReceived += (_, e) => { if (e.Data is { Length: > 0 } line) log($"{indexer.Tool}: {line}"); };
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-                await process.WaitForExitAsync(cancellationToken);
-                if (process.ExitCode != 0 || !File.Exists(output))
-                {
-                    log($"{indexer.Language}: {indexer.Tool} exited with {process.ExitCode}; the graph is unchanged");
-                    return 1;
-                }
+                log($"{indexer.Language}: {indexer.Tool} exited with {exit.Code}; the graph is unchanged");
+                return 1;
             }
 
             var batch = ScipImport.Read(output, log);
@@ -259,6 +261,44 @@ internal static class ScipIndexers
             catch (IOException)
             {
             }
+        }
+    }
+
+    private sealed record Exit(int Code, string Stderr);
+
+    /// <summary>Runs the indexer once, logging its output; null when it could not start. The index must appear at <paramref name="expected"/>.</summary>
+    private static async Task<Exit?> RunAsync(Indexer indexer, string[] arguments, string workingDirectory, string expected, Action<string> log, CancellationToken cancellationToken)
+    {
+        var info = new ProcessStartInfo(ToolLocator.Find(indexer.Tool) ?? indexer.Tool, arguments)
+        {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        Process process;
+        try
+        {
+            process = Process.Start(info) ?? throw new InvalidOperationException("Process.Start returned null");
+        }
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException)
+        {
+            log($"{indexer.Language}: {indexer.Tool} is not on PATH ({e.Message}). Install it: {indexer.Install}");
+            return null;
+        }
+
+        var stderr = new System.Text.StringBuilder();
+        using (process)
+        {
+            process.StandardInput.Close();
+            process.OutputDataReceived += (_, e) => { if (e.Data is { Length: > 0 } line) log($"{indexer.Tool}: {line}"); };
+            process.ErrorDataReceived += (_, e) => { if (e.Data is { Length: > 0 } line) { log($"{indexer.Tool}: {line}"); stderr.AppendLine(line); } };
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            await process.WaitForExitAsync(cancellationToken);
+            return new Exit(process.ExitCode == 0 && !File.Exists(expected) ? 1 : process.ExitCode, stderr.ToString());
         }
     }
 

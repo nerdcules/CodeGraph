@@ -10,9 +10,10 @@ it, and runs the languages it serves in both dialects, pinned to the level the i
 | `node20` | Node 20 | the extractor and its TypeScript 6 on the oldest Node it supports; ES5 CommonJS workspaces | per dialect |
 | `jdk17` | Temurin JDK 17 with Maven | scip-java (mounted from the host) on JDK 17 reading `--release 17` code | `17` |
 | `go121` | Go 1.21 | scip-go (mounted from the host) driving the Go 1.21 toolchain, `go 1.21` modules | `1.21` |
-| `rust170` | Rust 1.70 with its own rust-analyzer | an old rust-analyzer's SCIP output through the importer, edition 2018 and 2021 | per dialect |
+| `rust170` | Rust 1.70 with its own rust-analyzer | an old rust-analyzer's SCIP output through the importer (no `--output`, reversed module paths, `Type#Trait#member()`, no kinds, no enclosing ranges), edition 2018 and 2021 | per dialect |
 | `python38` | Python 3.8 | scip-python (mounted from the host) over a 3.8 interpreter, `requires-python >=3.8` | per dialect |
 
 The host's indexers that the image does not provide are mounted as in a `--base` run (coursier's scip-java, scip-go,
 scip-python); the language toolchain itself always comes from the image. The images need the network once, when
-they are built; the runs do not.
+they are built; the runs do not. The `jdk17` image warms its own Maven repository at build time
+(`maven-warm/`), because the host's `~/.m2` holds the host Maven's plugin versions and the runs are offline.
