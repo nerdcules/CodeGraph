@@ -29,7 +29,11 @@ internal sealed class Indexed
         Origins = indexer.Origins;
         SearchDocuments = indexer.SearchDocuments;
         EmbeddingTexts = indexer.EmbeddingTexts;
+        Indexer = indexer;
     }
+
+    /// <summary>The indexer itself, for its compiler report: language versions, parse errors, unmapped shapes.</summary>
+    public RoslynIndexer Indexer { get; }
 
     /// <summary>Wraps an indexer another harness has already driven.</summary>
     public static Indexed From(RoslynIndexer indexer) => new(indexer);
@@ -50,10 +54,15 @@ internal sealed class Indexed
     /// <summary>Indexes one source file, named <c>Test.cs</c>.</summary>
     public static Task<Indexed> OfAsync(string source) => OfAsync(("Test.cs", source));
 
+    /// <summary>Indexes one source file as a project whose LangVersion is <paramref name="version"/>: how a repo on an older C# is read.</summary>
+    public static Task<Indexed> OfAsync(LanguageVersion version, string source) => OfAsync(walk: null, version, ("Test.cs", source));
+
     public static Task<Indexed> OfAsync(params (string Name, string Source)[] files) => OfAsync(walk: null, files);
 
     /// <summary>Indexes the project but walks only the files named in <paramref name="walk"/> (all when null).</summary>
-    public static async Task<Indexed> OfAsync(IReadOnlyCollection<string>? walk, params (string Name, string Source)[] files)
+    public static Task<Indexed> OfAsync(IReadOnlyCollection<string>? walk, params (string Name, string Source)[] files) => OfAsync(walk, version: null, files);
+
+    public static async Task<Indexed> OfAsync(IReadOnlyCollection<string>? walk, LanguageVersion? version, params (string Name, string Source)[] files)
     {
         using var workspace = new AdhocWorkspace();
         var projectId = ProjectId.CreateNewId();
@@ -72,7 +81,9 @@ internal sealed class Indexed
                 loader: TextLoader.From(TextAndVersion.Create(SourceText.From(file.Source), VersionStamp.Default)),
                 filePath: Path.Combine(root, file.Name))),
             metadataReferences: FrameworkReferences,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable),
+            // Default is what a project without <LangVersion> gets from this Roslyn: its latest major.
+            parseOptions: new CSharpParseOptions(version ?? LanguageVersion.Default));
 
         var solution = workspace.AddProject(project).Solution;
         var indexer = new RoslynIndexer(_ => { });

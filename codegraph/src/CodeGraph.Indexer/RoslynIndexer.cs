@@ -1,3 +1,4 @@
+using System.Reflection;
 using CodeGraph.Core;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -50,6 +51,8 @@ public sealed partial class RoslynIndexer
     private readonly HashSet<EdgeOrigin> _origins = [];
     private readonly Dictionary<string, SearchDocument> _search = new(StringComparer.Ordinal);
     private readonly HashSet<string> _documentPaths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SortedSet<string> _languageVersions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _unmapped = new(StringComparer.Ordinal);
     private readonly Action<string> _log;
     private readonly Action<IndexProgress>? _progress;
     private int _projectOrdinal;
@@ -87,6 +90,80 @@ public sealed partial class RoslynIndexer
 
     /// <summary>Every C# source file in the solution, walked or not.</summary>
     public IReadOnlyCollection<string> DocumentPaths => _documentPaths;
+
+    /// <summary>
+    /// The Roslyn this build parses with (<c>Roslyn 5.9.0</c>): the ceiling on the C# it understands. A repo whose
+    /// LangVersion is newer parses with errors, counted in <see cref="LanguageVersionErrors"/>.
+    /// </summary>
+    public static string CompilerVersion { get; } = "Roslyn " + (typeof(CSharpCompilation).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+', '-')[0]
+        ?? typeof(CSharpCompilation).Assembly.GetName().Version?.ToString(3) ?? "?");
+
+    /// <summary>The newest C# this Roslyn knows, as <c>C# 14</c>.</summary>
+    public static string NewestLanguageVersion { get; } = Display(LanguageVersion.Latest.MapSpecifiedToEffectiveVersion());
+
+    /// <summary>The effective C# version of every project walked, as <c>C# 12</c>: what the repo asked for, resolved by Roslyn.</summary>
+    public IReadOnlySet<string> LanguageVersions => _languageVersions;
+
+    /// <summary>
+    /// Syntax and declaration errors in the walked files: what the parser could not read, and declarations whose
+    /// signatures did not bind. Both mean nodes or edges that are not in the graph. Body-level errors are not
+    /// counted: finding them is a full compile, and they cost at most an edge.
+    /// </summary>
+    public int CompileErrors { get; private set; }
+
+    /// <summary>Of <see cref="CompileErrors"/>, those that say a feature needs a newer C# than the project's version, or than this Roslyn has.</summary>
+    public int LanguageVersionErrors { get; private set; }
+
+    /// <summary>The first language-version error, as <c>File.cs(12): message</c>.</summary>
+    public string? FirstLanguageVersionError { get; private set; }
+
+    /// <summary>
+    /// Shapes the compiler produced that this walker has no mapping for, with how often: <c>TypeKind.Extension</c>,
+    /// <c>SymbolKind.X</c>, <c>SyntaxKind.Y</c>. A new language release shows up here before anyone notices a
+    /// missing node, instead of falling through a <c>_ =&gt; None</c> arm in silence.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> Unmapped => _unmapped;
+
+    private void CountUnmapped(string shape) => _unmapped[shape] = _unmapped.GetValueOrDefault(shape) + 1;
+
+    internal static string Display(LanguageVersion version)
+    {
+        var text = version.ToDisplayString();
+        return "C# " + (text.EndsWith(".0", StringComparison.Ordinal) ? text[..^2] : text);
+    }
+
+    // Roslyn's "feature X is not available in C# N" family, one code per version it was added for, plus preview.
+    private static readonly HashSet<string> LanguageVersionErrorCodes = new(StringComparer.Ordinal)
+    {
+        "CS8022", "CS8023", "CS8024", "CS8025", "CS8026", "CS8059", "CS8107", "CS8302", "CS8320", "CS8370", "CS8400",
+        "CS8652", "CS8773", "CS8936", "CS9058", "CS9202", "CS9260",
+    };
+
+    private static bool IsLanguageVersionError(Diagnostic diagnostic) =>
+        LanguageVersionErrorCodes.Contains(diagnostic.Id)
+        || diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("language version", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// One line per fact the log and the graph's meta should carry once the walk is done: the compiler, the
+    /// versions the projects use, parse errors, and unmapped shapes. Loud when the repo is ahead of the compiler.
+    /// </summary>
+    public IEnumerable<string> CompilerSummary()
+    {
+        var versions = _languageVersions.Count == 0 ? "no project walked" : $"projects use {string.Join(", ", _languageVersions)}";
+        yield return $"compiler: {CompilerVersion} (up to {NewestLanguageVersion}); {versions}; {CompileErrors} compile error(s) in declarations";
+        if (LanguageVersionErrors > 0)
+        {
+            yield return $"\u26a0 {LanguageVersionErrors} error(s) say the code needs a newer C# than it parses with; declarations under them are missing from the graph. First: {FirstLanguageVersionError}";
+        }
+
+        if (_unmapped.Count > 0)
+        {
+            yield return $"\u26a0 unmapped by this indexer: {UnmappedSummary()} (a newer language feature; the node or edge is not recorded)";
+        }
+    }
+
+    /// <summary><c>TypeKind.Extension x3, SyntaxKind.Foo x1</c>, or empty.</summary>
+    public string UnmappedSummary() => string.Join(", ", _unmapped.OrderByDescending(u => u.Value).ThenBy(u => u.Key, StringComparer.Ordinal).Select(u => $"{u.Key} x{u.Value}"));
 
     public Task IndexAsync(string solutionOrProjectPath, CancellationToken cancellationToken) =>
         IndexAsync(solutionOrProjectPath, selectFiles: null, cancellationToken);
@@ -237,6 +314,11 @@ public sealed partial class RoslynIndexer
             return;
         }
 
+        if (project.ParseOptions is CSharpParseOptions parseOptions)
+        {
+            _languageVersions.Add(Display(parseOptions.LanguageVersion));
+        }
+
         if (_sourceTypeNames is null)
         {
             (_sourceTypeNames, _sourceMemberNames) = await SourceNamesAsync(solution, cancellationToken);
@@ -260,8 +342,34 @@ public sealed partial class RoslynIndexer
             AddEdge(new GraphEdge(projectId, fileId, EdgeKind.Contains), path);
 
             var model = compilation.GetSemanticModel(tree);
+            CountCompileErrors(tree, model, path, cancellationToken);
             var root = await tree.GetRootAsync(cancellationToken);
             IndexDocument(root, model, fileId, path, frameworkRootId, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Syntax errors are free (the parse already happened) and declaration errors are nearly so (the walk binds
+    /// every declaration anyway). Between them they hold every "feature X is not available in C# N" that costs a
+    /// node: the parser reports the ones in syntax (file-scoped namespaces, raw strings, extension blocks), the
+    /// declaration binder the ones in signatures (primary constructors, required members). Body errors would
+    /// need a full compile, so they are not counted; see <see cref="CompileErrors"/>.
+    /// </summary>
+    private void CountCompileErrors(SyntaxTree tree, SemanticModel model, string path, CancellationToken cancellationToken)
+    {
+        foreach (var diagnostic in tree.GetDiagnostics(cancellationToken).Concat(model.GetDeclarationDiagnostics(cancellationToken: cancellationToken)))
+        {
+            if (diagnostic.Severity != DiagnosticSeverity.Error)
+            {
+                continue;
+            }
+
+            CompileErrors++;
+            if (IsLanguageVersionError(diagnostic))
+            {
+                LanguageVersionErrors++;
+                FirstLanguageVersionError ??= $"{Path.GetFileName(path)}({diagnostic.Location.GetLineSpan().StartLinePosition.Line + 1}): {diagnostic.Id} {diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture)}";
+            }
         }
     }
 
@@ -433,7 +541,24 @@ public sealed partial class RoslynIndexer
 
         foreach (var (symbol, scopes) in symbols)
         {
-            if (symbol is null || KindOf(symbol) is not { } kind || IdOf(symbol) is not { } memberId)
+            if (symbol is null)
+            {
+                // Nested types were skipped on purpose; a member syntax that declares nothing this walker knows is a new shape.
+                if (member is not (BaseTypeDeclarationSyntax or DelegateDeclarationSyntax or IncompleteMemberSyntax or GlobalStatementSyntax))
+                {
+                    CountUnmapped($"SyntaxKind.{member.Kind()}");
+                }
+
+                continue;
+            }
+
+            if (KindOf(symbol) is not { } kind)
+            {
+                CountUnmapped($"SymbolKind.{symbol.Kind}");
+                continue;
+            }
+
+            if (IdOf(symbol) is not { } memberId)
             {
                 continue;
             }
@@ -913,10 +1038,10 @@ public sealed partial class RoslynIndexer
     }
 
 
-    private static GraphNode NodeFor(ISymbol symbol, string id, NodeKind kind, SyntaxNode declaration, bool isTest) =>
+    private GraphNode NodeFor(ISymbol symbol, string id, NodeKind kind, SyntaxNode declaration, bool isTest) =>
         NodeFor(symbol, id, kind, declaration.GetLocation(), isTest);
 
-    private static GraphNode NodeFor(ISymbol symbol, string id, NodeKind kind, Location location, bool isTest)
+    private GraphNode NodeFor(ISymbol symbol, string id, NodeKind kind, Location location, bool isTest)
     {
         var span = location.GetLineSpan();
         return new GraphNode(
@@ -940,15 +1065,20 @@ public sealed partial class RoslynIndexer
             MemberKind: symbol is IMethodSymbol m ? MapMemberKind(m) : MemberKind.Ordinary);
     }
 
-    private static CodeGraph.Core.TypeKind MapTypeKind(INamedTypeSymbol t) => t.TypeKind switch
+    private CodeGraph.Core.TypeKind MapTypeKind(INamedTypeSymbol t)
     {
-        RoslynTypeKind.Class     => t.IsRecord ? CodeGraph.Core.TypeKind.Record     : CodeGraph.Core.TypeKind.Class,
-        RoslynTypeKind.Struct    => t.IsRecord ? CodeGraph.Core.TypeKind.RecordStruct : CodeGraph.Core.TypeKind.Struct,
-        RoslynTypeKind.Interface => CodeGraph.Core.TypeKind.Interface,
-        RoslynTypeKind.Enum      => CodeGraph.Core.TypeKind.Enum,
-        RoslynTypeKind.Delegate  => CodeGraph.Core.TypeKind.Delegate,
-        _                        => CodeGraph.Core.TypeKind.None,
-    };
+        switch (t.TypeKind)
+        {
+            case RoslynTypeKind.Class: return t.IsRecord ? CodeGraph.Core.TypeKind.Record : CodeGraph.Core.TypeKind.Class;
+            case RoslynTypeKind.Struct: return t.IsRecord ? CodeGraph.Core.TypeKind.RecordStruct : CodeGraph.Core.TypeKind.Struct;
+            case RoslynTypeKind.Interface: return CodeGraph.Core.TypeKind.Interface;
+            case RoslynTypeKind.Enum: return CodeGraph.Core.TypeKind.Enum;
+            case RoslynTypeKind.Delegate: return CodeGraph.Core.TypeKind.Delegate;
+            default:
+                CountUnmapped($"TypeKind.{t.TypeKind}");
+                return CodeGraph.Core.TypeKind.None;
+        }
+    }
 
     private static CodeGraph.Core.Accessibility MapAccessibility(RoslynAccessibility a) => a switch
     {

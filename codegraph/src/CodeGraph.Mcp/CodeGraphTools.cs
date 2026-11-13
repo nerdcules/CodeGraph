@@ -656,7 +656,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "index_status", ReadOnly = true, Idempotent = true)]
-    [Description("Which graph this server reads, when and at which commit it was built, and which indexed files have been edited or deleted since. Check this when an answer looks wrong.")]
+    [Description("Which graph this server reads, when and at which commit it was built, which compiler and language versions each language was read with (and whether the code asked for a newer one than the indexer knows), and which indexed files have been edited or deleted since. Check this when an answer looks wrong.")]
     public string IndexStatus()
     {
         var report = freshness.Check();
@@ -671,6 +671,11 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         sb.AppendLine($"HEAD now  : {report.Head ?? "?"}{(report.HeadMoved ? "  (moved since indexing)" : "")}");
         sb.AppendLine($"size      : {nodes} nodes, {edges} edges");
         sb.AppendLine($"status    : {(report.IsStale ? "STALE" : "up to date with the working tree")}");
+        foreach (var line in LanguageStatus.Lines(meta))
+        {
+            sb.AppendLine(line);
+        }
+
         foreach (var path in report.ChangedFiles.Order(StringComparer.OrdinalIgnoreCase))
         {
             sb.AppendLine($"  edited  {path}");
