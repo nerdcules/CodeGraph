@@ -10,6 +10,22 @@ A frank list, in order of what would change adoption most. The engineering is ah
 the graph is precise, fast and tested, and the gap is everything between a stranger reading the README
 and that stranger still using it a week later. Version 1.0.0 closed the first items; the rest are open.
 
+## The analysis, applied
+
+The list comes from a frank review of a sister project, [sankofa](https://github.com/nerdcules/sankofa),
+whose seven findings fit CodeGraph almost one for one. Each row is the finding as written there, what it
+means here, and where it stands.
+
+| Finding, from sankofa | For CodeGraph | Status |
+|---|---|---|
+| "The core only runs on Linux." | The daemon uses .NET's file watcher and named pipes, which are cross-platform; the author uses Linux and Windows. | **Partly closed.** Releases, builds and the suite run on macOS in CI. No daily use there yet. |
+| "No way to install it without building it." | Nothing but a .NET SDK, a checkout and a build. | **Closed.** Prebuilt archives on six platforms with their own runtime; one-line installers; a Claude Code plugin. |
+| "No proof anyone else can trust." | No CI, no badge, no changelog, numbers buried in BENCHMARKS.md. | **Closed.** CI badge on three platforms, a CHANGELOG, release notes and checksums; the token and corpus numbers in the first paragraph of the README. |
+| "The first five minutes are not designed." | The README opened with architecture. | **Closed.** Install, one question, the real answer, and the usage line a week later, with a picture of the terminal. A real recording is still open. |
+| "The value is invisible once installed." | Every call went silently into `telemetry.jsonl`. | **Closed.** `codegraph-index usage`, the same line after each index run, and at the top of `usage_stats`. |
+| "One sentence of positioning." | "A compiler-built code graph with an MCP server" was accurate and abstract. | **Closed.** "CodeGraph gives Claude Code the compiler's answers: who calls this, what breaks if I change it, which tests guard it." Everywhere, including the GitHub description. |
+| "Identity for teams." | The graph is per machine; the only shared piece is `.mcp.json`. | **Open.** A graph built in CI for the team, and a pull-request check on language-version errors. |
+
 ## Closed in 1.0.0
 
 | Gap | What closed it |
