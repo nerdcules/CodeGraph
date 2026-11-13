@@ -1,0 +1,56 @@
+# Build and test on every push and pull request, on the three platforms the release ships for.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: codegraph
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: codegraph/global.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build (warnings are errors)
+        run: dotnet build CodeGraph.slnx -c Release -warnaserror --nologo
+
+      - name: Test
+        run: dotnet test CodeGraph.slnx -c Release --no-build
+
+      - name: TypeScript extractor tests
+        working-directory: codegraph/extractors/typescript
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
+      - name: Obsidian plugin tests
+        working-directory: codegraph/obsidian-plugin
+        run: |
+          node build.mjs --check
+          npm test
+
+      - name: Packaging script runs
+        if: runner.os == 'Linux'
+        env:
+          CODEGRAPH_VERSION: 0.0.0-ci
+        run: tools/release/package.sh linux-x64

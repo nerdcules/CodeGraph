@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Starts codegraph-mcp for the project Claude Code is in. On the first run it installs the latest release into
+# ~/.codegraph/bin (or $CODEGRAPH_HOME) with the project's install script, so the plugin needs no other setup.
+# macOS and Linux; on Windows, run install.ps1 first and the plugin uses that install.
+set -euo pipefail
+
+bin="${CODEGRAPH_HOME:-$HOME/.codegraph/bin}"
+if [ ! -x "$bin/codegraph-mcp" ]; then
+    echo "codegraph: installing the latest release into $bin" >&2
+    CODEGRAPH_NONINTERACTIVE=1 bash -c \
+        'curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- --install-dir "$1"' \
+        bash "$bin" >&2 </dev/null
+fi
+
+# The graph is found from the working directory; make sure that is the project, not the plugin folder.
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
+    cd "$CLAUDE_PROJECT_DIR"
+fi
+exec "$bin/codegraph-mcp" "$@"

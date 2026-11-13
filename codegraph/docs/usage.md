@@ -17,6 +17,7 @@
 - [The tools](#the-tools)
 - [Read an answer](#read-an-answer)
 - [Import and export a graph](#import-and-export-a-graph)
+- [See what the graph did for you](#see-what-the-graph-did-for-you)
 - [Command reference](#command-reference)
 - [Environment variables](#environment-variables)
 
@@ -209,6 +210,33 @@ codegraph-index export obsidian --out ~/Notes/MyProject/_code
 
 [Obsidian](obsidian.md) tells how to use the notes and the plugin.
 
+## See what the graph did for you
+
+The server writes one line per tool call to `.codegraph/telemetry.jsonl`.
+Nothing leaves the machine.
+To see the last seven days, run this in the repository:
+
+```bash
+codegraph-index usage
+```
+
+```
+last 7 days: 143 tool calls answered; the files they pointed at come to about 1,230,000 tokens, the answers
+to 48,000, so about 1,180,000 tokens stayed out of the context; most used: find_symbol ×61, impact_of ×24, tests_for ×19
+since 2026-10-28: ...
+
+tool          calls  errors   avg ms  result tok  source tok   saved tok
+find_symbol      61       2       14        6100      310000      303900
+...
+```
+
+"Source tok" is the size of the files that the answers pointed at.
+That is what the client would have read without the graph.
+Give `--days 30` for a longer period.
+The indexer prints the first line after each run.
+The `usage_stats` tool shows the same figures to the client.
+Set `CODEGRAPH_TELEMETRY=off` in `.mcp.json` to keep the calls in memory only.
+
 ## Command reference
 
 ```
@@ -217,6 +245,7 @@ codegraph-index init [target | folder] [--live] [--no-index] [--db <path>]
 codegraph-index import <records.ndjson | index.scip | -> [--db <path>]
 codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]
 codegraph-index export obsidian --out <vault>/<folder> [--db <path>] [--language <name>] [--link-root <path>]
+codegraph-index usage [--db <path>] [--days <n>]
 codegraph-mcp [<graph.db>] [--web <port>]
 ```
 

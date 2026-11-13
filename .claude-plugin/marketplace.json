@@ -1,0 +1,12 @@
+{
+  "name": "codegraph",
+  "owner": { "name": "nerdcules", "url": "https://github.com/nerdcules" },
+  "description": "CodeGraph: the compiler's answers for Claude Code. Who calls this, what breaks if I change it, which tests guard it.",
+  "plugins": [
+    {
+      "name": "codegraph",
+      "source": "./codegraph/plugin",
+      "description": "Compiler-built code graph tools: find_symbol, impact_of, callers_of, tests_for and 31 more, for C#, TypeScript, Java, Go, Rust and Python."
+    }
+  ]
+}

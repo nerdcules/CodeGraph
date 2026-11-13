@@ -1,0 +1,10 @@
+{
+  "name": "codegraph",
+  "version": "1.0.0",
+  "description": "The compiler's answers for Claude Code: who calls this, what breaks if I change it, which tests guard it. A code graph MCP server for C#, TypeScript, Java, Go, Rust and Python.",
+  "author": { "name": "Alan Seunarayan", "url": "https://github.com/nerdcules" },
+  "homepage": "https://github.com/nerdcules/CodeGraph",
+  "repository": "https://github.com/nerdcules/CodeGraph",
+  "license": "MIT",
+  "keywords": ["mcp", "code-graph", "roslyn", "csharp", "typescript", "impact-analysis", "call-graph"]
+}

@@ -370,6 +370,8 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         sb.AppendLine("tokens are estimated at 4 characters each; 'source tok' is the size of the files an answer pointed at,");
         sb.AppendLine("which is what reading them instead would have cost; 'saved tok' is that minus the answer itself.");
         sb.AppendLine();
+        sb.AppendLine(UsageSummary.LastDays(allTime.Count == 0 ? session : allTime, 7).Line("last 7 days"));
+        sb.AppendLine();
         sb.AppendLine($"this session ({Totals(session)})");
         sb.AppendLine(Telemetry.Table(ToolUsage.Group(session)));
         sb.AppendLine();

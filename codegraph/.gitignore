@@ -7,3 +7,5 @@ TestResults/
 src/CodeGraph.Mcp/wwwroot/
 artifacts/
 __pycache__/
+dist/
+!plugin/bin/

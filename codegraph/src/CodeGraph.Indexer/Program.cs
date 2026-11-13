@@ -26,6 +26,12 @@ if (args is ["import", .. var importArgs])
     return await ImportCommand.RunAsync(importArgs, Console.In, Log);
 }
 
+// `codegraph-index usage [--db PATH] [--days N]` says what the graph did for its users, from the server's telemetry.
+if (args is ["usage", .. var usageArgs])
+{
+    return UsageCommand.Run(usageArgs, Console.Out, Console.Error);
+}
+
 // `codegraph-index init [solution|dir]` wires the repo to codegraph (.mcp.json, .gitignore) and then indexes.
 var init = args is ["init", ..];
 if (init)
@@ -110,6 +116,7 @@ if (usage || targetArg is null)
     Console.Error.WriteLine("       codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]");
     Console.Error.WriteLine("       codegraph-index export obsidian --out <vault>/<folder> [--db <path>] [--language <name>] [--link-root <path>]");
     Console.Error.WriteLine("       codegraph-index init [solution|dir] [--live] [--no-index] [index options]");
+    Console.Error.WriteLine("       codegraph-index usage [--db <path>] [--days <n>]   what the graph did for its users");
     Console.Error.WriteLine("       default db: <git worktree root>/.codegraph/graph.db (solution dir outside a repo)");
     Console.Error.WriteLine("       re-walks only files whose hash changed, plus files that depend on them;");
     Console.Error.WriteLine("       --full rebuilds everything");
@@ -208,6 +215,11 @@ if (watch)
 }
 
 var exit = await RunAsync(target, dbPath, forceFull);
+if (exit == 0 && UsageCommand.AfterIndexLine(dbPath) is { } usageLine)
+{
+    Log(usageLine);
+}
+
 if (init && exit == 0)
 {
     // A front end beside the solution (an Angular ClientApp, a web/ folder) goes into the same graph.

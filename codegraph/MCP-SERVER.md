@@ -16,31 +16,28 @@ that speaks stdio.
 | **Data** | `.codegraph/graph.db`, a DuckDB file built by `codegraph-index` |
 | **Side effects** | none: every tool is read-only and idempotent; the server never writes the graph |
 | **Network** | none; nothing leaves the machine |
-| **Runtime** | .NET 10 |
+| **Runtime** | .NET 10, bundled in the release archive |
 | **Source** | [src/CodeGraph.Mcp](src/CodeGraph.Mcp) |
 
 ## Install
 
-```powershell
-.\install.ps1 C:\dev\App    # Windows → C:\tools\codegraph (PowerShell 7 elsewhere → ~/.codegraph/bin)
-```
-
 ```bash
-./install.sh ~/dev/App     # macOS / Linux → ~/.codegraph/bin
+curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/App     # macOS / Linux → ~/.codegraph/bin
 ```
 
-The script builds, runs the tests, publishes `codegraph-index` and `codegraph-mcp`, and then
-runs `codegraph-index init` on the repo: that writes the configuration below with the real
-path, adds `.codegraph/` to `.gitignore`, and builds the first graph. Set up another repo later
-with `codegraph-index init` from inside it. See the [README](README.md#install) for options.
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\App    # Windows → C:\tools\codegraph
+```
+
+The script downloads the release archive for the platform (the executables carry their own .NET
+runtime), verifies its checksum, and runs `codegraph-index init` on the repo: that writes the
+configuration below with the real path, adds `.codegraph/` to `.gitignore`, and builds the first
+graph. Set up another repo later with `codegraph-index init` from inside it. See
+[docs/installation.md](docs/installation.md) for options, the Claude Code plugin, and building
+from source (`--from-source`).
 
 `uninstall.ps1` / `uninstall.sh` reverses the install: folder, PATH entry, and with `-Repo` /
 `--repo` a repo's `.mcp.json` entry and `.codegraph/` graph.
-
-From a source checkout, `setup.ps1 -Solution <path>` / `setup.sh --solution <path>` pulls the
-latest CodeGraph on request, builds, writes the `.mcp.json` entry as `dotnet run --project
-<checkout>/src/CodeGraph.Mcp -c Release --no-build`, and indexes with `dotnet run`. See the
-[README](README.md#from-a-source-checkout).
 
 Languages: C# through Roslyn, TypeScript and Angular through the bundled Node extractor (needs Node.js), and
 Java, Kotlin, Scala, Python, Go and Rust through their SCIP indexers. [EXTRACTORS.md](EXTRACTORS.md) lists
@@ -238,7 +235,7 @@ and override.
 |---|---|---|
 | `graph_stats` | | Node and edge counts; confirms the graph loaded. |
 | `index_status` | | Which graph, built when and at which commit, which compiler and language versions each language was read with (and warnings when the code is ahead of it), which indexed files changed or vanished since. |
-| `usage_stats` | | Calls per tool, latency, answer size and estimated source tokens saved, this session and all time. |
+| `usage_stats` | | Opens with the last seven days in one line, then calls per tool, latency, answer size and estimated source tokens saved, this session and all time. `codegraph-index usage` prints the same from a terminal. |
 
 Edge kinds, for `traverse` and `path_between`: `Calls`, `Inherits`, `Implements`, `Overrides`,
 `Contains`, `DependsOn`, `TestedBy`, `InvokedByFramework`, `References`, `CallsExternal`.

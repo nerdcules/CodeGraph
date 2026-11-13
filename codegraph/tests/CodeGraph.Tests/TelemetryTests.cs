@@ -77,3 +77,41 @@ public sealed class TelemetryTests
         Assert.Contains("snippet", Telemetry.Table(usage));
     }
 }
+
+public sealed class UsageSummaryTests
+{
+    private static ToolCallRecord Call(DateTime at, string tool, long result, long source, bool error = false) =>
+        new(at, tool, 5, result, source, error);
+
+    [Fact]
+    public void Sums_the_calls_in_the_period_only()
+    {
+        var now = new DateTime(2026, 11, 13, 12, 0, 0, DateTimeKind.Utc);
+        var calls = new[]
+        {
+            Call(now.AddDays(-10), "impact_of", 4_000, 400_000),
+            Call(now.AddDays(-2), "find_symbol", 400, 40_000),
+            Call(now.AddDays(-1), "find_symbol", 400, 40_000, error: true),
+            Call(now.AddHours(-1), "snippet", 2_000, 2_000),
+        };
+
+        var week = UsageSummary.LastDays(calls, 7, now);
+
+        Assert.Equal(3, week.Calls);
+        Assert.Equal(1, week.Errors);
+        Assert.Equal(700, week.ResultTokens);
+        Assert.Equal(20_500, week.SourceTokens);
+        Assert.Equal(19_800, week.TokensSaved);
+        Assert.Equal("find_symbol", week.Tools[0].Tool);
+        Assert.Equal(
+            "last 7 days: 3 tool calls answered (1 failed); the files they pointed at come to about 20,500 tokens, the answers to 700, so about 19,800 tokens stayed out of the context; most used: find_symbol ×2, snippet ×1",
+            week.Line("last 7 days"));
+    }
+
+    [Fact]
+    public void Says_so_when_there_were_no_calls()
+    {
+        var summary = UsageSummary.LastDays([], 7);
+        Assert.Equal("last 7 days: no tool calls", summary.Line("last 7 days"));
+    }
+}

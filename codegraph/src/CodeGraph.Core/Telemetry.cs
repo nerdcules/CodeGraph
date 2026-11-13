@@ -239,3 +239,46 @@ public sealed class ToolCallScope : IDisposable
 
     public void Dispose() => Complete(0, isError: false);
 }
+
+/// <summary>
+/// What the graph did for its users over a period, in one sentence: the line that makes a tool whose work
+/// happens silently inside an assistant's turns visible. <c>codegraph-index usage</c> prints it, the indexer
+/// prints it after a run, and <c>usage_stats</c> opens with it.
+/// </summary>
+public sealed record UsageSummary(DateTime Since, int Calls, int Errors, long ResultTokens, long SourceTokens, long TokensSaved, IReadOnlyList<ToolUsage> Tools)
+{
+    /// <summary>The calls at or after <paramref name="since"/> (UTC).</summary>
+    public static UsageSummary Of(IEnumerable<ToolCallRecord> calls, DateTime since)
+    {
+        var inPeriod = calls.Where(c => c.At >= since).ToList();
+        return new UsageSummary(
+            since,
+            inPeriod.Count,
+            inPeriod.Count(c => c.IsError),
+            inPeriod.Sum(c => c.ResultTokens),
+            inPeriod.Sum(c => c.SourceTokens),
+            inPeriod.Sum(c => c.TokensSaved),
+            ToolUsage.Group(inPeriod));
+    }
+
+    /// <summary>The summary of the last <paramref name="days"/> days.</summary>
+    public static UsageSummary LastDays(IEnumerable<ToolCallRecord> calls, int days, DateTime? now = null) =>
+        Of(calls, (now ?? DateTime.UtcNow).AddDays(-days));
+
+    /// <summary>
+    /// One sentence, for example: "last 7 days: 143 tool calls answered; the files they pointed at come to about
+    /// 1,230,000 tokens, the answers to 48,000, so about 1,180,000 tokens stayed out of the context".
+    /// </summary>
+    public string Line(string period)
+    {
+        if (Calls == 0)
+        {
+            return $"{period}: no tool calls";
+        }
+
+        var errors = Errors == 0 ? "" : string.Create(CultureInfo.InvariantCulture, $" ({Errors} failed)");
+        var top = Tools.Count == 0 ? "" : $"; most used: {string.Join(", ", Tools.Take(3).Select(t => string.Create(CultureInfo.InvariantCulture, $"{t.Tool} ×{t.Calls}")))}";
+        return string.Create(CultureInfo.InvariantCulture,
+            $"{period}: {Calls} tool calls answered{errors}; the files they pointed at come to about {SourceTokens:N0} tokens, the answers to {ResultTokens:N0}, so about {TokensSaved:N0} tokens stayed out of the context{top}");
+    }
+}

@@ -1,0 +1,98 @@
+# A tag v<version> builds, tests and packages codegraph-index and codegraph-mcp for six platforms, and publishes
+# them as a GitHub Release with checksums. The version in the executables comes from the tag.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: codegraph
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: codegraph/global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: dotnet build CodeGraph.slnx -c Release -warnaserror --nologo
+      - run: dotnet test CodeGraph.slnx -c Release --no-build
+      - working-directory: codegraph/extractors/typescript
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+      - working-directory: codegraph/obsidian-plugin
+        run: |
+          node build.mjs --check
+          npm test
+      - name: Package the Obsidian plugin
+        working-directory: codegraph/obsidian-plugin
+        run: |
+          mkdir -p ../dist
+          zip -j ../dist/codegraph-obsidian.zip main.js manifest.json styles.css
+      - uses: actions/upload-artifact@v4
+        with:
+          name: obsidian
+          path: codegraph/dist/*
+
+  package:
+    needs: test
+    name: ${{ matrix.rids }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rids: linux-x64 linux-arm64
+          - os: macos-latest
+            rids: osx-x64 osx-arm64
+          - os: windows-latest
+            rids: win-x64 win-arm64
+    defaults:
+      run:
+        working-directory: codegraph
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: codegraph/global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Package
+        env:
+          CODEGRAPH_VERSION: ${{ github.ref_name }}
+        run: tools/release/package.sh ${{ matrix.rids }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}
+          path: codegraph/dist/*
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: Release notes
+        run: codegraph/tools/release/notes.sh "${{ github.ref_name }}" codegraph/CHANGELOG.md > notes.md && cat notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/* --title "CodeGraph ${{ github.ref_name }}" --notes-file notes.md --verify-tag
