@@ -6,49 +6,49 @@
 
 ---
 
-## Contents
-
-- [What CodeGraph is](#what-codegraph-is)
-- [The pages](#the-pages)
-- [Supported languages](#supported-languages)
-- [Conventions in these pages](#conventions-in-these-pages)
-- [Other reference pages](#other-reference-pages)
-
-## What CodeGraph is
-
-CodeGraph is a code graph and an MCP server for Claude Code.
-The indexer reads your code with the compiler of the language.
-It writes the types, members, calls, overrides and tests to a graph file.
+CodeGraph gives Claude Code the compiler's answers: who calls this, what breaks if I change it, which
+tests guard it.
+The indexer reads your code with the compiler of the language and writes a graph file.
 The MCP server answers questions from that file.
-
-An AI assistant can then ask "who calls this method" or "what breaks if I change this".
-It gets a short, exact answer from the graph.
-It does not have to read many source files to find the answer.
-
-This saves tokens.
-Each file that an assistant opens goes into its context, and the assistant pays for each token.
-On this repository, "what breaks if I change `GraphStore.Replace`" costs about 5,300 tokens with CodeGraph.
-To open the 23 files that contain `.Replace(` costs about 105,000 tokens.
-[Why it saves tokens](../README.md#why-it-saves-tokens) gives the details.
-
-Obsidian is optional.
-CodeGraph and Claude Code do not need it.
-The [Obsidian](obsidian.md) plugin only shows the graph to people as notes.
+Obsidian is optional: the [Obsidian](obsidian.md) plugin only shows the graph to people as notes.
 
 ![Architecture: extractors write graph.db, the MCP server reads it, the live daemon keeps it current](images/architecture.svg)
 
-## The pages
+## Start with the page for you
+
+| You are | Start here | Then |
+|---|---|---|
+| A developer who uses Claude Code | [Installation](installation.md) | [Usage](usage.md), [Use cases](use-cases.md), [Prompts](../PROMPTS.md) |
+| An architect, a tester or a product manager who reads code without an AI | [Obsidian](obsidian.md) | [Use cases](use-cases.md#share-the-structure-of-the-code-with-people-who-do-not-code) |
+| Deciding whether to trust it | [Why it saves tokens](why-it-saves-tokens.md) | [How it works](how-it-works.md), [Performance](performance.md), [Benchmarks](../BENCHMARKS.md) |
+| A contributor | [Contributing](contributing.md) | [Architecture](architecture.md), [Extractors](../EXTRACTORS.md), [Language versions](language-versions.md) |
+| Curious | [The story](story.md) | [What is missing](roadmap.md) |
+
+## All pages
 
 | Page | Read it to |
 |---|---|
-| [Installation](installation.md) | Install CodeGraph and connect a repository to Claude Code. |
-| [Usage](usage.md) | Build a graph, keep it current, and use the tools. |
+| [Installation](installation.md) | Install a release, connect a repository to Claude Code, upgrade, remove. |
+| [Usage](usage.md) | Build a graph, keep it current, use the tools, see what they did for you. |
 | [Obsidian](obsidian.md) | Read the graph as linked notes in Obsidian, with a live panel. |
 | [Use cases](use-cases.md) | Find the tool for a question about your code. |
+| [Why it saves tokens](why-it-saves-tokens.md) | See the measurement behind the claim, and how the graph stays current. |
 | [How it works](how-it-works.md) | Learn how the indexer builds the graph and how the server answers. |
-| [Language versions](language-versions.md) | See which language versions each route reads, how older and newer code is read, and how to check a new version. |
+| [Language versions](language-versions.md) | See which language versions each route reads, and how to check a new one. |
 | [Performance](performance.md) | See the measured times for indexing and for tool calls. |
 | [Architecture](architecture.md) | Learn the components, the data model and the extension points. |
+| [Contributing](contributing.md) | Build from source, run the slow tests, add a language, cut a release. |
+| [The story](story.md) | Where CodeGraph came from. |
+| [What is missing](roadmap.md) | What is not done yet, in order. |
+
+Reference pages outside this folder:
+
+- [MCP-SERVER.md](../MCP-SERVER.md) gives the arguments of all 35 tools.
+- [EXTRACTORS.md](../EXTRACTORS.md) gives the record format for a new language.
+- [BENCHMARKS.md](../BENCHMARKS.md) gives all the measurements, round by round.
+- [PROMPTS.md](../PROMPTS.md) gives prompts that make the client use the tools.
+- [CHANGELOG.md](../CHANGELOG.md) lists each release.
+- [plugin/README.md](../plugin/README.md) is the Claude Code plugin.
 
 ## Supported languages
 
@@ -65,8 +65,6 @@ One graph can hold more than one language.
 For example, a .NET API and its Angular front end can share one graph.
 
 ![The compiler of each route and the language and SDK versions the corpus tests against](images/language-versions.svg)
-
-[Language versions](language-versions.md) gives the language versions that each route reads, and how the chart is kept current.
 
 ## Conventions in these pages
 
@@ -86,14 +84,7 @@ A word has one meaning in all pages:
 
 Commands for macOS and Linux use bash.
 Commands for Windows use PowerShell.
-
-## Other reference pages
-
-- [MCP-SERVER.md](../MCP-SERVER.md) gives the arguments of all 35 tools.
-- [EXTRACTORS.md](../EXTRACTORS.md) gives the record format for a new language.
-- [BENCHMARKS.md](../BENCHMARKS.md) gives all the measurements, round by round.
-- [PROMPTS.md](../PROMPTS.md) gives prompts that make the client use the tools.
-- [tools/corpus/README.md](../tools/corpus/README.md) describes the generated test codebases.
+[The story](story.md) and [Contributing](contributing.md) are written in a plainer voice.
 
 ---
 

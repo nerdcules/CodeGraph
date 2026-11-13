@@ -49,7 +49,7 @@ links survive every rebuild.
 2. Install the plugin into a vault:
 
    ```bash
-   node obsidian-plugin/install-plugin.mjs ~/Notes/MyVault        # or: ./install.sh --obsidian-vault ~/Notes/MyVault
+   node obsidian-plugin/install-plugin.mjs ~/Notes/MyVault        # or: install.sh --obsidian-vault ~/Notes/MyVault (downloads codegraph-obsidian.zip from the release)
    ```
 
 3. In Obsidian, enable **CodeGraph** under Settings → Community plugins.

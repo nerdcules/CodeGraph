@@ -62,7 +62,7 @@ You need these items only for the plugin:
 |---|---|---|
 | Obsidian desktop | 1.5 or later | The plugin. It does not work in Obsidian mobile. |
 | CodeGraph | this release | The indexer and the server. See [Installation](installation.md). |
-| Node.js | 22.22 or later | The install command of the plugin only. |
+| Node.js | 22.22 or later | Only to install the plugin from a source checkout. |
 | A graph | any | `codegraph-index init` in the repository. |
 
 The plugin was tested with Obsidian 1.5.12, 1.8.9 and 1.14.4.
@@ -74,22 +74,19 @@ The plugin writes into `_code/`.
 
 1. Open Obsidian.
 2. Create a vault, for example `~/Notes/MyProject`.
-3. Install the plugin into the vault:
+3. Give the vault to the install script.
+   It installs the plugin from the release after it installs CodeGraph:
 
    ```bash
-   node obsidian-plugin/install-plugin.mjs ~/Notes/MyProject
-   ```
-
-   You can also give the vault to the install script.
-   It then installs the plugin after it installs CodeGraph:
-
-   ```bash
-   ./install.sh ~/src/my-repo --obsidian-vault ~/Notes/MyProject
+   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/src/my-repo --obsidian-vault ~/Notes/MyProject
    ```
 
    ```powershell
-   .\install.ps1 C:\src\my-repo -ObsidianVault C:\Notes\MyProject
+   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\src\my-repo -ObsidianVault C:\Notes\MyProject
    ```
+
+   By hand: download `codegraph-obsidian.zip` from the [latest release](https://github.com/nerdcules/CodeGraph/releases/latest) and unpack it into `<vault>/.obsidian/plugins/codegraph/`.
+   From a source checkout: `node obsidian-plugin/install-plugin.mjs ~/Notes/MyProject`.
 
 4. In Obsidian, open **Settings → Community plugins**.
 5. If Obsidian shows **Restricted mode**, select **Turn on community plugins**.
