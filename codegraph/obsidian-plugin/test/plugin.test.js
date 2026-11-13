@@ -135,7 +135,7 @@ test('config: the repo\'s .mcp.json decides the server, the indexer sits beside 
   assert.equal(launch.mcp.env.DOTNET_ROOT, '/opt/dotnet');
   assert.equal(launch.mcp.env.PATH, '/usr/bin');
   assert.equal(launch.index.command, '/home/me/.codegraph/bin/codegraph-index');
-  assert.equal(launch.dbPath, path.join('/repo', '.codegraph', 'graph.db'));
+  assert.equal(launch.dbPath, '/repo/.codegraph/graph.db');
 
   // No .mcp.json: settings, then the install folder, then PATH.
   const bare = resolveLaunch({ repoRoot: '/elsewhere', indexPath: '/opt/ci' }, { ...host, exists: () => false });
@@ -146,15 +146,15 @@ test('config: the repo\'s .mcp.json decides the server, the indexer sits beside 
 
 test('config: a database path in the server arguments is the graph the notes come from', () => {
   const readFile = () => JSON.stringify({ mcpServers: { codegraph: { command: 'codegraph-mcp', args: ['other/graph.db'] } } });
-  const approved = { '/repo': fingerprint(readMcpEntry('/repo', readFile)) };
-  const launch = resolveLaunch({ repoRoot: '/repo', approvedRepoConfig: approved }, {
+  const approved = { 'C:\\repo': fingerprint(readMcpEntry('C:\\repo', readFile)) };
+  const launch = resolveLaunch({ repoRoot: 'C:\\repo', approvedRepoConfig: approved }, {
     platform: 'win32',
     home: 'C:\\Users\\me',
     env: {},
     exists: () => false,
     readFile,
   });
-  assert.equal(launch.dbPath, path.resolve('/repo', 'other/graph.db'));
+  assert.equal(launch.dbPath, 'C:\\repo\\other\\graph.db');
   assert.equal(launch.index.command, 'codegraph-index');
 });
 

@@ -1068,13 +1068,15 @@ function resolveLaunch(settings, host = {}) {
   const exists = host.exists || fs.existsSync;
   const baseEnv = host.env || process.env;
   const exe = platform === 'win32' ? '.exe' : '';
+  // Paths follow the host's platform, so a test for one platform runs the same on every other.
+  const p = platform === 'win32' ? path.win32 : path.posix;
   const repoRoot = settings.repoRoot;
   const found = readMcpEntry(repoRoot, host.readFile);
   const repoConfig = found ? { ...found, fingerprint: fingerprint(found), decision: decisionFor(settings, repoRoot, fingerprint(found)) } : null;
   const entry = repoConfig && repoConfig.decision === 'approved' ? found : null;
   // install.sh's default folder, and install.ps1's on Windows.
-  const folders = [path.join(home, '.codegraph', 'bin'), ...(platform === 'win32' ? ['C:\\tools\\codegraph'] : [])];
-  const installed = (name) => folders.map((f) => path.join(f, name + exe)).find((p) => exists(p)) || null;
+  const folders = [p.join(home, '.codegraph', 'bin'), ...(platform === 'win32' ? ['C:\\tools\\codegraph'] : [])];
+  const installed = (name) => folders.map((f) => p.join(f, name + exe)).find((candidate) => exists(candidate)) || null;
 
   const env = { ...baseEnv, ...(entry ? entry.env : {}) };
 
@@ -1088,14 +1090,14 @@ function resolveLaunch(settings, host = {}) {
   }
 
   let index = settings.indexPath || null;
-  if (!index && path.isAbsolute(mcp.command) && /codegraph-mcp(\.exe)?$/i.test(path.basename(mcp.command))) {
-    const sibling = path.join(path.dirname(mcp.command), path.basename(mcp.command).replace(/codegraph-mcp/i, 'codegraph-index'));
+  if (!index && p.isAbsolute(mcp.command) && /codegraph-mcp(\.exe)?$/i.test(p.basename(mcp.command))) {
+    const sibling = p.join(p.dirname(mcp.command), p.basename(mcp.command).replace(/codegraph-mcp/i, 'codegraph-index'));
     index = exists(sibling) ? sibling : null;
   }
 
   index = index || installed('codegraph-index') || 'codegraph-index';
   const dbArg = mcp.args.find((a) => a.toLowerCase().endsWith('.db'));
-  const dbPath = dbArg ? path.resolve(repoRoot, dbArg) : path.join(repoRoot, '.codegraph', 'graph.db');
+  const dbPath = dbArg ? p.resolve(repoRoot, dbArg) : p.join(repoRoot, '.codegraph', 'graph.db');
   return {
     mcp: { command: mcp.command, args: mcp.args, env, cwd: repoRoot },
     index: { command: index, env, cwd: repoRoot },

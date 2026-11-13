@@ -52,7 +52,8 @@ module.exports = __require(${JSON.stringify(entry)});
 
 const target = join(root, 'main.js');
 if (process.argv.includes('--check')) {
-  if (!existsSync(target) || readFileSync(target, 'utf8') !== out) {
+  // A checkout with autocrlf has CRLF in main.js; the bundle is the same bundle.
+  if (!existsSync(target) || readFileSync(target, 'utf8').replace(/\r\n/g, '\n') !== out) {
     console.error('main.js is out of date: run node build.mjs');
     process.exit(1);
   }

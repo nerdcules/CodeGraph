@@ -1,0 +1,10 @@
+# Scripts and generated bundles must keep LF on every platform: Git Bash runs the .sh files, and
+# build.mjs --check compares main.js byte for byte.
+* text=auto
+*.sh text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.scip binary
