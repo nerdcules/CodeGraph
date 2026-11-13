@@ -35,7 +35,7 @@ public static class LanguageStatus
 
             if (Get(LanguageMetaKeys.CompileErrors) is { } errors && errors != "0")
             {
-                parts.Add($"{errors} compile error(s)");
+                parts.Add(Get(LanguageMetaKeys.FirstCompileError) is { } first ? $"{errors} compile error(s), first: {first}" : $"{errors} compile error(s)");
             }
 
             yield return $"{language,-10}: {(parts.Count > 0 ? string.Join("; ", parts) : "(no compiler facts recorded; re-index to add them)")}";
@@ -47,6 +47,14 @@ public static class LanguageStatus
             if (Get(LanguageMetaKeys.Unmapped) is { } unmapped)
             {
                 yield return $"  \u26a0 shapes this indexer has no mapping for (a newer language feature): {unmapped}";
+            }
+
+            if (Get(LanguageMetaKeys.Notes) is { } notes)
+            {
+                foreach (var note in notes.Split("; ", StringSplitOptions.RemoveEmptyEntries))
+                {
+                    yield return $"  note: {note}";
+                }
             }
         }
     }

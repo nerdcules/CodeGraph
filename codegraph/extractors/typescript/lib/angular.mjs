@@ -18,6 +18,15 @@ function ng() {
   return compiler;
 }
 
+/** The @angular/compiler version templates are parsed with, or undefined when it is not installed. */
+export function angularCompilerVersion() {
+  try {
+    return createRequire(import.meta.url)('@angular/compiler/package.json').version;
+  } catch {
+    return undefined;
+  }
+}
+
 const literalText = n => n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : undefined;
 
 function objectArgument(decorator) {

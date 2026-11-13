@@ -78,6 +78,12 @@ public sealed class TypeScriptIndexTests : IDisposable
         Assert.Equal(["#secret", "unusedHelper"], dead.Select(d => d.Method.Name).Order(StringComparer.Ordinal));
         Assert.All(store.AllNodes(NodeKind.Method), n => Assert.Equal(Languages.TypeScript, n.Language));
         Assert.Equal(Path.Combine(fixture, "angular.json"), store.ReadMeta()[MetaKeys.Solution]);
+        // The extractor's compiler facts arrive under the same keys the C# route records, so index_status shows them alike.
+        var meta = store.ReadMeta();
+        Assert.StartsWith("typescript ", meta[MetaKeys.Language(Languages.TypeScript, LanguageMetaKeys.Compiler)]);
+        Assert.Equal("ES2022", meta[MetaKeys.Language(Languages.TypeScript, LanguageMetaKeys.LanguageVersions)]);
+        Assert.Equal("0", meta[MetaKeys.Language(Languages.TypeScript, LanguageMetaKeys.CompileErrors)]);
+        Assert.Contains(LanguageStatus.Lines(meta), line => line.StartsWith("typescript: typescript ") && line.Contains("code uses ES2022"));
 
         // Re-indexing is idempotent.
         var before = store.Count();

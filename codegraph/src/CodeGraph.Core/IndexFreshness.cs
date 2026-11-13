@@ -107,6 +107,12 @@ public static class LanguageMetaKeys
     /// <summary>The first such error, file and message, so the status can show what the repo uses that the indexer does not know.</summary>
     public const string FirstLanguageVersionError = "first_language_version_error";
 
+    /// <summary>The first compile error of any kind, for routes that cannot tell version errors apart (TypeScript).</summary>
+    public const string FirstCompileError = "first_compile_error";
+
+    /// <summary>What the compiler said that did not stop the index but a reader should know, semicolon separated: a deprecated tsconfig option, a tool below its tested version.</summary>
+    public const string Notes = "notes";
+
     /// <summary>Declaration shapes the compiler produced that this indexer has no mapping for, with counts: <c>TypeKind.Extension x3</c>. Empty when none.</summary>
     public const string Unmapped = "unmapped";
 

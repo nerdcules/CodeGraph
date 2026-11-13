@@ -45,6 +45,7 @@ try {
 const started = Date.now();
 const extractor = new Extractor({ root: workspace.root, log });
 for (const config of workspace.configs) extractor.runConfig(config);
+for (const line of extractor.summary()) log(line);
 
 // Written in chunks with writeSync: a large workspace is hundreds of MB of records, and process.stdout.write
 // would buffer all of it in memory when the reader is slower.
