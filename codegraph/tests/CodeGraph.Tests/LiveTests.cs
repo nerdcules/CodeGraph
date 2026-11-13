@@ -62,6 +62,42 @@ public sealed class LivePipeTests
     }
 
     [Fact]
+    public async Task A_second_request_is_served_while_the_first_is_in_progress()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"), "graph.db");
+        using var stop = new CancellationTokenSource();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = new LiveServer(LivePipe.NameFor(dbPath), async (request, cancellationToken) =>
+        {
+            if (request.Method == "hold")
+            {
+                started.SetResult();
+                await release.Task.WaitAsync(cancellationToken);
+            }
+
+            return LiveResponse.Ok("ok");
+        });
+        var serving = server.RunAsync(stop.Token);
+        var client = new LiveClient(dbPath);
+        try
+        {
+            var first = client.CallAsync<string>("hold", null, TestContext.Current.CancellationToken);
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.Equal("ok", await client.CallAsync<string>("next", null, TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            release.SetResult();
+            Assert.Equal("ok", await first);
+        }
+        finally
+        {
+            release.TrySetResult();
+            stop.Cancel();
+            await serving;
+        }
+    }
+
+    [Fact]
     public async Task Pinging_a_graph_with_no_daemon_returns_null_without_waiting_for_a_connect_timeout()
     {
         // The server pings before every tool call, so this is on every call's path when no daemon runs.
