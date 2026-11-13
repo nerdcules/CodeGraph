@@ -21,26 +21,40 @@ public sealed class LiveServer(string pipeName, Func<LiveRequest, CancellationTo
         // Windows needs no keeper: the pipe stays listed while any instance exists. A keeper there also takes
         // connections, because a Windows client can connect to an instance that is not waiting, and nobody reads them.
         await using var keeper = OperatingSystem.IsWindows() ? null : Create();
-        while (!cancellationToken.IsCancellationRequested)
+        var pipe = Create();
+        try
         {
-            var pipe = Create();
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
-                await pipe.WaitForConnectionAsync(cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                await pipe.DisposeAsync();
-                break;
-            }
-            catch (IOException e)
-            {
-                await pipe.DisposeAsync();
-                log?.Invoke($"live: accept failed: {e.Message}");
-                continue;
-            }
+                try
+                {
+                    await pipe.WaitForConnectionAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (IOException e)
+                {
+                    await pipe.DisposeAsync();
+                    log?.Invoke($"live: accept failed: {e.Message}");
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        pipe = Create();
+                    }
 
-            _ = ServeAsync(pipe, cancellationToken);
+                    continue;
+                }
+
+                // Keep a listener alive before a fast handler can dispose the accepted instance.
+                var connected = pipe;
+                pipe = Create();
+                _ = ServeAsync(connected, cancellationToken);
+            }
+        }
+        finally
+        {
+            await pipe.DisposeAsync();
         }
     }
 
