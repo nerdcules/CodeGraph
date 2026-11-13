@@ -10,9 +10,7 @@ using Microsoft.CodeAnalysis.MSBuild;
 
 if (args is ["--version"])
 {
-    Console.WriteLine(typeof(RoslynIndexer).Assembly
-        .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
-        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0] ?? "0.0.0");
+    Console.WriteLine(IndexerVersion());
     return 0;
 }
 
@@ -413,6 +411,10 @@ static string? ReadOrNull(string path)
 
 static void Log(string message) => ConsoleStatus.Log(message);
 
+static string IndexerVersion() => typeof(RoslynIndexer).Assembly
+    .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+    .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
+
 /// <summary>One index run over a loaded solution: incremental against what the db holds, or full.</summary>
 static async Task IndexAsync(Solution solution, string target, string dbPath, bool forceFull, CancellationToken cancellationToken)
 {
@@ -464,12 +466,29 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
         return walk;
     }, cancellationToken);
 
+    foreach (var line in indexer.CompilerSummary())
+    {
+        Log(line);
+    }
+
+    // What this graph was read with, for index_status: a repo ahead of this Roslyn shows here, not as missing edges.
     var meta = new Dictionary<string, string>
     {
         [MetaKeys.SchemaVersion] = GraphStore.SchemaVersion,
         [MetaKeys.Solution] = target,
         [MetaKeys.IndexedAt] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
         [MetaKeys.Mode] = full ? "full" : "incremental",
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.Tool)] = $"codegraph-index {IndexerVersion()}",
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.Compiler)] = RoslynIndexer.CompilerVersion,
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.NewestLanguageVersion)] = RoslynIndexer.NewestLanguageVersion,
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.LanguageVersions)] = string.Join(", ", indexer.LanguageVersions),
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.CompileErrors)] = indexer.CompileErrors.ToString(CultureInfo.InvariantCulture),
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.LanguageVersionErrors)] = indexer.LanguageVersionErrors.ToString(CultureInfo.InvariantCulture),
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.FirstLanguageVersionError)] = indexer.FirstLanguageVersionError ?? "",
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.FirstCompileError)] = indexer.FirstCompileError ?? "",
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.Notes)] = string.Join("; ", indexer.Notes),
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.Unmapped)] = indexer.UnmappedSummary(),
+        [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.IndexedAt)] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
     };
 
     IReadOnlyList<NodeEmbedding>? embeddings = null;

@@ -45,6 +45,11 @@ internal static class ScipImport
         var projectId = $"scip:project:{projectName}";
         var frameworkId = $"scip:framework:{projectName}";
 
+        if (tool.StartsWith("rust-analyzer", StringComparison.Ordinal))
+        {
+            RestoreRustModuleOrder(index, log);
+        }
+
         // Symbol information across documents: kinds decide node shapes and relationship meanings.
         var info = new Dictionary<string, SymbolInformation>(StringComparer.Ordinal);
         foreach (var symbol in index.Documents.SelectMany(d => d.Symbols).Concat(index.ExternalSymbols))
@@ -54,6 +59,13 @@ internal static class ScipImport
 
         var languages = new Dictionary<string, int>(StringComparer.Ordinal);
         var defined = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
+        // What the indexer said, under the keys every route records: the tool is the compiler, its diagnostics are
+        // the compile errors, and a symbol kind this importer has no case for (a newer scip.proto, a new language
+        // construct) is counted rather than dropped in silence.
+        var compileErrors = 0;
+        string? firstCompileError = null;
+        var unmapped = new Dictionary<string, int>(StringComparer.Ordinal);
+        var guessedScopes = 0;
         var definitions = new List<(Document Document, string File, List<(Span Span, string Id, bool IsTest)> Scopes, string[] Lines)>();
         var overrideAnnotated = new List<(string Id, string File)>();
         // Rust: the trait each `impl Trait for Type` header names, by file and line, to resolve impl members exactly.
@@ -80,6 +92,12 @@ internal static class ScipImport
             var scopes = new List<(Span, string, bool)>();
             foreach (var occurrence in document.Occurrences)
             {
+                foreach (var diagnostic in occurrence.Diagnostics.Where(d => d.Severity == Severity.Error))
+                {
+                    compileErrors++;
+                    firstCompileError ??= $"{document.RelativePath}({RangeOf(occurrence).StartLine + 1}): {diagnostic.Code} {diagnostic.Message}".Trim();
+                }
+
                 var at = (occurrence.SymbolRoles & DefinitionRole) == 0 && occurrence.Symbol.EndsWith('#') ? RangeOf(occurrence).StartLine : -1;
                 if (at >= 0 && at < lines.Length && System.Text.RegularExpressions.Regex.IsMatch(lines[at], @"^\s*(unsafe\s+)?impl\b.*\bfor\b"))
                 {
@@ -95,13 +113,18 @@ internal static class ScipImport
                 }
 
                 var symbolInfo = info.GetValueOrDefault(occurrence.Symbol);
-                if (Shape(symbol, symbolInfo) is not { } shape)
+                if (Shape(symbol, symbolInfo, unmapped) is not { } shape)
                 {
                     continue;
                 }
 
                 var range = RangeOf(occurrence);
-                var span = EnclosingOf(occurrence) ?? range;
+                if (shape.Kind == NodeKind.Type && symbolInfo is null or { Kind: SymbolInformation.Types.Kind.UnspecifiedKind })
+                {
+                    // An index without symbol kinds (rust-analyzer before 2024) says Type for a trait too; the declaration line knows.
+                    shape = shape with { TypeKind = TypeKindFromDeclaration(range.StartLine < lines.Length ? lines[range.StartLine] : "", range.StartCharacter) ?? shape.TypeKind };
+                }
+                var span = EnclosingOf(occurrence) ?? GuessEnclosing(lines, range, language, ref guessedScopes) ?? range;
                 var id = IdOf(occurrence.Symbol);
                 var annotations = Annotations(lines, range.StartLine);
                 var isTest = shape.Kind == NodeKind.Method
@@ -318,7 +341,259 @@ internal static class ScipImport
         }
 
         log($"scip: {index.Documents.Count} document(s) from {tool}, {defined.Count} definitions, {externals.Count} external symbols");
+        batch.Meta[LanguageMetaKeys.Compiler] = tool;
+        batch.Meta[LanguageMetaKeys.CompileErrors] = compileErrors.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (guessedScopes > 0)
+        {
+            batch.Meta[LanguageMetaKeys.Notes] = $"the index names no enclosing ranges (an older indexer); {guessedScopes} member bodies were found by brace matching in the source";
+        }
+        if (firstCompileError is not null)
+        {
+            batch.Meta[LanguageMetaKeys.FirstCompileError] = firstCompileError;
+        }
+
+        if (unmapped.Count > 0)
+        {
+            batch.Meta[LanguageMetaKeys.Unmapped] = string.Join(", ", unmapped.OrderByDescending(u => u.Value).ThenBy(u => u.Key, StringComparer.Ordinal).Select(u => $"{u.Key} x{u.Value}"));
+        }
+
         return batch;
+    }
+
+    /// <summary>
+    /// rust-analyzer before 1.72 wrote a file module's path reversed: <c>invoice0/m0/Invoice0#</c> for
+    /// <c>src/m0/invoice0.rs</c>. Every symbol defined in such a file, and every reference to it from any file,
+    /// is rewritten to the path order the file has, so ids and names match what a current rust-analyzer gives.
+    /// </summary>
+    internal static void RestoreRustModuleOrder(Scip.Index index, Action<string> log)
+    {
+        var prefixes = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var document in index.Documents)
+        {
+            var modules = RustModulesOf(document.RelativePath);
+            if (modules.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var occurrence in document.Occurrences.Where(o => (o.SymbolRoles & DefinitionRole) != 0))
+            {
+                if (ScipSymbol.Parse(occurrence.Symbol) is not { } symbol)
+                {
+                    continue;
+                }
+
+                // The file's own modules come first in the real path; an inline `mod tests` inside the file follows them.
+                var namespaces = symbol.Descriptors.TakeWhile(d => d.Suffix == ScipSuffix.Namespace).Select(d => d.Name).ToList();
+                var restored = namespaces.AsEnumerable().Reverse().ToList();
+                if (namespaces.Count < 2 || namespaces.SequenceEqual(restored) || !restored.Take(modules.Count).SequenceEqual(modules))
+                {
+                    continue;
+                }
+
+                var reversed = string.Join("/", namespaces) + "/";
+                var at = occurrence.Symbol.IndexOf(reversed, StringComparison.Ordinal);
+                if (at >= 0)
+                {
+                    prefixes[occurrence.Symbol[..(at + reversed.Length)]] = occurrence.Symbol[..at] + string.Join("/", restored) + "/";
+                }
+            }
+        }
+
+        var ordered = prefixes.OrderByDescending(p => p.Key.Length).ToList();
+        var rewrittenImpls = 0;
+        string Canonical(string s)
+        {
+            foreach (var (old, replacement) in ordered)
+            {
+                if (s.StartsWith(old, StringComparison.Ordinal))
+                {
+                    s = replacement + s[old.Length..];
+                    break;
+                }
+            }
+
+            // The same rust-analyzer named a trait impl's member Type#Trait#member(); today it is impl#[Type][Trait]member(),
+            // which the import resolves (the member belongs to Type and implements Trait's). Same id either way.
+            var impl = OldImplMember.Match(s);
+            if (impl.Success)
+            {
+                rewrittenImpls++;
+                s = $"{impl.Groups["head"].Value}impl#[{impl.Groups["type"].Value}][{impl.Groups["trait"].Value}]{impl.Groups["rest"].Value}";
+            }
+
+            return s;
+        }
+
+        foreach (var symbolInfo in index.Documents.SelectMany(d => d.Symbols).Concat(index.ExternalSymbols))
+        {
+            symbolInfo.Symbol = Canonical(symbolInfo.Symbol);
+            foreach (var relationship in symbolInfo.Relationships)
+            {
+                relationship.Symbol = Canonical(relationship.Symbol);
+            }
+        }
+
+        foreach (var occurrence in index.Documents.SelectMany(d => d.Occurrences))
+        {
+            occurrence.Symbol = Canonical(occurrence.Symbol);
+        }
+
+        if (prefixes.Count > 0)
+        {
+            log($"scip: restored the module order of {prefixes.Count} file module(s); this rust-analyzer wrote them reversed (fixed in 1.72)");
+        }
+
+        if (rewrittenImpls > 0)
+        {
+            log($"scip: {rewrittenImpls} trait impl member symbol(s) in this rust-analyzer's older Type#Trait#member() form were read as impl members");
+        }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex OldImplMember =
+        new(@"^(?<head>[^#]*/)(?<type>[^/#`\s]+)#(?<trait>[^/#`\s]+)#(?<rest>[^/#]+)$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// An index without enclosing ranges (rust-analyzer before late 2023, older scip-java) cannot say which member a
+    /// reference sits in, so every call would be lost. The body is found in the source instead: the braces after
+    /// the name for brace languages (a declaration that ends in <c>;</c> first has no body), the indented block
+    /// for Python. Lines are 0-based, as SCIP ranges are.
+    /// </summary>
+    internal static Span? GuessEnclosing(string[] lines, Span name, string language, ref int guessed)
+    {
+        if (name.EndLine >= lines.Length)
+        {
+            return null;
+        }
+
+        if (language == "python")
+        {
+            var indent = Indent(lines[name.StartLine]);
+            var last = name.StartLine;
+            for (var i = name.StartLine + 1; i < lines.Length; i++)
+            {
+                if (lines[i].Trim().Length == 0)
+                {
+                    continue;
+                }
+
+                if (Indent(lines[i]) <= indent)
+                {
+                    break;
+                }
+
+                last = i;
+            }
+
+            if (last == name.StartLine)
+            {
+                return null;
+            }
+
+            guessed++;
+            return new Span(name.StartLine, 0, last, lines[last].Length);
+        }
+
+        var depth = 0;
+        var opened = false;
+        for (int line = name.EndLine, column = name.EndCharacter; line < lines.Length; line++, column = 0)
+        {
+            var text = lines[line];
+            var inString = '\0';
+            for (var i = column; i < text.Length; i++)
+            {
+                var c = text[i];
+                if (inString != '\0')
+                {
+                    if (c == '\\')
+                    {
+                        i++;
+                    }
+                    else if (c == inString)
+                    {
+                        inString = '\0';
+                    }
+
+                    continue;
+                }
+
+                if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
+                {
+                    break;
+                }
+
+                // A char literal like '{' would miscount; a quote followed by a letter and a quote is one.
+                if (c == '"' || (c == '\'' && i + 2 < text.Length && text[i + 2] == '\'' && text[i + 1] != '\\'))
+                {
+                    inString = c;
+                    continue;
+                }
+
+                if (!opened && c == ';')
+                {
+                    return null;
+                }
+
+                if (c == '{')
+                {
+                    depth++;
+                    opened = true;
+                }
+                else if (c == '}' && opened && --depth == 0)
+                {
+                    guessed++;
+                    return new Span(name.StartLine, 0, line, i + 1);
+                }
+            }
+        }
+
+        return null;
+
+        static int Indent(string line) => line.Length - line.TrimStart().Length;
+    }
+
+    /// <summary><c>src/m0/invoice0.rs</c> is module <c>m0::invoice0</c>; <c>mod.rs</c>, <c>main.rs</c> and <c>lib.rs</c> name the folder's module.</summary>
+    internal static List<string> RustModulesOf(string relativePath)
+    {
+        var path = relativePath.Replace('\\', '/');
+        var src = path.LastIndexOf("src/", StringComparison.Ordinal);
+        var rest = src >= 0 ? path[(src + 4)..] : path;
+        if (rest.EndsWith(".rs", StringComparison.Ordinal))
+        {
+            rest = rest[..^3];
+        }
+
+        var parts = rest.Split('/', StringSplitOptions.RemoveEmptyEntries).ToList();
+        if (parts.Count > 0 && parts[^1] is "mod" or "main" or "lib")
+        {
+            parts.RemoveAt(parts.Count - 1);
+        }
+
+        return parts;
+    }
+
+    /// <summary>
+    /// Lines for the log once an index is read: the tool, the language versions the build file names, errors the
+    /// indexer reported, and the kinds this importer has no case for. Loud when the graph is missing code.
+    /// </summary>
+    public static IEnumerable<string> CompilerSummary(GraphBatch batch)
+    {
+        var versions = batch.Meta.GetValueOrDefault(LanguageMetaKeys.LanguageVersions) is { Length: > 0 } v ? $"code uses {v}" : "language version not named by the build file";
+        yield return $"compiler: {batch.Meta.GetValueOrDefault(LanguageMetaKeys.Compiler, batch.Tool ?? "scip")}; {versions}; {batch.Meta.GetValueOrDefault(LanguageMetaKeys.CompileErrors, "0")} error(s) reported by the indexer";
+        if (batch.Meta.GetValueOrDefault(LanguageMetaKeys.FirstCompileError) is { Length: > 0 } first)
+        {
+            yield return $"\u26a0 the indexer reported errors; declarations under them may be missing. First: {first}";
+        }
+
+        foreach (var note in (batch.Meta.GetValueOrDefault(LanguageMetaKeys.Notes) ?? "").Split("; ", StringSplitOptions.RemoveEmptyEntries))
+        {
+            yield return $"note: {note}";
+        }
+
+        if (batch.Meta.GetValueOrDefault(LanguageMetaKeys.Unmapped) is { Length: > 0 } unmapped)
+        {
+            yield return $"\u26a0 symbol kinds this importer has no case for: {unmapped} (a newer indexer or language construct; the node is not recorded)";
+        }
     }
 
     /// <summary>
@@ -407,10 +682,25 @@ internal static class ScipImport
 
     private sealed record NodeShape(NodeKind Kind, TypeKind TypeKind, MemberKind MemberKind, string Name);
 
-    private static NodeShape? Shape(ScipSymbol symbol, SymbolInformation? info)
+    // Kinds that are not nodes by design: parameters, scopes, and constructs no route records.
+    private static readonly HashSet<SymbolInformation.Types.Kind> KindsWithoutNodes =
+    [
+        SymbolInformation.Types.Kind.UnspecifiedKind, SymbolInformation.Types.Kind.Parameter, SymbolInformation.Types.Kind.TypeParameter,
+        SymbolInformation.Types.Kind.SelfParameter, SymbolInformation.Types.Kind.ThisParameter, SymbolInformation.Types.Kind.ParameterLabel,
+        SymbolInformation.Types.Kind.File, SymbolInformation.Types.Kind.Package, SymbolInformation.Types.Kind.Namespace, SymbolInformation.Types.Kind.Module,
+        SymbolInformation.Types.Kind.PackageObject, SymbolInformation.Types.Kind.Library, SymbolInformation.Types.Kind.Macro, SymbolInformation.Types.Kind.Modifier,
+    ];
+
+    private static NodeShape? Shape(ScipSymbol symbol, SymbolInformation? info, Dictionary<string, int> unmapped)
     {
         var kind = info?.Kind ?? SymbolInformation.Types.Kind.UnspecifiedKind;
         var name = symbol.Name;
+        if (!Enum.IsDefined(kind))
+        {
+            // A kind from a newer scip.proto than the vendored one: the suffix still says what it is, and the number says what to add.
+            unmapped[$"SymbolKind.{(int)kind}"] = unmapped.GetValueOrDefault($"SymbolKind.{(int)kind}") + 1;
+        }
+
         switch (kind)
         {
             case SymbolInformation.Types.Kind.Class or SymbolInformation.Types.Kind.Object or SymbolInformation.Types.Kind.SingletonClass:
@@ -442,8 +732,8 @@ internal static class ScipImport
                 return null;
         }
 
-        // No kind (older indexers): the descriptor suffix says enough.
-        return symbol.Suffix switch
+        // No kind (older indexers), or a kind without a case above (Function, Method, Event, Operator): the descriptor suffix says enough.
+        NodeShape? bySuffix = symbol.Suffix switch
         {
             ScipSuffix.Type => new(NodeKind.Type, TypeKind.Class, MemberKind.Ordinary, name),
             ScipSuffix.Method when name is "<init>" or "<constructor>" or "__init__" => new(NodeKind.Method, TypeKind.None, MemberKind.Constructor, "constructor"),
@@ -451,6 +741,12 @@ internal static class ScipImport
             ScipSuffix.Term => new(NodeKind.Field, TypeKind.None, MemberKind.Ordinary, name),
             _ => null,
         };
+        if (bySuffix is null && Enum.IsDefined(kind) && !KindsWithoutNodes.Contains(kind))
+        {
+            unmapped[$"SymbolKind.{kind}"] = unmapped.GetValueOrDefault($"SymbolKind.{kind}") + 1;
+        }
+
+        return bySuffix;
     }
 
     /// <summary>
@@ -490,6 +786,23 @@ internal static class ScipImport
             Languages.TypeScript or Languages.JavaScript when !isMember => Accessibility.Internal,
             _ => Accessibility.Public,
         };
+    }
+
+    /// <summary>The keyword before a type's name on its declaration line: <c>trait</c>, <c>interface</c>, <c>enum</c>, <c>struct</c>.</summary>
+    private static TypeKind? TypeKindFromDeclaration(string line, int nameColumn)
+    {
+        var before = nameColumn > 0 && nameColumn <= line.Length ? line[..nameColumn] : line;
+        if (System.Text.RegularExpressions.Regex.IsMatch(before, @"\b(trait|interface|protocol)\s*$"))
+        {
+            return TypeKind.Interface;
+        }
+
+        if (System.Text.RegularExpressions.Regex.IsMatch(before, @"\benum\s*$"))
+        {
+            return TypeKind.Enum;
+        }
+
+        return System.Text.RegularExpressions.Regex.IsMatch(before, @"\bstruct\s*$") ? TypeKind.Struct : null;
     }
 
     private static bool Modifier(string line, int nameColumn, string modifier)

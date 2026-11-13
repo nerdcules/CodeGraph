@@ -1,0 +1,5 @@
+{
+  // A repo from the TypeScript 2 era: ES5 output, CommonJS, classic node resolution, namespaces, no strictness.
+  "compilerOptions": { "target": "es5", "module": "commonjs", "moduleResolution": "node", "lib": ["es5", "dom"], "noEmit": true },
+  "include": ["src"]
+}

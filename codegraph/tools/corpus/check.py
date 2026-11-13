@@ -103,6 +103,10 @@ def main():
     db = os.path.join(corpus, ".codegraph", "graph.db")
     result = dict(language=key["language"], profile=key["profile"], stats=key["stats"], ok=False)
     with open(a.out + ".log", "w") as log:
+        if key["language"] == "csharp":
+            # As a developer's checkout is: restored, so the target framework's reference pack is resolved. Offline this
+            # succeeds when the SDK ships the pack (the corpus has no package dependencies); otherwise the indexer says so.
+            run(["dotnet", "restore", os.path.join(corpus, key["target"]), "--nologo", "-v", "q"], corpus, log)
         code, seconds, output = run(indexer + [os.path.join(corpus, key["target"]), "--db", db], corpus, log)
         result["index_seconds"] = round(seconds, 2)
         if code != 0 or not os.path.exists(db):
@@ -117,7 +121,7 @@ def main():
             json.dump(result, open(a.out, "w"), indent=1)
             return 1
 
-    nodes, edges, dead = {}, [], set()
+    nodes, edges, dead, facts = {}, [], set(), {}
     for line in open(export):
         r = json.loads(line)
         if r["type"] == "node":
@@ -126,6 +130,12 @@ def main():
             edges.append(r)
         elif r["type"] == "dead":
             dead.add(r["node"])
+        elif r["type"] == "meta":
+            facts[f"{r['language']}.{r['key']}"] = r["value"]
+    # What the graph says it was read with (compiler, language_versions, compile_errors, unmapped, notes), so a
+    # run on an older toolchain shows which compiler and language level it exercised.
+    result["compiler"] = {k: v for k, v in facts.items() if k.split(".", 1)[1] in ("compiler", "language_versions", "compile_errors", "language_version_errors", "unmapped", "notes", "first_compile_error", "first_language_version_error")}
+    result["dialect"], result["level"] = key.get("dialect", "modern"), key.get("level")
     name = {i: normalise(n) for i, n in nodes.items()}
     methods = set(key["methods"])
     types = set(key["types"])
@@ -193,6 +203,8 @@ def main():
     result["ok"] = True
     json.dump(result, open(a.out, "w"), indent=1)
     worst = min((v["recall"] for v in result["edges"].values()), default=1.0)
+    compiler = "; ".join(f"{k.split('.', 1)[1]}={v}" for k, v in sorted(result["compiler"].items()) if k.endswith((".compiler", ".language_versions")) or (v not in ("0", "") and k.endswith((".compile_errors", ".unmapped", ".notes"))))
+    print(f"{key['language']}/{key['profile']} [{result['dialect']}{', ' + result['level'] if result['level'] else ''}] read with {compiler or 'no compiler facts'}")
     print(f"{key['language']}/{key['profile']}: {result['methods']['found']}/{len(methods)} methods, "
           f"calls P={result['edges']['Calls']['precision']:.3f} R={result['edges']['Calls']['recall']:.3f}, worst recall {worst:.3f}, "
           f"dead {result['dead_code']['found']}/{len(planted)} (+{result['dead_code']['live_reported']} live), {result['index_seconds']}s"

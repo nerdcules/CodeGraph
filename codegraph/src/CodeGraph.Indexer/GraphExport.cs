@@ -41,7 +41,8 @@ internal static class ExportCommand
                 case "-h" or "--help":
                     Console.Error.WriteLine("usage: codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]");
                     Console.Error.WriteLine("       writes the graph's nodes and edges as import records (EXTRACTORS.md) to stdout or a file;");
-                    Console.Error.WriteLine("       --dead-code adds a {\"type\":\"dead\",\"node\":id} record per dead_code_report candidate, public API included");
+                    Console.Error.WriteLine("       --dead-code adds a {\"type\":\"dead\",\"node\":id} record per dead_code_report candidate, public API included;");
+                    Console.Error.WriteLine("       meta records carry each language's compiler facts (compiler, language_versions, compile_errors, unmapped, notes)");
                     Console.Error.WriteLine("       codegraph-index export obsidian --out <folder>  writes notes for an Obsidian vault (export obsidian --help)");
                     return 1;
                 default:
@@ -95,6 +96,16 @@ internal static class ExportCommand
         foreach (var edge in edges)
         {
             writer.WriteLine(JsonSerializer.Serialize(new { type = "edge", from = edge.FromId, to = edge.ToId, kind = edge.Kind.ToString() }));
+        }
+
+        // Each language's compiler facts (LanguageMetaKeys), with the language named so a reader can tell them apart;
+        // import files a meta record under its own language, so a round trip keeps the key.
+        foreach (var (key, value) in store.ReadMeta().OrderBy(m => m.Key, StringComparer.Ordinal))
+        {
+            if (MetaKeys.LanguageOf(key) is { } metaLanguage && (language is null || metaLanguage == language))
+            {
+                writer.WriteLine(JsonSerializer.Serialize(new { type = "meta", language = metaLanguage, key = key[(MetaKeys.LanguagePrefix.Length + metaLanguage.Length + 1)..], value }));
+            }
         }
 
         var dead = 0;

@@ -175,7 +175,7 @@ internal sealed class GraphBatch
 internal static class GraphImport
 {
     /// <summary>Meta keys an extractor's records land under, so two languages' settings never collide.</summary>
-    public static string LanguageKey(string language, string key) => $"lang.{language}.{key}";
+    public static string LanguageKey(string language, string key) => MetaKeys.Language(language, key);
 
     /// <summary>
     /// Replaces <paramref name="batch"/>'s languages in the graph at <paramref name="dbPath"/>: the batch goes into a
@@ -195,10 +195,10 @@ internal static class GraphImport
 
         // The graph-wide keys of the previous graph (its solution, commit, embedding model) carry over; this
         // language's own keys are rewritten below, and other languages' come across with their rows.
-        var meta = previousMeta.Where(m => !m.Key.StartsWith("lang.", StringComparison.Ordinal)).ToDictionary(StringComparer.Ordinal);
+        var meta = previousMeta.Where(m => !m.Key.StartsWith(MetaKeys.LanguagePrefix, StringComparison.Ordinal)).ToDictionary(StringComparer.Ordinal);
         meta[MetaKeys.SchemaVersion] = GraphStore.SchemaVersion;
         meta[MetaKeys.IndexedAt] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-        meta[LanguageKey(batch.Language, "indexed_at")] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        meta[LanguageKey(batch.Language, LanguageMetaKeys.IndexedAt)] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
         foreach (var (key, value) in batch.Meta)
         {
             meta[LanguageKey(batch.Language, key)] = value;
@@ -206,12 +206,12 @@ internal static class GraphImport
 
         if (batch.Tool is not null)
         {
-            meta[LanguageKey(batch.Language, "tool")] = batch.Tool;
+            meta[LanguageKey(batch.Language, LanguageMetaKeys.Tool)] = batch.Tool;
         }
 
         if (batch.Target is not null)
         {
-            meta[LanguageKey(batch.Language, "target")] = batch.Target;
+            meta[LanguageKey(batch.Language, LanguageMetaKeys.Target)] = batch.Target;
             // The graph's headline target (what freshness warnings and the daemon launcher name) is the first
             // language's; a later one never takes it over.
             if (!previousMeta.ContainsKey(MetaKeys.Solution))
@@ -299,6 +299,10 @@ internal static class ImportCommand
         if (source is not null && source.EndsWith(".scip", StringComparison.OrdinalIgnoreCase))
         {
             batch = ScipImport.Read(source, log);
+            foreach (var line in ScipImport.CompilerSummary(batch))
+            {
+                log(line);
+            }
         }
         else if (source is null or "-")
         {

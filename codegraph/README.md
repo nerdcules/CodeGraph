@@ -262,8 +262,8 @@ as the only source. The test suite needs no SDK discovery and no network: the st
 throwaway DuckDB file and the indexer tests drive the real Roslyn extractor over an
 `AdhocWorkspace`. The plugin's tests are `npm test` in `obsidian-plugin/`. Two more layers run
 in Docker: [tools/corpus](tools/corpus/README.md) checks precision and recall against generated
-codebases with answer keys, and [tools/obsidian-e2e](tools/obsidian-e2e/README.md) runs the plugin
-in real Obsidian.
+codebases with answer keys, in a modern and a classic dialect and on older SDK images, and
+[tools/obsidian-e2e](tools/obsidian-e2e/README.md) runs the plugin in real Obsidian.
 
 ## Not yet
 
@@ -283,6 +283,7 @@ in real Obsidian.
 |---|---|
 | [docs/](docs/README.md) | Installation, usage, use cases, how it works, performance and architecture, with diagrams |
 | [docs/obsidian.md](docs/obsidian.md) | Set up and use the Obsidian plugin, with screenshots |
+| [docs/language-versions.md](docs/language-versions.md) | Which language versions each route reads, how older and newer repos are read, how to check a new version |
 | [MCP-SERVER.md](MCP-SERVER.md) | Every tool with its arguments, output format, staleness, telemetry, semantic search, troubleshooting |
 | [PROMPTS.md](PROMPTS.md) | Prompts that make Claude Code use the tools |
 | [EXTRACTORS.md](EXTRACTORS.md) | What each language records, and the record contract for adding one |

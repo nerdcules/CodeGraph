@@ -63,3 +63,23 @@ the language's route knows, lifecycle hooks, overrides of called methods) wrongl
 
 Conventions the key follows, because every route does: no self-calls (recursion), constructors as `<init>`,
 calls to an interface member go to the interface, and calls inside a lambda belong to the enclosing method.
+
+## Dialects and language levels
+
+`gen.py --dialect classic` writes the same model, with the same answer key, at the oldest language level the
+toolchains still accept: C# 7.3 on a `.sln`, ES5 CommonJS with `moduleResolution: node`, Java 8, Go 1.18,
+Rust 2018 and Python 3.8 (`LEVELS` in gen.py). `--level` overrides the build file's pin so a run can match the
+SDK in its container (`net8.0` on the .NET 8 image; by default C# keeps the SDK's framework, since a framework
+without its reference pack on the machine cannot be restored offline). `run.py --dialects modern,classic` runs
+both; a difference between them is a bug.
+
+Each result records what the graph says it was read with (`codegraph-index export` writes each language's
+compiler facts as meta records): the compiler, the language versions the build files asked for, compile errors,
+unmapped shapes and notes. The summary shows them in a `read with` column, so a run on an older toolchain says
+which compiler and language level it exercised.
+
+## Older toolchains
+
+`run.py --toolchains dotnet8,node20,jdk17,go121,rust170,python38` runs the corpus on images with an older SDK and
+the .NET 10 runtime beside it, in the dialects asked for, at the level that SDK accepts. The images are in
+[toolchains/](toolchains/README.md).

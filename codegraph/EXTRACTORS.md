@@ -34,6 +34,13 @@ Indexers differ in what they put in the index, and the importer evens that out:
   subtype-to-supertype direction and direct supertypes are kept.
 - **rust-analyzer** emits no relationships and names impl members `impl#[Self][Trait]member()`. The member goes
   to its self type, and the trait in the descriptor becomes `Implements` edges. `#[test]` marks a test.
+  A rust-analyzer from 2023 (1.70) is read too: it has no `--output` (the indexer runs it the old way), writes
+  a file module's path reversed (restored from the file path), names impl members `Type#Trait#member()` (read
+  as the form above, so ids match), records no symbol kinds (a trait is told from its `trait` line) and no
+  enclosing ranges (member bodies are found by brace matching). It does not resolve calls through `dyn Trait`;
+  those stay missing, and the graph's notes say the indexer is older than the tested one.
+- **Any indexer without enclosing ranges** gets member bodies by brace matching in the source (the indented block
+  for Python), so references still land in the member that holds them; the graph's notes say so.
 - **scip-go** calls interface members `MethodSpecification`; they are methods. Go's generated test main lies
   outside the module and is skipped. A `go.work` root is indexed through each module it uses.
 - **scip-python** writes declarations as a fenced block in the documentation, which becomes the signature. It
@@ -79,6 +86,35 @@ Rules that keep graphs correct:
 
 An import replaces only its own languages. It writes a fresh file, copies every other language's rows across
 from the old graph, and swaps the file in. A full C# rebuild does the same in the other direction.
+
+## Language versions
+
+Every route reads code with a compiler that knows some language versions and not the ones after them. The
+graph records which, so a repo ahead of the indexer shows up in `index_status` instead of as missing edges.
+The facts go in `meta` records (or, for C#, straight into the graph) under these keys, each stored as
+`lang.<language>.<key>`:
+
+| key | meaning | C# | TypeScript | SCIP |
+|---|---|---|---|---|
+| `compiler` | what read the code | `Roslyn 5.9.0` | `typescript 6.0.3, @angular/compiler 22.2.6` | the index's `tool_info`, `scip-java 0.12.3` |
+| `newest_language_version` | the newest version that compiler knows | `C# 14` | | |
+| `language_versions` | what the projects asked for | each project's effective LangVersion, `C# 12, C# 14` | each tsconfig's `target`, `ES5, ES2022` | from the build file: `Java 17`, `Go 1.18`, `Rust edition 2018`, `Python >=3.8` |
+| `compile_errors` | errors that cost nodes | syntax and declaration errors in walked files | syntax errors in the workspace's own files | the index's error diagnostics |
+| `first_compile_error` | one example, `File(line): code message` | yes | yes | yes |
+| `language_version_errors` | of those, "feature X needs C# N" | yes | | |
+| `first_language_version_error` | one example | yes | | |
+| `unmapped` | shapes the route has no case for, `TypeKind.Extension x3` | Roslyn type, symbol and syntax kinds | class and interface member kinds | SCIP symbol kinds, numeric when newer than the vendored scip.proto |
+| `notes` | what did not stop the index but a reader should know | an unrestored project | a deprecated tsconfig option | an indexer older than the tested one |
+
+The run logs the same as one `compiler:` line plus warnings, and `index_status` prints a line per language.
+An extractor that records nothing here still works; the status line then says so.
+
+The counts are of what was walked: an incremental C# run reports the files it re-read. Body-level errors are
+not counted on any route, because finding them is a full compile and they cost at most an edge; the
+declaration-level ones are what lose nodes, and those are counted.
+
+[docs/language-versions.md](docs/language-versions.md) says what each route reads today, how older repos are
+read, and how to check a new language version.
 
 ## Live tools for other languages
 

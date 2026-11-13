@@ -63,6 +63,64 @@ public static class MetaKeys
     public const string IndexedAt = "indexed_at";
     public const string Mode = "mode";
     public const string EmbeddingsModel = "embeddings_model";
+
+    /// <summary>Per-language rows are <c>lang.&lt;language&gt;.&lt;key&gt;</c>, so two languages' settings never collide.</summary>
+    public const string LanguagePrefix = "lang.";
+
+    public static string Language(string language, string key) => $"{LanguagePrefix}{language}.{key}";
+
+    /// <summary>The language of a <c>lang.*</c> key, or null for any other key.</summary>
+    public static string? LanguageOf(string key)
+    {
+        if (!key.StartsWith(LanguagePrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var end = key.IndexOf('.', LanguagePrefix.Length);
+        return end < 0 ? null : key[LanguagePrefix.Length..end];
+    }
+}
+
+/// <summary>
+/// What every route records about the compiler it read the code with, under <see cref="MetaKeys.Language"/>.
+/// These are how a graph says which language versions it understood, so a repo on a newer version than the
+/// indexer knows shows up in <c>index_status</c> instead of as silently missing edges.
+/// </summary>
+public static class LanguageMetaKeys
+{
+    /// <summary>The compiler or indexer that produced the rows: <c>Roslyn 5.9.0</c>, <c>typescript 6.0.3</c>, <c>scip-java 0.12.3</c>.</summary>
+    public const string Compiler = "compiler";
+
+    /// <summary>The newest language version that compiler understands: <c>C# 14</c>.</summary>
+    public const string NewestLanguageVersion = "newest_language_version";
+
+    /// <summary>The language versions the indexed projects asked for, comma separated: <c>C# 12, C# 14</c>, <c>ES2022</c>, <c>Java 21</c>.</summary>
+    public const string LanguageVersions = "language_versions";
+
+    /// <summary>Syntax and declaration errors the compiler reported while reading the indexed files. Declarations under them may be missing.</summary>
+    public const string CompileErrors = "compile_errors";
+
+    /// <summary>The subset of <see cref="CompileErrors"/> that say a feature needs a newer language version than the compiler has.</summary>
+    public const string LanguageVersionErrors = "language_version_errors";
+
+    /// <summary>The first such error, file and message, so the status can show what the repo uses that the indexer does not know.</summary>
+    public const string FirstLanguageVersionError = "first_language_version_error";
+
+    /// <summary>The first compile error of any kind, for routes that cannot tell version errors apart (TypeScript).</summary>
+    public const string FirstCompileError = "first_compile_error";
+
+    /// <summary>What the compiler said that did not stop the index but a reader should know, semicolon separated: a deprecated tsconfig option, a tool below its tested version.</summary>
+    public const string Notes = "notes";
+
+    /// <summary>Declaration shapes the compiler produced that this indexer has no mapping for, with counts: <c>TypeKind.Extension x3</c>. Empty when none.</summary>
+    public const string Unmapped = "unmapped";
+
+    /// <summary>The program that wrote the rows, as the extractor's header names it (<c>codegraph-ts 0.1.0</c>).</summary>
+    public const string Tool = "tool";
+
+    public const string Target = "target";
+    public const string IndexedAt = "indexed_at";
 }
 
 /// <summary>

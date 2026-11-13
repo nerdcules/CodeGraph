@@ -84,3 +84,56 @@ test('specs: suites and tests are test nodes, what they touch is TestedBy them',
 test('every edge carries the file that produced it', () => {
   assert.ok(edges.every(e => typeof e.file === 'string' && e.file.length > 0));
 });
+
+test('the compiler, the targets and the error counts are recorded under the keys every route uses', () => {
+  const meta = Object.fromEntries(records.filter(r => r.type === 'meta').map(r => [r.key, r.value]));
+  assert.match(meta.compiler, /^typescript \d+\.\d+\.\d+, @angular\/compiler \d+\.\d+\.\d+$/);
+  assert.equal(meta.language_versions, 'ES2022');
+  assert.equal(meta.compile_errors, '0');
+  assert.equal(meta.unmapped, undefined, 'every member shape in the fixture has a node or is skipped by design');
+  assert.equal(meta.notes, undefined);
+  assert.match(extractor.summary()[0], /^compiler: typescript .*; targets ES2022; 0 syntax error\(s\)$/);
+});
+
+test('a TypeScript 2 era workspace indexes in full; its deprecated options are a note, not a stop', () => {
+  const legacy = discover(path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'legacy-app'));
+  const old = new Extractor({ root: legacy.root, log: () => {} });
+  for (const config of legacy.configs) old.runConfig(config);
+  const out = [...old.records({ target: legacy.target, tool: 'test' })];
+  const meta = Object.fromEntries(out.filter(r => r.type === 'meta').map(r => [r.key, r.value]));
+  const has = (from, kind, to) => out.some(e => e.type === 'edge' && e.from === `ts:src/${from}` && e.kind === kind && e.to === `ts:src/${to}`);
+  assert.equal(meta.language_versions, 'ES5');
+  assert.equal(meta.compile_errors, '0');
+  assert.equal(meta.unmapped, undefined);
+  assert.match(meta.notes, /target=ES5.*deprecated/);
+  assert.match(meta.notes, /moduleResolution=node10.*deprecated/);
+  assert.ok(has('shapes.ts#Shapes.Square', 'Implements', 'shapes.ts#Shapes.Shape'), 'namespace members are nodes with the namespace in their id');
+  assert.ok(has('shapes.ts#Shapes.Square.area', 'Implements', 'shapes.ts#Shapes.Shape.area'));
+  assert.ok(has('shapes.ts#Shapes.describe', 'Calls', 'shapes.ts#Shapes.Shape.area'));
+  assert.ok(has('main.ts#run', 'Calls', 'shapes.ts#Shapes.describe'), 'import = require() resolves');
+  assert.ok(out.some(e => e.type === 'edge' && e.from === 'ts:file:src/main.ts' && e.kind === 'Imports' && e.to === 'ts:file:src/shapes.ts'), 'import = require() is an Imports edge');
+  assert.ok(old.summary().some(l => l.startsWith('note: tsconfig: Option \'target=ES5\' is deprecated')));
+});
+
+test('a file the parser cannot read is counted and named, and the rest of the workspace is still indexed', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-ts-broken-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'src'));
+    fs.writeFileSync(path.join(dir, 'tsconfig.json'), '{ "compilerOptions": { "target": "ES2022", "module": "ES2022", "noEmit": true }, "include": ["src"] }');
+    fs.writeFileSync(path.join(dir, 'src', 'good.ts'), 'export class Good { ok() { return 1; } }');
+    fs.writeFileSync(path.join(dir, 'src', 'bad.ts'), 'export class Bad { broken( { } }');
+    const ws = discover(dir);
+    const x = new Extractor({ root: ws.root, log: () => {} });
+    for (const config of ws.configs) x.runConfig(config);
+    const out = [...x.records({ target: ws.target, tool: 'test' })];
+    const meta = Object.fromEntries(out.filter(r => r.type === 'meta').map(r => [r.key, r.value]));
+    assert.ok(Number(meta.compile_errors) >= 1);
+    assert.match(meta.first_compile_error, /^src\/bad\.ts\(1\): TS\d+ /);
+    assert.ok(out.some(r => r.type === 'node' && r.id === 'ts:src/good.ts#Good.ok'));
+    assert.ok(x.summary().some(l => l.startsWith('\u26a0 the parser could not read everything')));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

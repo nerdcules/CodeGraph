@@ -191,6 +191,11 @@ The test runs in parallel Docker containers with no network.
 The last run had 144 codebases and 384,000 edges, with no differences.
 [tools/corpus/README.md](../tools/corpus/README.md) tells how to run it.
 
+The generator also writes each codebase in two dialects, with the same answer key.
+`classic` uses the oldest language level that the toolchains accept.
+The corpus then runs on older SDKs in Docker.
+[Language versions](language-versions.md) tells how.
+
 ---
 
-← Previous: [Use cases](use-cases.md) · Next: [Performance](performance.md) →
+← Previous: [Use cases](use-cases.md) · Next: [Language versions](language-versions.md) →

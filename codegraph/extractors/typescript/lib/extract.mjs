@@ -5,7 +5,7 @@
 import ts from 'typescript';
 import fs from 'node:fs';
 import path from 'node:path';
-import { AngularIndex } from './angular.mjs';
+import { AngularIndex, angularCompilerVersion } from './angular.mjs';
 
 const TEST_FILE = /(\.(spec|test)\.[cm]?[jt]sx?$)|([\\/]__tests__[\\/])/;
 const TEST_CALLS = new Set(['it', 'test', 'fit', 'xit', 'ftest', 'xtest']);
@@ -17,6 +17,12 @@ const LIFECYCLE = new Set([
   'ngAfterViewInit', 'ngAfterViewChecked', 'ngOnDestroy',
 ]);
 const MAX_BODY_TERMS = 400;
+// Class and interface members that are not nodes by design. Any other member shape shapeOf() has no case for
+// is a new language feature, and is counted as unmapped rather than skipped in silence.
+const MEMBERS_WITHOUT_NODES = new Set([
+  ts.SyntaxKind.IndexSignature, ts.SyntaxKind.CallSignature, ts.SyntaxKind.ConstructSignature,
+  ts.SyntaxKind.SemicolonClassElement, ts.SyntaxKind.ClassStaticBlockDeclaration,
+]);
 
 const posix = p => p.split(path.sep).join('/');
 
@@ -132,6 +138,35 @@ export class Extractor {
     this.terms = new Map();
     this.texts = new Map();
     this.angular = new AngularIndex(this);
+    // What the compiler said, for the graph's meta rows and the run's summary (the keys C# records too).
+    this.targets = new Set();
+    this.compileErrors = 0;
+    this.firstCompileError = undefined;
+    this.notes = new Set();
+    this.unmapped = new Map();
+  }
+
+  countUnmapped(shape) { this.unmapped.set(shape, (this.unmapped.get(shape) ?? 0) + 1); }
+
+  /** `SyntaxKind.Foo x2, …`, or empty. */
+  unmappedSummary() {
+    return [...this.unmapped].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([k, n]) => `${k} x${n}`).join(', ');
+  }
+
+  /** The compiler this extractor read the code with. */
+  static compiler() {
+    const angular = angularCompilerVersion();
+    return `typescript ${ts.version}` + (angular ? `, @angular/compiler ${angular}` : '');
+  }
+
+  /** One line per fact the log should carry once the walk is done; loud when the graph is missing code. */
+  summary() {
+    const targets = this.targets.size ? `targets ${[...this.targets].join(', ')}` : 'no config walked';
+    const lines = [`compiler: ${Extractor.compiler()}; ${targets}; ${this.compileErrors} syntax error(s)`];
+    if (this.compileErrors > 0) lines.push(`\u26a0 the parser could not read everything; declarations under the errors are missing. First: ${this.firstCompileError}`);
+    for (const note of this.notes) lines.push(`note: ${note}`);
+    if (this.unmapped.size > 0) lines.push(`\u26a0 unmapped by this extractor: ${this.unmappedSummary()} (a newer language feature; the node is not recorded)`);
+    return lines;
   }
 
   rel(fileName) { return posix(path.relative(this.root, fileName)); }
@@ -207,6 +242,7 @@ export class Extractor {
     compilerHost.useSourceOfProjectReferenceRedirect = () => true;
     const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options, projectReferences: parsed.projectReferences, host: compilerHost });
     const checker = program.getTypeChecker();
+    this.inspect(program, parsed);
 
     const projectId = `ts:project:${this.rel(config)}`;
     const frameworkId = `ts:framework:${this.rel(config)}`;
@@ -227,6 +263,34 @@ export class Extractor {
       count++;
     }
     this.log(`${name}: ${count} file(s) from ${this.rel(config)}`);
+  }
+
+  /**
+   * What the compiler says about a config before the walk: the target it compiles for, syntax errors in the
+   * workspace's own files (cheap: the parse already happened; type errors would cost a full check and lose at
+   * most an edge), and option errors. TypeScript 6 makes a deprecated option an error (target ES5, moduleResolution
+   * node10) but still builds the program, so an older repo indexes in full and the deprecation is a note.
+   */
+  inspect(program, parsed) {
+    const target = parsed.options.target;
+    this.targets.add(target === undefined ? 'default' : ts.ScriptTarget[target]);
+    const message = d => ts.flattenDiagnosticMessageText(d.messageText, ' ').split('\n')[0];
+    for (const d of [...program.getConfigFileParsingDiagnostics(), ...program.getOptionsDiagnostics(), ...program.getGlobalDiagnostics()]) {
+      if (d.category !== ts.DiagnosticCategory.Error) continue;
+      const text = message(d);
+      this.notes.add(d.code === 5107 ? `tsconfig: ${text.replace(/ Specify compilerOption.*$/, '')}` : `tsconfig: ${text}`);
+    }
+    for (const sf of program.getSourceFiles()) {
+      if (!this.inSource(sf)) continue;
+      for (const d of program.getSyntacticDiagnostics(sf)) {
+        if (d.category !== ts.DiagnosticCategory.Error) continue;
+        this.compileErrors++;
+        if (this.firstCompileError === undefined) {
+          const line = d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start).line + 1 : 0;
+          this.firstCompileError = `${this.rel(sf.fileName)}(${line}): TS${d.code} ${message(d)}`;
+        }
+      }
+    }
   }
 
   walkFile(sf, program, checker, projectId, frameworkId) {
@@ -414,8 +478,15 @@ export class Extractor {
         return;
       }
 
-      if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-        const specifier = node.moduleSpecifier;
+      if ((ts.isClassElement(node) || ts.isTypeElement(node)) && !MEMBERS_WITHOUT_NODES.has(node.kind) && !ts.isObjectLiteralExpression(node.parent)) {
+        this.countUnmapped(`SyntaxKind.${ts.SyntaxKind[node.kind]}`);
+      }
+
+      if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node) || ts.isImportEqualsDeclaration(node)) {
+        // `import X = require('./m')` is how CommonJS-era TypeScript imports; its module name sits in an external module reference.
+        const specifier = ts.isImportEqualsDeclaration(node)
+          ? (ts.isExternalModuleReference(node.moduleReference) ? node.moduleReference.expression : undefined)
+          : node.moduleSpecifier;
         const target = specifier && this.symbolAt(checker, specifier)?.valueDeclaration;
         if (target && ts.isSourceFile(target) && this.inSource(target)) this.addEdge(fileId, `ts:file:${this.rel(path.resolve(target.fileName))}`, 'Imports', file);
         return;
@@ -509,6 +580,13 @@ export class Extractor {
       if (text) yield { type: 'embed', node: id, text };
     }
     yield { type: 'meta', key: 'files', value: String(this.walked.size) };
+    // The compiler facts, under the keys every route records (LanguageMetaKeys in CodeGraph.Core). An import
+    // rewrites every key of its language, so a fact with nothing to say is left out rather than written empty.
+    const facts = {
+      compiler: Extractor.compiler(), language_versions: [...this.targets].join(', '), compile_errors: String(this.compileErrors),
+      first_compile_error: this.firstCompileError ?? '', notes: [...this.notes].join('; '), unmapped: this.unmappedSummary(),
+    };
+    for (const [key, value] of Object.entries(facts)) if (value !== '') yield { type: 'meta', key, value };
   }
 }
 

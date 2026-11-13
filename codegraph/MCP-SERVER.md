@@ -133,7 +133,18 @@ answer starts with a warning and rows from edited files end in `STALE`:
 STALE come from changed files, and new files are missing. Refresh with: codegraph-index "…/App.sln"
 ```
 
-A moved `HEAD` is reported too. `index_status` shows the full picture.
+A moved `HEAD` is reported too. `index_status` shows the full picture, including what each language was read
+with and whether the code asked for more than the indexer knows:
+
+```
+csharp    : Roslyn 5.9.0 (up to C# 14); code uses C# 12, C# 14
+  ⚠ 2 error(s) say the code needs a newer language version than it was read with; declarations under them are missing. First: New.cs(4): CS9260 …
+typescript: typescript 6.0.3; code uses ES2022
+```
+
+The warning lines are the signal that an answer is missing code rather than the code being absent: a repo on a
+newer language version than this build's compiler, or a declaration shape the indexer has no mapping for yet
+(see [Language versions](EXTRACTORS.md#language-versions)).
 
 When the [live daemon](#live-daemon) is running, the server asks it before every answer whether saves are
 pending, waits for them to be indexed (up to 8 s), and answers from the refreshed graph; `STALE` then only
@@ -226,7 +237,7 @@ and override.
 | tool | arguments | answers |
 |---|---|---|
 | `graph_stats` | | Node and edge counts; confirms the graph loaded. |
-| `index_status` | | Which graph, built when and at which commit, which indexed files changed or vanished since. |
+| `index_status` | | Which graph, built when and at which commit, which compiler and language versions each language was read with (and warnings when the code is ahead of it), which indexed files changed or vanished since. |
 | `usage_stats` | | Calls per tool, latency, answer size and estimated source tokens saved, this session and all time. |
 
 Edge kinds, for `traverse` and `path_between`: `Calls`, `Inherits`, `Implements`, `Overrides`,
