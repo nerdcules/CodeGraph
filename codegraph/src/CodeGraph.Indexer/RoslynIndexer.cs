@@ -136,7 +136,7 @@ public sealed partial class RoslynIndexer
     private static readonly HashSet<string> LanguageVersionErrorCodes = new(StringComparer.Ordinal)
     {
         "CS8022", "CS8023", "CS8024", "CS8025", "CS8026", "CS8059", "CS8107", "CS8302", "CS8320", "CS8370", "CS8400",
-        "CS8652", "CS8773", "CS8936", "CS9058", "CS9202", "CS9260",
+        "CS8652", "CS8703", "CS8773", "CS8936", "CS9058", "CS9202", "CS9260",
     };
 
     private static bool IsLanguageVersionError(Diagnostic diagnostic) =>
@@ -402,7 +402,7 @@ public sealed partial class RoslynIndexer
             AddEdge(new GraphEdge(fileId, typeId, EdgeKind.Contains), origin);
             AddSearchDocument(typeId,
             [
-                (type.Name, 3),
+                (NameOf(type), 3),
                 (type.ContainingNamespace?.ToDisplayString(), 1),
                 (CommentText(typeDeclaration.GetLeadingTrivia()), 2),
             ]);
@@ -1047,7 +1047,7 @@ public sealed partial class RoslynIndexer
         return new GraphNode(
             id,
             kind,
-            symbol.Name,
+            NameOf(symbol),
             symbol.ToDisplayString(),
             symbol.ToDisplayString(SignatureFormat),
             span.Path,
@@ -1074,6 +1074,7 @@ public sealed partial class RoslynIndexer
             case RoslynTypeKind.Interface: return CodeGraph.Core.TypeKind.Interface;
             case RoslynTypeKind.Enum: return CodeGraph.Core.TypeKind.Enum;
             case RoslynTypeKind.Delegate: return CodeGraph.Core.TypeKind.Delegate;
+            case RoslynTypeKind.Extension: return CodeGraph.Core.TypeKind.Extension;
             default:
                 CountUnmapped($"TypeKind.{t.TypeKind}");
                 return CodeGraph.Core.TypeKind.None;
@@ -1100,6 +1101,19 @@ public sealed partial class RoslynIndexer
     };
 
     private static string? IdOf(ISymbol symbol) => symbol.GetDocumentationCommentId();
+
+    /// <summary>A C# 14 extension block has no name of its own; <c>extension(int)</c>, as Roslyn displays it, is what people look for.</summary>
+    private static string NameOf(ISymbol symbol)
+    {
+        if (symbol.Name.Length > 0)
+        {
+            return symbol.Name;
+        }
+
+        var display = symbol.ToDisplayString();
+        var extension = display.IndexOf("extension(", StringComparison.Ordinal);
+        return extension >= 0 ? display[extension..] : display;
+    }
 
     private static NodeKind? KindOf(ISymbol symbol) => symbol switch
     {

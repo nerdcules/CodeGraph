@@ -18,7 +18,7 @@ public enum NodeKind
 /// Type shapes across languages. C# uses the first eight; TypeAlias (TypeScript <c>type X = …</c>), Annotation
 /// (Java <c>@interface</c>) and Module (a TypeScript namespace) came with other languages.
 /// </summary>
-public enum TypeKind { None, Class, Struct, Record, RecordStruct, Interface, Enum, Delegate, TypeAlias, Annotation, Module }
+public enum TypeKind { None, Class, Struct, Record, RecordStruct, Interface, Enum, Delegate, TypeAlias, Annotation, Module, Extension }
 
 /// <summary>Declared accessibility of a member or type.</summary>
 public enum Accessibility { None, Public, Private, Protected, Internal, ProtectedOrInternal, ProtectedAndInternal }
