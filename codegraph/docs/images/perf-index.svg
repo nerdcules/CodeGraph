@@ -60,37 +60,37 @@
 <text x="810.0" y="400" class="m" text-anchor="middle">20 s</text>
 <text x="218" y="67" class="" text-anchor="end">JavaScript</text>
 <text x="218" y="80" class="m" text-anchor="end">27,564 lines</text>
-<rect x="230" y="54" width="135.1" height="22" rx="4" class="bar1"/>
-<text x="373.14" y="70" class="m" text-anchor="start">4.66 s</text>
+<rect x="230" y="54" width="123.0" height="22" rx="4" class="bar1"/>
+<text x="361.0" y="70" class="m" text-anchor="start">4.24 s</text>
 <text x="218" y="107" class="" text-anchor="end">TypeScript</text>
 <text x="218" y="120" class="m" text-anchor="end">41,418 lines</text>
-<rect x="230" y="94" width="212.9" height="22" rx="4" class="bar1"/>
-<text x="450.86" y="110" class="m" text-anchor="start">7.34 s</text>
+<rect x="230" y="94" width="178.1" height="22" rx="4" class="bar1"/>
+<text x="416.1" y="110" class="m" text-anchor="start">6.14 s</text>
 <text x="218" y="147" class="" text-anchor="end">Angular</text>
 <text x="218" y="160" class="m" text-anchor="end">54,979 lines</text>
-<rect x="230" y="134" width="327.4" height="22" rx="4" class="bar1"/>
-<text x="565.41" y="150" class="m" text-anchor="start">11.29 s</text>
-<text x="218" y="187" class="" text-anchor="end">Python</text>
-<text x="218" y="200" class="m" text-anchor="end">41,439 lines</text>
-<rect x="230" y="174" width="403.1" height="22" rx="4" class="bar3"/>
-<text x="641.1" y="190" class="m" text-anchor="start">13.9 s</text>
-<text x="218" y="227" class="" text-anchor="end">Rust</text>
-<text x="218" y="240" class="m" text-anchor="end">50,904 lines</text>
-<rect x="230" y="214" width="410.1" height="22" rx="4" class="bar3"/>
-<text x="648.06" y="230" class="m" text-anchor="start">14.14 s</text>
-<text x="218" y="267" class="" text-anchor="end">C#</text>
-<text x="218" y="280" class="m" text-anchor="end">43,927 lines</text>
-<rect x="230" y="254" width="412.4" height="22" rx="4" class="bar2"/>
-<text x="650.38" y="270" class="m" text-anchor="start">14.22 s</text>
+<rect x="230" y="134" width="244.8" height="22" rx="4" class="bar1"/>
+<text x="482.8" y="150" class="m" text-anchor="start">8.44 s</text>
+<text x="218" y="187" class="" text-anchor="end">Rust</text>
+<text x="218" y="200" class="m" text-anchor="end">50,904 lines</text>
+<rect x="230" y="174" width="357.3" height="22" rx="4" class="bar3"/>
+<text x="595.3" y="190" class="m" text-anchor="start">12.32 s</text>
+<text x="218" y="227" class="" text-anchor="end">C#</text>
+<text x="218" y="240" class="m" text-anchor="end">43,927 lines</text>
+<rect x="230" y="214" width="365.1" height="22" rx="4" class="bar2"/>
+<text x="603.1" y="230" class="m" text-anchor="start">12.59 s</text>
+<text x="218" y="267" class="" text-anchor="end">Python</text>
+<text x="218" y="280" class="m" text-anchor="end">41,439 lines</text>
+<rect x="230" y="254" width="387.1" height="22" rx="4" class="bar3"/>
+<text x="625.1" y="270" class="m" text-anchor="start">13.35 s</text>
 <text x="218" y="307" class="" text-anchor="end">Java</text>
 <text x="218" y="320" class="m" text-anchor="end">37,219 lines</text>
-<rect x="230" y="294" width="515.9" height="22" rx="4" class="bar3"/>
-<text x="753.91" y="310" class="m" text-anchor="start">17.79 s</text>
+<rect x="230" y="294" width="478.8" height="22" rx="4" class="bar3"/>
+<text x="716.8" y="310" class="m" text-anchor="start">16.51 s</text>
 <text x="218" y="347" class="" text-anchor="end">Go</text>
 <text x="218" y="360" class="m" text-anchor="end">30,733 lines</text>
-<rect x="230" y="334" width="526.3" height="22" rx="4" class="bar3"/>
-<text x="764.3499999999999" y="350" class="m" text-anchor="start">18.15 s</text>
-<text x="20" y="422" class="m" text-anchor="start">Full index from nothing, 2 CPUs per container. Java, Go, Rust and Python include the SCIP indexer run.</text>
+<rect x="230" y="334" width="526.6" height="22" rx="4" class="bar3"/>
+<text x="764.6" y="350" class="m" text-anchor="start">18.16 s</text>
+<text x="20" y="422" class="m" text-anchor="start">Full index from nothing, 2 CPUs per container, 14 November 2026. Java, Go, Rust and Python include the SCIP indexer run.</text>
 <rect x="20" y="432" width="12" height="12" rx="2" class="bar2"/>
 <text x="38" y="442" class="m" text-anchor="start">Roslyn, in process</text>
 <rect x="164.8" y="432" width="12" height="12" rx="2" class="bar1"/>

@@ -1,5 +1,7 @@
 # Older toolchains
 
+[CodeGraph](../../../README.md) · [Docs](../../../docs/README.md) · [Contributing](../../../docs/contributing.md) · [Corpus](../README.md) · **Older toolchains** · [Obsidian end-to-end](../../obsidian-e2e/README.md)
+
 One image per toolchain a repo might still be on, with the .NET 10 runtime copied in beside it so codegraph-index
 and codegraph-mcp run unchanged. `run.py --toolchains dotnet8,node20,...` builds each, builds the corpus image on
 it, and runs the languages it serves in both dialects, pinned to the level the image's SDK accepts.
@@ -17,3 +19,7 @@ The host's indexers that the image does not provide are mounted as in a `--base`
 scip-python); the language toolchain itself always comes from the image. The images need the network once, when
 they are built; the runs do not. The `jdk17` image warms its own Maven repository at build time
 (`maven-warm/`), because the host's `~/.m2` holds the host Maven's plugin versions and the runs are offline.
+
+---
+
+[CodeGraph](../../../README.md) · [Docs](../../../docs/README.md) · [Contributing](../../../docs/contributing.md) · [Corpus](../README.md) · **Older toolchains** · [Obsidian end-to-end](../../obsidian-e2e/README.md)

@@ -14,7 +14,7 @@ namespace CodeGraph.Mcp;
 /// Rows whose file was edited since indexing end in <c>STALE</c>; the call-tool filter in Program adds the summary line.
 /// </summary>
 [McpServerToolType]
-public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live, SemanticSearch semantic)
+public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live, SemanticSearch semantic, GraphSnapshotCache snapshots)
 {
     // ── Live tools: answered by codegraph-index --watch, not by the graph: the Roslyn solution for C#, a language
     // server (typescript-language-server, jdtls, pyright, gopls, rust-analyzer) for the other languages ─────────
@@ -672,6 +672,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         sb.AppendLine($"commit    : {report.IndexedCommit ?? "?"}");
         sb.AppendLine($"HEAD now  : {report.Head ?? "?"}{(report.HeadMoved ? "  (moved since indexing)" : "")}");
         sb.AppendLine($"size      : {nodes} nodes, {edges} edges");
+        sb.AppendLine($"reads     : {(GraphSnapshotCache.Enabled ? snapshots.Describe() : "from the database (CODEGRAPH_SNAPSHOT=off)")}");
         sb.AppendLine($"status    : {(report.IsStale ? "STALE" : "up to date with the working tree")}");
         foreach (var line in LanguageStatus.Lines(meta))
         {

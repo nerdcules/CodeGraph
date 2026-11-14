@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
 
 ---
 
@@ -27,11 +27,11 @@ Measured on this repository, for "what breaks if I change `GraphStore.Replace`?"
 
 | How the assistant finds out | What enters its context | Size, at about 4 characters a token |
 |---|---|---|
-| CodeGraph: `find_symbol`, `impact_of`, `snippet` | The method, its 11 dependents, the 33 tests that guard them, and the method's own source | 21,138 characters, about 5,300 tokens |
-| Opening the files that answer names, if the model somehow knew which they were | 13 files | 140,240 characters, about 35,000 tokens |
-| Opening every file that matches `.Replace(` | 23 files, and the dependents' own callers are still to find | 422,643 characters, about 105,000 tokens |
+| CodeGraph: `find_symbol`, `impact_of`, `snippet` | The method, its 12 dependents, the 37 tests that guard them, and the method's own source | 21,910 characters, about 5,500 tokens |
+| Opening the files that answer names, if the model somehow knew which they were | 15 files | 258,628 characters, about 65,000 tokens |
+| Opening every file that matches `.Replace(` | 25 files, and the dependents' own callers are still to find | 491,682 characters, about 123,000 tokens |
 
-So the same answer costs between a seventh and a twentieth of the tokens, and it includes the
+So the same answer costs between a twelfth and a twenty-second of the tokens, and it includes the
 transitive dependents and tests that a text search would still have to chase. The
 savings come from a few design choices:
 
@@ -56,14 +56,14 @@ note holds everything about a type.
 ## Keeping the graph current
 
 
-![Index: read, make records, write, swap. Query: tool call, check freshness, run SQL, answer](images/pipeline.svg)
+![Index: read, make records, write, swap. Query: tool call, check freshness, walk in memory, answer](images/pipeline.svg)
 
 - **Incremental.** Each file's hash is stored. A re-run re-walks only changed files and their
   dependents (callers, subclasses, referencers, tests), then merges the result into the graph in
   about a second. `--full` rebuilds from scratch.
 - **Watch mode.** `codegraph-index <solution> --watch` pays the solution load once and applies
-  each save to the compiled solution in memory, so a one-file edit re-indexes in well under a
-  second. The server notices each swap through the file's mtime.
+  each save to the compiled solution in memory, so a one-file edit re-indexes in about a second
+  on this repository. The server notices each swap through the file's mtime.
 - **Live daemon.** The same watch process answers over a local pipe. `check_change` compiles a
   proposed file in memory and reports what it would break; `rename_preview` runs Roslyn's rename on
   a fork; `diagnostics` reports compiler errors for the working tree. The graph stays the system of

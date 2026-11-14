@@ -51,6 +51,43 @@ public sealed class GraphAnchorTests : IDisposable
     }
 
     [Fact]
+    public void The_snapshot_loader_never_opens_the_anchor_and_waits_out_a_call_on_a_swapped_file()
+    {
+        using var anchor = new GraphAnchor(_db, idleRelease: TimeSpan.FromMinutes(1));
+
+        // Nothing in flight: the loader may read, but leaves the anchor closed, so the next writer is not kept waiting.
+        using (var lease = anchor.AcquireCurrent())
+        {
+            Assert.NotNull(lease);
+            Assert.False(anchor.IsHeld);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return; // a file held open cannot be replaced on Windows, so a call never outlives a swap there
+        }
+
+        // A call holds the anchor on the old file when a rebuild swaps a new one in: the loader must not read now.
+        var call = anchor.Acquire();
+        Assert.True(anchor.IsHeld);
+        var fresh = _db + ".tmp";
+        using (var writer = new GraphStore(fresh))
+        {
+            writer.Write([Graph.Node("M:Demo.Other", NodeKind.Method, "Other", "Demo.Other")], []);
+        }
+
+        File.SetLastWriteTimeUtc(fresh, DateTime.UtcNow.AddSeconds(5));
+        File.Move(fresh, _db, overwrite: true);
+        Assert.Null(anchor.AcquireCurrent());
+
+        // Once the call ends, the stale anchor is dropped and the loader may go ahead.
+        call.Dispose();
+        using var after = anchor.AcquireCurrent();
+        Assert.NotNull(after);
+        Assert.False(anchor.IsHeld);
+    }
+
+    [Fact]
     public void A_released_anchor_lets_a_writer_in()
     {
         using var anchor = new GraphAnchor(_db);

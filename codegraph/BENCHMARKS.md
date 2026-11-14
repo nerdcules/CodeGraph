@@ -1,5 +1,7 @@
 # Benchmarks
 
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+
 Numbers from `codegraph-bench` (tools/CodeGraph.Bench) against this repository's own graph, Release build,
 Linux x64, .NET 10. Query figures are the median of 7 runs after a warm-up. Index figures are one run of the
 published `codegraph-index`, so they include the MSBuild solution load.
@@ -449,25 +451,205 @@ a pinned version changes without a redraw):
 
 ![Language and SDK versions tested](docs/images/language-versions.svg)
 
+## Round 11: the graph in memory
+
+Measured 2026-11-13 on three graphs: this repo (2,885 nodes, 16,955 edges), Jellyfin 10.11.11 (40 projects,
+21,174 nodes, 108,946 edges, a 47 s full index), and the round 7 synthetic shape at 165,000 methods (181,500
+nodes, 805,523 edges). "Before" is a build of `aa01b14`; "snapshot off" is this round's build with
+`CODEGRAPH_SNAPSHOT=off`. Tool calls are timed with `codegraph-bench --server`, which drives each
+`codegraph-mcp` over stdio as a client does.
+
+**Why.** The telemetry of real sessions on this repo showed `find_symbol` at 77 to 84 ms and `impact_of` at about
+40 ms, against 4 to 15 ms in this file's tables. There were two causes. First, every walk was a recursive CTE that
+joins the whole edges table once per depth. DuckDB is a columnar engine built for scans, so a walk cost what the
+table holds rather than what the walk reaches: a floor of about 10 ms on this repo, and 0.8 s for `impact_of` on
+Jellyfin. Second, the anchor lets go after 1.5 s idle (round 2), and a model's calls come 2 to 4 s apart, so in
+practice nearly every call reopened the database (11 ms) and read through cold buffers.
+
+**What changed.** The server holds a `GraphSnapshot`: every node record, and the edges as compressed adjacency
+arrays over integer node numbers in both directions, with each edge's kind beside it. Walks are breadth-first
+searches over those arrays with per-walk scratch arrays reused from a pool, and hits sort on a precomputed
+(full name, id) rank. A `GraphSnapshotCache` loads it in the background at start and whenever the file's stamp
+changes (the database and its write-ahead log), and never answers a snapshot that does not match the file. Until
+one does, a call reads through DuckDB as before, so no call is slower than it was. The load does not open the
+anchor, and it refuses to read while another call may still hold an instance of a file a rebuild has replaced.
+A call that needs only graph reads never opens the database at all. Full-text search, vectors and metadata still do.
+
+The recursive SQL stays as the reference. Every SQL ordering now ends in the id, so ties have one defined order,
+and the parity tests run every read both ways over random graphs (call cycles, self-calls, dispatch chains,
+framework calls, ids only an edge names, overloads sharing a full name). `codegraph-bench --parity N` does the
+same on a real graph:
+
+| graph | checks | differences | time in DuckDB | time in memory |
+|---|---|---|---|---|
+| this repo | 6,068 over 425 nodes | 0 | 50 s | 0.25 s |
+| Jellyfin | 6,096 over 427 nodes | 0 | 528 s | 0.50 s |
+
+**Tool calls through the server, Jellyfin:**
+
+| tool call | before `aa01b14` | snapshot off | snapshot |
+|---|---|---|---|
+| first call after start (`find_symbol`) | 147 ms | 163 ms | 85 ms |
+| `graph_stats`, back to back | 1.4 ms | 1.7 ms | 0.32 ms |
+| `graph_stats`, 2 s apart | 17 ms | 17 ms | 1.4 ms |
+| `find_symbol 'Dispose'`, back to back | 23 ms | 23 ms | 2.7 ms |
+| `find_symbol 'Dispose'`, 2 s apart | 42 ms | 40 ms | 8.8 ms |
+| `callers_of` depth 1 (most-called), back to back | 49 ms | 48 ms | 1.5 ms |
+| `callers_of` depth 1 (most-called), 2 s apart | 74 ms | 73 ms | 2.2 ms |
+| `impact_of` depth 5, back to back | 219 ms | 217 ms | 2.9 ms |
+| `impact_of` depth 5, 2 s apart | 240 ms | 257 ms | 7.8 ms |
+| `impact_of` depth 20, back to back | 845 ms | 834 ms | 4.5 ms |
+| `impact_of` depth 20, 2 s apart | 860 ms | 865 ms | 9.7 ms |
+| `covered_by` depth 30, back to back | 1,170 ms | 1,149 ms | 1.3 ms |
+| `covered_by` depth 30, 2 s apart | 1,173 ms | 1,171 ms | 5.1 ms |
+
+![Tool calls through the MCP server on Jellyfin, before and after](docs/images/perf-queries.svg)
+
+**Tool calls through the server, this repo:**
+
+| tool call | before `aa01b14` | snapshot |
+|---|---|---|
+| first call after start (`find_symbol`) | 161 ms | 66 ms |
+| `graph_stats`, 2 s apart | 16 ms | 1.3 ms |
+| `find_symbol 'Dispose'`, 2 s apart | 22 ms | 1.7 ms |
+| `callers_of` depth 1, 2 s apart | 26 ms | 1.2 ms |
+| `impact_of` depth 5, 2 s apart | 29 ms | 1.1 ms |
+| `impact_of` depth 20, 2 s apart | 31 ms | 1.8 ms |
+| `covered_by` depth 30, 2 s apart | 28 ms | 1.4 ms |
+
+**Store queries, DuckDB against the snapshot (median of 7, 5 for 165k):**
+
+| query | Jellyfin, DuckDB | Jellyfin, memory | 165k, DuckDB | 165k, memory |
+|---|---|---|---|---|
+| get_node | 0.67 ms | < 0.001 ms | 0.68 ms | < 0.001 ms |
+| callers_of depth 1 (most-called) | 45 ms | 0.023 ms | 57 ms | 0.32 ms |
+| impact_of depth 5 | 204 ms | 0.16 ms | 378 ms | 40 ms |
+| impact_of depth 20 | 819 ms | 0.41 ms | 590 ms | 31 ms |
+| covered_by depth 30 | 1,117 ms | 0.20 ms | 267 ms | 24 ms |
+| explain_reachability | 7.6 ms | 0.002 ms | 6.0 ms | 0.016 ms |
+| neighbors | 25 ms | 0.035 ms | 25 ms | 0.63 ms |
+| subgraph depth 2 | 106 ms | 0.30 ms | 142 ms | 2.1 ms |
+| path_between depth 10 | 50 ms | 0.003 ms | 41 ms | 0.048 ms |
+| find_symbol 'Dispose' | 23 ms | 1.9 ms | 47 ms | 5.1 ms |
+| most_called | 31 ms | 1.1 ms | 230 ms | 19 ms |
+| coverage_stats | 598 ms | 0.17 ms | 172 ms | 1.7 ms |
+| uncovered | 616 ms | 0.56 ms | 192 ms | 8.7 ms |
+| dead_code_report | 189 ms | 0.39 ms | 99 ms | 2.6 ms |
+
+| snapshot | this repo | Jellyfin | 165k synthetic |
+|---|---|---|---|
+| load (background) | 40 ms | 306 ms | 1,134 ms |
+| managed memory | 2 MB | 17 MB | 78 MB |
+
+What it says: through the server, graph tools on Jellyfin went from tens to hundreds of milliseconds (over a
+second for `covered_by`) to single digits, and on this repo to about a millisecond. The "snapshot off" column
+matches "before" within noise, so the gain is the snapshot itself. The other change in this round, reading HEAD
+from `.git` instead of starting `git rev-parse` for the freshness check, is a couple of milliseconds on Linux and
+does not show here; it matters more on Windows, where starting a process is slow. The calls 2 s apart still cost
+a few milliseconds more than back to back: the freshness check's 3 s cache has expired, so it stats every indexed
+file again (1,960 on Jellyfin). On the 165k graph a hub's walk reaches about 100,000 nodes, and most of its 30 to
+40 ms is sorting and returning those rows; the tools print the nearest 200.
+
+Not done, from the plan: a binary snapshot file written by the indexer. It was meant to cut the reload after each
+re-index, but with the load in the background and reads falling back to DuckDB meanwhile, a 0.3 s load on Jellyfin
+never sits in front of a call. It is worth revisiting for graphs whose load takes seconds. Keeping the anchor open
+longer is no longer needed either: graph reads do not open the database.
+
+## Round 12: the docs re-measured
+
+Measured 2026-11-14 at `72822e6` (Release, Linux x64, 8 cores, no container) to bring the docs up to date. No code
+changed in this round; the graph did. This repo is now 3,119 nodes and 18,685 edges, up from 1,583 and 8,784 when
+most of the docs were written, and the test suite is 405 tests.
+
+| measurement | value |
+|---|---|
+| graph file, after a full index and after 3 more rebuilds | 20,236 KB, 20,748 KB |
+| full index, wall clock (the indexer's own figure) | 16.2–16.3 s (13.6–14.4 s) |
+| no-op incremental index, wall clock | 2.6–2.7 s |
+| snapshot load, managed memory | 43 ms, 2 MB |
+| live daemon resident memory, solution loaded | about 380 MB |
+
+**The README's question**, "what breaks if I change `GraphStore.Replace`, and which tests cover it?", through
+`codegraph-mcp` over stdio, 11 calls 2 s apart: `find_symbol` 1.5 ms, `impact_of` depth 5 1.8 ms, `snippet` 1.9 ms
+(medians; in two earlier sessions with the machine busy, `impact_of` was 2.4 and 8.0 ms). The answer is now 12
+dependents and 37 guarding tests. What enters the context, at 4 characters a token:
+
+| route | size |
+|---|---|
+| `find_symbol`, `impact_of`, `snippet` | 1,640 + 15,704 + 4,566 = 21,910 characters, about 5,500 tokens |
+| the 15 files those answers name | 258,628 characters, about 65,000 tokens |
+| the 25 files in `src/` and `tests/` that match `.Replace(` | 491,682 characters, about 123,000 tokens |
+
+**Tool calls through the server**, `codegraph-bench --server`, back to back / 2 s apart: first call after start
+67 ms; `graph_stats` 0.37 / 1.2 ms; `find_symbol 'Dispose'` 1.1 / 1.7 ms; `callers_of` depth 1 1.1 / 1.7 ms;
+`impact_of` depth 5 1.1 / 1.9 ms; depth 20 1.7 / 3.5 ms; `covered_by` depth 30 1.4 / 1.4 ms. The store queries
+from memory stay under 0.8 ms (`subgraph` depth 2 is the largest); through DuckDB they are 1.2 to 28 ms.
+
+**Live daemon**, `--live`, three runs (a fresh daemon, the same one warm, another fresh one):
+
+| measurement | value |
+|---|---|
+| live ping (pipe round trip) | 0.22–0.26 ms |
+| live flush when idle | 0.16–0.21 ms |
+| live symbol_at (declaration line) | 0.28–0.29 ms |
+| live references, source symbol (most-called) | 5.0–6.0 ms |
+| live references, metadata symbol (System.IO.File) | 8.4–15 ms |
+| live diagnostics, one file | 0.25–0.39 ms |
+| live diagnostics, whole solution | 50–104 ms |
+| live data_flow (most-called method with parameters) | 0.4–1.8 ms |
+| live check_change, unchanged file | 302–735 ms |
+| live check_change, edited file | 315–1,204 ms |
+| check_change renaming `GraphStore.Replace` (6 projects compile against it) | 0.97–1.09 s, 0 errors before, 42 after |
+| save → fresh `find_symbol` answer through the server, a file 2 others depend on (3 walked) | 0.90–0.96 s |
+| the same, `Worktree.cs` (10 walked) | 1.14–1.29 s |
+
+**Other graphs, re-checked the same day.**
+
+- Jellyfin through the server, calls 2 s apart (round 11's chart): `graph_stats` 4.0 ms, `find_symbol` 7.4 ms,
+  `callers_of` 2.5 ms, `impact_of` depth 5 8.5 ms, depth 20 10 ms, `covered_by` 6.1 ms. Round 11 had 1.4, 8.8, 2.2,
+  7.8, 9.7 and 5.1 ms: within run-to-run noise, so its chart stands. A full index: 44.3 and 45.3 s (was 47 s).
+- NestJS at `4410584` (2026-11-13), no npm install: 1,180 files, 11,228 nodes, 30,062 edges in 7.7–7.8 s, 43 MB.
+  Store queries 2.7–174 ms through DuckDB, under 1.3 ms from memory (`find_symbol` and `most_called` the largest).
+- RealWorld Angular at `d426ec8`, npm packages installed: 670 nodes, 2,503 edges in 2.8–2.9 s, as in round 9. Live,
+  through `--watch` (typescript-language-server ready in 4.9 s), two runs: ping 0.46 ms, symbol_at 16–17 ms, references
+  129–131 ms, diagnostics one file 0.16–0.18 ms, whole workspace 14–16 ms, `check_change` on a clean edit 2.5–2.8 s.
+  Through the server, an edit that adds an error to `auth.component.ts` (one dependent): 3.5–4.8 s.
+- The corpus's large profile, seeds 1 and 2, modern dialect, 2 CPUs per container, 2 at a time: every language in
+  full. Index seconds for the larger seed: JavaScript 4.24, TypeScript 6.14, Angular 8.44, Rust 12.32, C# 12.59,
+  Python 13.35, Java 16.51, Go 18.16 (`docs/images/perf-index.svg`, redrawn). Go needed a fix to `run.py`: under mise,
+  `GOBIN` is Go's own bin, so the runner now mounts whichever of `GOBIN` and `GOPATH/bin` holds scip-go.
+
+The save-to-answer time was 0.64 s on 2026-11-09, with 687 nodes. It is about a second now, and the indexer at
+`aa01b14`, before the snapshot, takes the same 0.97–1.07 s on today's graph, so the change is the graph's size,
+not round 11. The docs said "well under a second"; they now say "about a second".
+
 ## Where it ended up
 
-This repo's own graph, first baseline against the final build of this work, same machine and method. The graph
-is 2.5 times larger now: the repo grew, and framework calls are External nodes.
+This repo's own graph, first baseline against the build before round 11 and the build after it, same machine and
+method. The graph grew 5 times over the work: the repo grew, and framework calls became External nodes.
 
-| measurement | first baseline | final |
-|---|---|---|
-| graph | 595 nodes, 3,558 edges | 1,583 nodes, 8,784 edges |
-| full index | 11.5 s | 10.5 s |
-| no-op incremental index | 3.5 s | 2.5 s |
-| graph file after 3 more full rebuilds | 15,884 KB (and growing) | 12,556 KB (flat) |
-| open per tool call | 11 ms | 0.024 ms while the anchor holds the graph |
-| impact_of depth 20 | 7.9 ms | 8.6 ms |
-| path_between depth 10 | 11 ms | 3.9 ms |
-| coverage_stats | 9.9 ms | 11 ms |
-| dead_code_report | 12 ms | 11 ms |
-| `find_symbol` through the server | 15.7 ms | 4.7 ms |
-| `impact_of` through the server | 27.7 ms | 15.1 ms |
-| `graph_stats` through the server | 12.1 ms | 1.3 ms |
+| measurement | first baseline | before round 11 | with the graph in memory |
+|---|---|---|---|
+| graph | 595 nodes, 3,558 edges | 1,583 nodes, 8,784 edges | 2,885 nodes, 16,955 edges |
+| full index | 11.5 s | 10.5 s | 16.2 s (3,119 nodes, 18,685 edges, round 12) |
+| no-op incremental index | 3.5 s | 2.5 s | 2.6 s |
+| graph file after 3 more full rebuilds | 15,884 KB (and growing) | 12,556 KB (flat) | 20,748 KB (flat) |
+| open per tool call | 11 ms | 0.024 ms while the anchor holds the graph | none for graph reads |
+| impact_of depth 20 (store) | 7.9 ms | 8.6 ms | 0.067 ms |
+| path_between depth 10 (store) | 11 ms | 3.9 ms | 0.006 ms |
+| coverage_stats (store) | 9.9 ms | 11 ms | 0.048 ms |
+| dead_code_report (store) | 12 ms | 11 ms | 0.10 ms |
+| `find_symbol` through the server | 15.7 ms | 4.7 ms | 0.98 ms |
+| `impact_of` through the server | 27.7 ms | 15.1 ms | 0.55 ms |
+| `graph_stats` through the server | 12.1 ms | 1.3 ms | 0.34 ms |
+| `impact_of` depth 5 through the server, calls 2 s apart | | 29 ms (`aa01b14`) | 1.1 ms |
 
-Store queries held steady while the graph grew 2.5 times; tool calls through the server got 2 to 9 times faster;
-and on large solutions `path_between` is 15 to 60 times faster and traversal answers are about 150 times smaller.
+Store queries held steady while the graph grew, until round 11 took them out of the database: they now cost
+microseconds here and stay under 2 ms on Jellyfin. Tool calls through the server went from 12 to 28 ms at the
+start to about a millisecond; on large solutions `path_between` is 15 to 60 times faster than it was, traversal
+answers are about 150 times smaller, and walks are 10 to 5,000 times faster than the SQL they replaced (the low
+end on a hub that reaches 100,000 nodes, where the time is in returning the rows).
+
+---
+
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)

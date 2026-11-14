@@ -1,5 +1,7 @@
 # Languages and extractors
 
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+
 CodeGraph's store and MCP tools know nothing about C#. What a language needs is an *extractor*: a program that
 reads the code with that language's own compiler and writes graph records. Three routes are built in.
 
@@ -131,8 +133,8 @@ driving a language server over LSP, so the MCP server needs no change.
 
 Servers push diagnostics with no "done" signal, so `check_change` waits for every watched file to report and go
 quiet. Otherwise it waits three times the server's measured report latency, because a file that stays clean may
-get no report at all. With typescript-language-server, an edit that introduces errors answers in about a second.
-A clean edit takes about two.
+get no report at all. With typescript-language-server on the RealWorld Angular app (47 files), an edit that adds an
+error to a file with one dependent answers in 3.5 to 4.8 s, and a clean edit in 2.5 to 2.8 s.
 
 `CODEGRAPH_LSP` overrides the server command for any language, for example `jdtls -data /tmp/ws`.
 
@@ -144,3 +146,7 @@ A clean edit takes about two.
 2. **Add the live server.** Add the language's server to `LspServer.For`.
 3. **Add tests.** Add a fixture under `tests/` or the extractor's own `test/` with the edges each feature is
    responsible for, and an end-to-end test through `codegraph-index`, like `TypeScriptIndexTests`.
+
+---
+
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)

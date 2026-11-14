@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · **Performance** · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · **Performance** · [Architecture](architecture.md)
 
 ---
 
@@ -20,10 +20,10 @@
 
 ## Summary
 
-- A tool call through the server takes 1 to 15 ms on a small graph.
-- A walk on a graph of 165,000 nodes takes less than 1 second.
-- A full index of 30,000 to 55,000 lines takes 5 to 18 seconds.
-- For C#, a save updates the graph in less than one second with the live daemon.
+- The server keeps the graph in memory. A tool call through the server takes 1 to 10 ms, also on Jellyfin (21,000 nodes).
+- A walk on a graph of 165,000 nodes takes less than 50 ms.
+- A full index of 27,000 to 55,000 lines takes 4 to 18 seconds.
+- For C#, a save updates the graph in about one second with the live daemon, on this repository.
 - A walk answer is at most about 4,000 tokens, also on a large graph.
 
 All values in this page come from [BENCHMARKS.md](../BENCHMARKS.md) and from the generated corpus.
@@ -40,9 +40,12 @@ For Java, it also includes the Maven build.
 
 | Index | Time |
 |---|---|
-| This repository, C#, full | 10.5 s |
-| This repository, C#, no change (incremental) | 2.5 s |
-| A save of one C# file, with the live daemon | less than 1 s |
+| This repository, C#, full (3,119 nodes) | 16 s |
+| This repository, C#, no change (incremental) | 2.6 s |
+| A save of one C# file, with the live daemon | 0.9 to 1.3 s |
+
+These three rows were measured on 14 November 2026, on 8 cores, not in a container.
+A save re-walks the file and the files that depend on it: 3 files for a file few others use, 10 for a widely used one.
 
 Most of the C# time is the MSBuild load and the Roslyn compile.
 The live daemon loads the solution one time.
@@ -50,32 +53,44 @@ Thus a save does not pay for the load again.
 
 ## Tool calls
 
-![Tool call latency through the MCP server and in the store](images/perf-queries.svg)
+![Tool calls through the MCP server on Jellyfin, before and after the graph in memory](images/perf-queries.svg)
 
-These values are for the graph of this repository: 1,583 nodes and 8,784 edges.
-"Through the server" is a full MCP round trip.
-"Store" is the SQL query only.
+These values are for Jellyfin: 21,174 nodes and 108,946 edges.
+Each value is a full MCP round trip, with calls 2 seconds apart, as a model makes them.
 
-The server keeps the graph file open.
-To open the graph for each call took 11 ms.
-With the file open, it takes 0.024 ms.
+| Tool call | Before | Now |
+|---|---|---|
+| `find_symbol` | 42 ms | 8.8 ms |
+| `callers_of`, depth 1 | 74 ms | 2.2 ms |
+| `impact_of`, depth 5 | 240 ms | 7.8 ms |
+| `impact_of`, depth 20 | 860 ms | 9.7 ms |
+| `covered_by`, depth 30 | 1,173 ms | 5.1 ms |
+
+Before, each walk was a recursive SQL query, and each call opened the graph file.
+Now the server keeps the graph in memory and follows arrays, as an IDE does.
+See [The graph in memory](how-it-works.md#the-graph-in-memory).
+
+On this repository (2,885 nodes then), `impact_of` at depth 20 went from 31 ms to 1.8 ms.
+On 14 November 2026, with 3,119 nodes, each graph tool call took 1.2 to 3.5 ms at the same pace.
 
 ## Large graphs
 
 These values are for generated call graphs with 12 layers and hub methods.
 
-| Query | 11,000 nodes | 55,000 nodes | 165,000 nodes |
-|---|---|---|---|
-| `callers_of`, depth 1, hub | 9 ms | 23 ms | 48 ms |
-| `impact_of`, depth 5 | 19 ms | 50 ms | 95 ms |
-| `impact_of`, depth 20, hub | 70 ms | 242 ms | 662 ms |
-| `covered_by`, depth 30, hub | 44 ms | 142 ms | 330 ms |
-| `coverage_stats` | 21 ms | 68 ms | 164 ms |
-| `path_between`, depth 10 | 38 ms | 105 ms | 60 ms |
-| `path_between`, no path | 1.9 ms | 3.9 ms | 4.9 ms |
+| Query, 165,000 nodes | SQL | In memory |
+|---|---|---|
+| `callers_of`, depth 1, hub | 57 ms | 0.32 ms |
+| `impact_of`, depth 5 | 378 ms | 40 ms |
+| `impact_of`, depth 20, hub | 590 ms | 31 ms |
+| `covered_by`, depth 30, hub | 267 ms | 24 ms |
+| `coverage_stats` | 172 ms | 1.7 ms |
+| `path_between`, depth 10 | 41 ms | 0.05 ms |
 
-`path_between` was 1,061 to 2,368 ms before.
-It is now a breadth-first search that visits each node one time.
+A walk from a hub on this graph reaches about 100,000 nodes.
+Most of the time in memory is to sort and return these rows.
+
+`path_between` was 1,061 to 2,368 ms before an earlier change.
+It is a breadth-first search that visits each node one time.
 
 ## Answer size
 
@@ -92,46 +107,53 @@ A walk shows the nearest 200 rows and the count of the other rows at each depth.
 
 ![Live tool latency for C#](images/perf-live.svg)
 
-These values are for the C# live daemon on this repository.
-The bars show the upper end of the range over two runs.
+These values are for the C# live daemon on this repository (6 projects, 107 files), measured on 14 November 2026.
+The bars show the upper end of the range over three runs. The low end is with Roslyn's caches warm.
 
 | Measurement | Value |
 |---|---|
-| Rename of a method that 6 projects use, with `check_change` | 1.08 s, with 6 new errors found |
-| Save, then a new `find_symbol` answer through the server | 0.64 s |
+| Rename of `GraphStore.Replace`, which 6 projects compile against, with `check_change` | 0.97 to 1.09 s, with 42 new errors found |
+| Save, then a new `find_symbol` answer through the server | 0.9 to 1.3 s |
 
-For TypeScript, with typescript-language-server:
+For TypeScript, on the RealWorld Angular app (47 files), with typescript-language-server, measured on 14 November 2026:
 
 | Measurement | Value |
 |---|---|
-| `ping` | 0.41 ms |
-| `live_references` | 109 ms |
-| `check_change`, an edit that adds errors | about 1 s |
-| `check_change`, a clean edit | about 2 s |
+| `ping` | 0.46 ms |
+| `live_references` | 129 to 131 ms |
+| `check_change`, an edit that adds an error, in a file with one dependent | 3.5 to 4.8 s |
+| `check_change`, a clean edit | 2.5 to 2.8 s |
 
-A clean edit takes longer.
-The language server sends no report for a file that stays clean.
-Thus `check_change` must wait to be sure.
+The language server sends no "done" signal.
+Thus `check_change` waits until the edited file and the files that depend on it have reported and gone quiet.
+For a file that stays clean, it waits three times the server's measured report latency, because that file may get no report at all.
 
 ## Real repositories
 
 | Repository | Language | Size | Full index |
 |---|---|---|---|
-| This repository | C# | 1,583 nodes | 10.5 s |
-| RealWorld Angular app | Angular | 47 files, 670 nodes | 2.7 s |
-| NestJS | TypeScript | 1,165 files, 10,754 nodes | 7.0 s |
+| This repository | C# | 3,119 nodes | 16 s |
+| RealWorld Angular app | Angular | 47 files, 670 nodes | 2.8 s |
+| NestJS | TypeScript | 1,180 files, 11,228 nodes | 7.7 s |
+| Jellyfin | C# | 1,960 files, 40 projects, 21,174 nodes | 45 s |
 
-On NestJS, queries took 11 to 175 ms.
-The slowest was `impact_of` at depth 20.
+These were measured on 14 November 2026: NestJS and RealWorld at their current commits, Jellyfin at 10.11.11.
+On NestJS, SQL queries take 2.7 to 174 ms. From memory, they take less than 1.3 ms.
+On Jellyfin, SQL queries took up to 1.1 s. From memory, they take less than 2 ms.
 
 ## Disk and memory
 
 | Item | Value |
 |---|---|
-| Graph of this repository | about 12.5 MB, stable after more rebuilds |
+| Graph of this repository | about 20 MB, stable after more rebuilds |
 | Graph of NestJS | 43 MB, stable after more imports |
-| C# live daemon for this repository | about 220 MB |
-| Server process | small; it reads the graph file only |
+| C# live daemon for this repository | about 380 MB |
+| Graph in memory in the server, this repository | 2 MB |
+| Graph in memory in the server, Jellyfin | 17 MB, loaded in 0.3 s |
+| Graph in memory in the server, 165,000 nodes | 78 MB, loaded in 1.1 s |
+
+The server loads the graph in the background.
+Until the load is complete, it answers with SQL on the file.
 
 A full index writes a new file and replaces the old one.
 Thus the graph does not grow with each index.
@@ -158,7 +180,10 @@ Thus the graph does not grow with each index.
    ```
 
 4. To measure the live tools, start the live daemon first and add `--live`.
-5. Compare the values with [BENCHMARKS.md](../BENCHMARKS.md).
+5. To measure tool calls through the server, add `--server` with the path of `codegraph-mcp.dll`.
+   Add it more than one time to compare builds.
+6. To make sure that the graph in memory gives the same answers as SQL, add `--parity 400`.
+7. Compare the values with [BENCHMARKS.md](../BENCHMARKS.md).
 
 To measure all languages, run the generated corpus:
 
@@ -170,4 +195,4 @@ The results go to `artifacts/corpus/summary.md`.
 
 ---
 
-← Previous: [How it works](how-it-works.md) · Next: [Architecture](architecture.md) →
+← Previous: [Language versions](language-versions.md) · Next: [Architecture](architecture.md) →

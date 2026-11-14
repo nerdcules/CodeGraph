@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · **Usage** · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · **Usage** · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
 
 ---
 
@@ -94,7 +94,7 @@ It indexes each save and answers the live tools.
 3. Keep the terminal open while you work.
 4. Push Ctrl+C to stop it.
 
-For C#, a save of one file updates the graph in less than one second.
+For C#, a save of one file updates the graph in about one second on a solution the size of this repository.
 A change to a `.csproj`, `.sln`, `.props` or `.targets` file loads the solution again.
 
 > **NOTE:** In a repository with C# and TypeScript, `--watch` on the solution updates only C#.
@@ -265,6 +265,7 @@ codegraph-mcp [<graph.db>] [--web <port>]
 |---|---|
 | `CODEGRAPH_DB` | The graph file for the server. A path argument has priority. |
 | `CODEGRAPH_DAEMON=auto` | The server starts the live daemon on its first tool call. |
+| `CODEGRAPH_SNAPSHOT=off` | The server answers with SQL on the graph file, not from its copy in memory. |
 | `CODEGRAPH_LSP` | The language server command for the live tools, for example `jdtls -data /tmp/ws`. |
 | `CODEGRAPH_TS` | The path of the TypeScript extractor `cli.mjs`. |
 | `CODEGRAPH_EMBEDDINGS_URL` | An embeddings endpoint. It adds meaning-based search to `search_code`. |

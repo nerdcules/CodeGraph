@@ -63,7 +63,13 @@ def host_tools() -> dict[str, str]:
     go = shutil.which("go")
     if go:
         mounts[os.path.realpath(sh([go, "env", "GOROOT"]).stdout.strip())] = "/opt/go"
-        gobin = sh([go, "env", "GOBIN"]).stdout.strip() or os.path.join(sh([go, "env", "GOPATH"]).stdout.strip().split(os.pathsep)[0], "bin")
+        # The folder that holds scip-go: GOBIN when it is set, but a version manager (mise) can point GOBIN at Go's
+        # own bin while `go install` put scip-go in GOPATH/bin, so look in each.
+        gopath_bin = os.path.join(sh([go, "env", "GOPATH"]).stdout.strip().split(os.pathsep)[0], "bin")
+        candidates = [sh([go, "env", "GOBIN"]).stdout.strip(), gopath_bin]
+        on_path = shutil.which("scip-go")
+        gobin = next((d for d in candidates if d and os.path.isfile(os.path.join(d, "scip-go"))),
+                     os.path.dirname(os.path.realpath(on_path)) if on_path else candidates[0] or gopath_bin)
         if os.path.isdir(gobin):
             mounts[gobin] = "/opt/gobin"
     rustc = shutil.which("rustc")

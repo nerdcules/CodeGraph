@@ -1,5 +1,7 @@
 # Generated corpus
 
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [Obsidian end-to-end](../obsidian-e2e/README.md)
+
 Synthetic codebases with a known answer key, to test each extractor against. `gen.py` builds one seeded model
 (modules, classes, interfaces, inheritance, overrides, overloads, generics, nested types, statics, lambdas, tests,
 an entry point, planted dead code, and Angular components, services and templates) and writes it out as one
@@ -85,3 +87,7 @@ coverage chart in the docs from the versions the code pins; a test in CodeGraph.
 `run.py --toolchains dotnet8,node20,jdk17,go121,rust170,python38` runs the corpus on images with an older SDK and
 the .NET 10 runtime beside it, in the dialects asked for, at the level that SDK accepts. The images are in
 [toolchains/](toolchains/README.md).
+
+---
+
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [Obsidian end-to-end](../obsidian-e2e/README.md)

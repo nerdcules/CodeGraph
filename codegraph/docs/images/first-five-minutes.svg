@@ -7,18 +7,18 @@
   <text x="24" y="56" fill="#8b949e">1  install, with the repository to set up</text>
   <text x="24" y="78" fill="#e6edf3"><tspan fill="#7ee787">$</tspan> curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/App</text>
   <text x="24" y="98" fill="#8b949e">==> Downloading codegraph-linux-x64.tar.gz (latest)   checksum ok</text>
-  <text x="24" y="116" fill="#8b949e">==> Setting up /home/me/dev/App   indexed 2880 nodes, 16903 edges in 10.6s</text>
+  <text x="24" y="116" fill="#8b949e">==> Setting up /home/me/dev/App   indexed 3119 nodes, 18685 edges in 14.0s</text>
   <text x="24" y="134" fill="#8b949e">Ready. Start Claude Code in /home/me/dev/App and approve the codegraph server.</text>
 
   <text x="24" y="170" fill="#8b949e">2  ask, in Claude Code</text>
   <text x="24" y="192" fill="#e6edf3"><tspan fill="#d2a8ff">&gt;</tspan> What breaks if I change GraphStore.Replace, and which tests cover it?</text>
-  <text x="24" y="214" fill="#8b949e">  find_symbol → impact_of  (35 ms)</text>
-  <text x="24" y="232" fill="#e6edf3">  impact of GraphStore.Replace(...): <tspan fill="#ffa657">11 dependents, 33 guarding tests</tspan></text>
+  <text x="24" y="214" fill="#8b949e">  find_symbol → impact_of  (3 ms)</text>
+  <text x="24" y="232" fill="#e6edf3">  impact of GraphStore.Replace(...): <tspan fill="#ffa657">12 dependents, 37 guarding tests</tspan></text>
   <text x="24" y="250" fill="#e6edf3">  method  GraphImport.WriteAsync(...)        depth 1  src/CodeGraph.Indexer/GraphImport.cs:185-266</text>
   <text x="24" y="268" fill="#e6edf3">  method  ImportCommand.RunAsync(...)        depth 2  src/CodeGraph.Indexer/GraphImport.cs:272-333</text>
   <text x="24" y="286" fill="#e6edf3">  method  ScipIndexers.IndexAsync(...)       depth 2  src/CodeGraph.Indexer/ScipIndexers.cs:197-265</text>
   <text x="24" y="304" fill="#e6edf3">  tests:  BulkWriteTests.A_full_replace_leaves_nothing_of_the_previous_graph()  depth 1  ...</text>
-  <text x="24" y="322" fill="#8b949e">  Claude opens only the members it will change, with snippet. About 5,300 tokens, not 105,000.</text>
+  <text x="24" y="322" fill="#8b949e">  Claude opens only the members it will change, with snippet. About 5,500 tokens, not 123,000.</text>
 
   <text x="24" y="358" fill="#8b949e">3  a week later</text>
   <text x="24" y="380" fill="#e6edf3"><tspan fill="#7ee787">$</tspan> codegraph-index usage</text>

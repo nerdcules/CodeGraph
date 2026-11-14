@@ -2,6 +2,8 @@
 
 # CodeGraph
 
+**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+
 **CodeGraph gives Claude Code the compiler's answers: who calls this, what breaks if I change it,
 which tests guard it.**
 
@@ -12,11 +14,11 @@ which tests guard it.**
 It reads a codebase with its compiler, stores what it finds as a graph, and serves that graph to Claude
 Code (or any MCP client) as tools. Every edge is a resolved symbol, never a text match. One question
 costs one tool call instead of twenty file reads: on this repository, "what breaks if I change
-`GraphStore.Replace`?" takes about 5,300 tokens of answers where opening the files that match would take
-about 105,000.
+`GraphStore.Replace`?" takes about 5,500 tokens of answers where opening the files that match would take
+about 123,000.
 
 - Precision and recall of 100% on generated codebases in eight languages, on current toolchains and on 2023-era ones, bar one old rust-analyzer at 87% call recall ([benchmarks](BENCHMARKS.md))
-- 394 tests, run on Linux, macOS and Windows on every push
+- 405 tests, run on Linux, macOS and Windows on every push
 - Prebuilt for six platforms, nothing to compile ([releases](https://github.com/nerdcules/CodeGraph/releases/latest))
 
 Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the TypeScript compiler; Java,
@@ -41,17 +43,17 @@ curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/
 
 C# repositories also need the .NET SDK the project builds with, because the graph comes from a real
 compile. TypeScript needs Node.js 22. Java, Go, Rust and Python need their SCIP indexer on PATH
-([installation](docs/installation.md) has the table). Indexing this repository takes about 10 seconds.
+([installation](docs/installation.md) has the table). Indexing this repository (3,119 nodes) takes about 16 seconds.
 
 **2. Ask.** Start Claude Code in the repository, approve the `codegraph` server when it asks, and ask a
 question you would normally answer with grep and a lot of scrolling:
 
 > What breaks if I change `GraphStore.Replace`, and which tests cover it?
 
-Claude calls `find_symbol`, then `impact_of`, and gets this back in 35 milliseconds, trimmed here:
+Claude calls `find_symbol`, then `impact_of`, and gets this back in about 3 milliseconds, trimmed here:
 
 ```
-impact of CodeGraph.Core.GraphStore.Replace(...): 11 dependents, 33 guarding tests
+impact of CodeGraph.Core.GraphStore.Replace(...): 12 dependents, 37 guarding tests
 dependents:
 method  CodeGraph.Indexer.GraphImport.WriteAsync(...)        depth 1  src/CodeGraph.Indexer/GraphImport.cs:185-266
 method  Program.Main                                          depth 1  src/CodeGraph.Indexer/Program.cs:11-570
@@ -98,7 +100,7 @@ The indexer prints the same line after each run, and the `usage_stats` tool open
 Every answer is checked against the working tree first. If indexed files changed since the graph was
 built, the answer starts with a `⚠ STALE INDEX` line and marks the affected rows, so the model never
 reasons silently from an old graph. `codegraph-index --watch` keeps the compiled solution in memory,
-applies each save in well under a second, and answers the live tools from the real compiler.
+applies each save in about a second, and answers the live tools from the real compiler.
 
 ## Where to go next
 
@@ -146,3 +148,7 @@ product. [docs/roadmap.md](docs/roadmap.md) has the detail.
 ## License
 
 [MIT](../LICENSE). Author: Alan Seunarayan.
+
+---
+
+**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)

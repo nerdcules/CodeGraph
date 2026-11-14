@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 250" width="960" height="250" role="img" aria-labelledby="title desc">
 <title id="title">What the install script does</title>
-<desc id="desc">The install script builds, tests and publishes the two executables, checks that they start, then sets up each repository.</desc>
+<desc id="desc">The install script picks the release archive for this platform, downloads it, checks it against SHA256SUMS, unpacks the two executables with their own .NET runtime, then sets up each repository. With --from-source it builds a checkout instead.</desc>
 <style>
   .bg { fill: #ffffff; }
   text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
@@ -48,23 +48,23 @@
 </defs>
 <rect class="bg" x="0" y="0" width="960" height="250" rx="10"/>
 <rect x="20" y="40" width="124" height="76" rx="8" class="a1"/>
-<text x="82.0" y="65.5" class="t" text-anchor="middle">Build</text>
-<text x="82.0" y="82.5" class="m" text-anchor="middle">Release,</text>
-<text x="82.0" y="99.5" class="m" text-anchor="middle">warnings as errors</text>
+<text x="82.0" y="65.5" class="t" text-anchor="middle">Pick</text>
+<text x="82.0" y="82.5" class="m" text-anchor="middle">the archive for</text>
+<text x="82.0" y="99.5" class="m" text-anchor="middle">this OS and CPU</text>
 <rect x="170" y="40" width="124" height="76" rx="8" class="a1"/>
-<text x="232.0" y="65.5" class="t" text-anchor="middle">Test</text>
-<text x="232.0" y="82.5" class="m" text-anchor="middle">the full suite</text>
-<text x="232.0" y="99.5" class="m" text-anchor="middle">(skip with a flag)</text>
+<text x="232.0" y="65.5" class="t" text-anchor="middle">Download</text>
+<text x="232.0" y="82.5" class="m" text-anchor="middle">the latest release,</text>
+<text x="232.0" y="99.5" class="m" text-anchor="middle">or --version vX.Y.Z</text>
 <path d="M146 78 H168" class="line" marker-end="url(#arrow)"/>
 <rect x="320" y="40" width="124" height="76" rx="8" class="a2"/>
-<text x="382.0" y="65.5" class="t" text-anchor="middle">Publish</text>
-<text x="382.0" y="82.5" class="m" text-anchor="middle">ReadyToRun for</text>
-<text x="382.0" y="99.5" class="m" text-anchor="middle">this platform</text>
+<text x="382.0" y="65.5" class="t" text-anchor="middle">Verify</text>
+<text x="382.0" y="82.5" class="m" text-anchor="middle">its checksum in</text>
+<text x="382.0" y="99.5" class="m" text-anchor="middle">SHA256SUMS</text>
 <path d="M296 78 H318" class="line" marker-end="url(#arrow)"/>
 <rect x="470" y="40" width="124" height="76" rx="8" class="a2"/>
-<text x="532.0" y="65.5" class="t" text-anchor="middle">Check</text>
-<text x="532.0" y="82.5" class="m" text-anchor="middle">both executables</text>
-<text x="532.0" y="99.5" class="m" text-anchor="middle">start</text>
+<text x="532.0" y="65.5" class="t" text-anchor="middle">Install</text>
+<text x="532.0" y="82.5" class="m" text-anchor="middle">~/.codegraph/bin,</text>
+<text x="532.0" y="99.5" class="m" text-anchor="middle">.NET runtime inside</text>
 <path d="M446 78 H468" class="line" marker-end="url(#arrow)"/>
 <rect x="620" y="24" width="326" height="206" rx="10" class="group"/>
 <text x="634" y="46" class="t" text-anchor="start">codegraph-index init (per repository)</text>
@@ -83,4 +83,5 @@
 <path d="M594 78 H618" class="line" marker-end="url(#arrow)"/>
 <text x="320" y="160" class="m" text-anchor="middle">Re-run the script to upgrade.</text>
 <text x="320" y="180" class="m" text-anchor="middle">It stops if codegraph-mcp is running, unless you give --force.</text>
+<text x="320" y="200" class="m" text-anchor="middle">--from-source builds, tests and publishes a checkout instead.</text>
 </svg>

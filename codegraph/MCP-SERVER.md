@@ -2,6 +2,8 @@
 
 # MCP Server: codegraph
 
+[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+
 A read-only [Model Context Protocol](https://modelcontextprotocol.io) server that answers structural
 questions about a C# solution from a compiler-built graph: who calls this, what breaks if it changes,
 which tests guard it, where is the code that does X. Built for Claude Code; works with any MCP client
@@ -85,6 +87,7 @@ codegraph-mcp [path-to-graph.db] [--web PORT]
 | `CODEGRAPH_INDEXER` | path of `codegraph-index` for `live_status start=true`, when it is not next to the server; see [Live daemon](#live-daemon) |
 | `CODEGRAPH_EMBEDDINGS_URL`, `CODEGRAPH_EMBEDDINGS_MODEL`, `CODEGRAPH_EMBEDDINGS_KEY` | an OpenAI-compatible embeddings endpoint for semantic search; set the same values for `codegraph-index`. See [Semantic search](#semantic-search) |
 | `CODEGRAPH_DAEMON=auto` | start the live daemon on the first tool call when none runs; it stops itself after 120 min unused |
+| `CODEGRAPH_SNAPSHOT=off` | answer every graph read with SQL on the file instead of from the in-memory graph; see [Concurrency](#concurrency) |
 
 ### What clients show for the server
 
@@ -319,7 +322,7 @@ Lifecycle:
   150 ms timeout on it and then remembers it as dead for 3 s.
 - **Idle exit.** `--idle-exit <minutes>` stops it after that long with no save and no live request. The server
   pings before every tool call, so a session in use keeps its daemon. Daemons the server starts use 120 min.
-- **Memory.** `live_status` shows the working set and managed heap; this repo's daemon uses about 220 MB.
+- **Memory.** `live_status` shows the working set and managed heap; this repo's daemon uses about 380 MB.
 
 The server falls back to graph-only answers with `STALE` marks whenever no daemon is running.
 
@@ -329,7 +332,16 @@ reflect the working tree within one debounce of a save. [BENCHMARKS.md](BENCHMAR
 
 ## Concurrency
 
-DuckDB allows one writer or many readers per file. Each tool call opens its own read-only connection.
+The server answers graph reads (finds, walks, tests, coverage, dead code) from a snapshot of the graph held
+in memory: node records and adjacency arrays in both directions, loaded in the background when the server
+starts and again whenever the file's stamp changes (a re-index, an incremental write, a swap). A snapshot that
+does not match the file is never answered; until the new one has loaded, calls read through DuckDB as below,
+so a call is never slower than it was without snapshots. `index_status` says which is in use on its `reads`
+line. On Jellyfin (21,174 nodes) the snapshot loads in 0.3 s into 17 MB; `impact_of` at depth 20 went from
+0.86 s to under 10 ms through the server. `CODEGRAPH_SNAPSHOT=off` turns it off.
+
+DuckDB allows one writer or many readers per file. A tool call that needs the database (full-text search,
+vectors, metadata, or any read before the snapshot has loaded) opens its own read-only connection.
 Between calls the server keeps one extra read-only connection, the anchor, which keeps the database
 instance loaded so a call's open costs about 1 ms instead of 11. The anchor blocks a writer, so it lets
 go after 1.5 s without a call, after 10 s however busy the server is, and immediately when the daemon
@@ -352,3 +364,7 @@ file list whenever the database's mtime changes, regardless of its 3 s cache.
 | `You must install or update .NET to run this application` | The executables look for .NET in `DOTNET_ROOT` or the machine's default location, not on `PATH`; with a version-managed dotnet (mise, asdf) that location may lack ASP.NET Core. `codegraph-index init` detects this and adds `"env": { "DOTNET_ROOT": … }` to the `.mcp.json` entry; set the same variable in your shell to run `codegraph-index` by hand. `codegraph-mcp --version` is a quick check. |
 | The server will not start after an upgrade | A running `codegraph-mcp` held its files open during publish. Close Claude Code sessions and re-run the install script, or use `-Force` / `--force`. |
 | Server logs | stderr. Claude Code shows them under the MCP server's output. |
+
+---
+
+[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)

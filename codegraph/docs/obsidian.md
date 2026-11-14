@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · **Obsidian** · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · **Obsidian** · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
 
 ---
 
@@ -157,7 +157,7 @@ For a member, the panel has these tabs:
 
 ![The live panel shows the callers of GraphStore.Replace](images/obsidian-member-callers.png)
 
-![The Impact tab for GraphStore.Replace: 11 dependents and 33 tests that guard them](images/obsidian-member-impact.png)
+![The Impact tab for GraphStore.Replace: 12 dependents and 37 tests that guard them](images/obsidian-member-impact.png)
 
 ![The Tests tab for GraphStore.Replace: each test with its signature and source line](images/obsidian-member-tests.png)
 
@@ -231,7 +231,7 @@ codegraph-index ~/src/my-repo/App.sln --watch
 
 To index and export in one step, run **CodeGraph: Re-index repo and rebuild code notes**.
 
-The status bar shows the commit of the graph and its state, for example `CodeGraph 11986da · fresh`.
+The status bar shows the commit of the graph and its state, for example `CodeGraph 72822e6 · fresh`.
 If a source file is newer than the graph, the panel shows **Index is out of date**.
 Select **Re-index** to index the repository again.
 
