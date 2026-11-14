@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500" role="img" aria-labelledby="title desc">
 <title id="title">CodeGraph architecture</title>
-<desc id="desc">Extractors read the repository and write graph.db. The MCP server reads graph.db and talks to the client. The live daemon keeps the code loaded, re-indexes on save and answers live tools over a local pipe.</desc>
+<desc id="desc">Extractors read the repository and write graph.db. The MCP server loads graph.db into memory, answers from it and talks to the client. The live daemon keeps the code loaded, re-indexes on save and answers live tools over a local pipe.</desc>
 <style>
   .bg { fill: #ffffff; }
   text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
@@ -94,7 +94,7 @@
 <rect x="720" y="160" width="160" height="74" rx="8" class="a3"/>
 <text x="800.0" y="184.5" class="t" text-anchor="middle">codegraph-mcp</text>
 <text x="800.0" y="201.5" class="m" text-anchor="middle">35 read-only tools</text>
-<text x="800.0" y="218.5" class="m" text-anchor="middle">stdio MCP server</text>
+<text x="800.0" y="218.5" class="m" text-anchor="middle">graph held in memory</text>
 <rect x="720" y="44" width="160" height="60" rx="8" class="box"/>
 <text x="800.0" y="70.0" class="t" text-anchor="middle">Claude Code</text>
 <text x="800.0" y="87.0" class="m" text-anchor="middle">or another MCP client</text>

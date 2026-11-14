@@ -31,7 +31,7 @@
 | `codegraph-ts` | A Node.js extractor for TypeScript, JavaScript and Angular. The indexer starts it. |
 | SCIP indexers | External tools: scip-java, scip-go, rust-analyzer and scip-python. The indexer starts them and imports their output. |
 | `graph.db` | One DuckDB file for each worktree. It holds all languages. |
-| `codegraph-mcp` | The MCP server. It reads the graph and answers 35 tools over stdio. |
+| `codegraph-mcp` | The MCP server. It keeps a copy of the graph in memory and answers 35 tools over stdio. |
 | The live daemon | Keeps the code loaded. It indexes each save and answers the live tools over a local pipe. |
 | Language servers | typescript-language-server, jdtls, gopls, pyright or rust-analyzer. The live daemon uses them for languages other than C#. |
 | The Obsidian plugin | Runs the Obsidian export into a vault, and asks `codegraph-mcp` for its live panel. See [Obsidian](obsidian.md). |
@@ -40,7 +40,7 @@
 
 | Folder | Content |
 |---|---|
-| `src/CodeGraph.Core` | The model, the DuckDB store, the walks, the full-text and vector search, freshness, telemetry and the live protocol. |
+| `src/CodeGraph.Core` | The model, the DuckDB store, the in-memory graph and its walks, the full-text and vector search, freshness, telemetry and the live protocol. |
 | `src/CodeGraph.Indexer` | `codegraph-index`: the Roslyn extractor, the record and SCIP import, the export, the LSP bridge and the live daemon. |
 | `src/CodeGraph.Mcp` | `codegraph-mcp`: the MCP server and its tools. |
 | `src/CodeGraph.Web` | The graph viewer for `codegraph-mcp --web`. |
@@ -139,6 +139,9 @@ This check does not connect, so it takes microseconds when no live daemon runs.
 - **Swap, not edit.** A full index writes a new file and renames it over the old file. A reader never sees a half-written graph.
 - **One live daemon for each graph.** A second `--watch` on the same graph finds the first one and stops.
 - **Incremental writes.** An incremental index writes in one transaction and then runs a checkpoint.
+- **A copy in memory.** The server loads the graph into memory in the background. It loads it again when the
+  graph file changes. Until the new copy is loaded, calls use SQL on the file. The copy holds no lock on the
+  file, so it does not stop the indexer.
 
 ## Security and privacy
 
@@ -156,6 +159,7 @@ This check does not connect, so it takes microseconds when no live daemon runs.
 | Use the compiler of each language | A text search finds wrong matches and misses calls through interfaces and base classes. |
 | One DuckDB file for each worktree | One `.mcp.json` file serves all worktrees. Each worktree has its own graph. |
 | The graph is the system of record | Transitive questions are much faster on indexed edges than on a compiler. |
+| The server walks a copy in memory | DuckDB is made for scans, not for walks from node to node. A recursive SQL walk read the edge table again at each depth. The arrays in memory are 10 to 5,000 times faster, and the SQL stays as the reference for the tests. |
 | The live daemon is optional | The graph tools work without it. The live tools add positions, diagnostics and what-if compiles. |
 | Short walk answers | A large answer fills the context of the client. 200 rows and the counts are enough to decide. |
 | SCIP for breadth | One importer gives six languages. A language that needs more gets its own extractor, as TypeScript did. |

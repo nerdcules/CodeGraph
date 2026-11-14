@@ -80,6 +80,11 @@ var flushWait = TimeSpan.FromSeconds(8);
 // when the daemon is about to write.
 var anchor = new GraphAnchor(dbPath);
 
+// The graph in memory, as an IDE holds its symbols: walks follow arrays instead of running recursive SQL, and a
+// call that needs nothing else never opens the database. Loaded in the background at start and again after every
+// re-index; until it lands, calls read through DuckDB as before. CODEGRAPH_SNAPSHOT=off turns it off.
+var snapshots = new GraphSnapshotCache(dbPath, anchor, poll: GraphSnapshotCache.Enabled ? TimeSpan.FromSeconds(1) : null);
+
 // CODEGRAPH_DAEMON=auto: the first tool call starts a daemon when none runs; once per server process.
 var autoStart = LiveLauncher.AutoStart ? 1 : 0;
 
@@ -92,12 +97,10 @@ void AddGraph(IServiceCollection services)
     services.AddSingleton(live);
     services.AddSingleton(new SemanticSearch(EmbeddingSettings.FromEnvironment()));
     services.AddSingleton(anchor);
-    services.AddScoped(_ => anchor.Acquire());
-    services.AddScoped(sp =>
-    {
-        sp.GetRequiredService<GraphAnchor.Lease>(); // held until the call's scope ends, after the store is disposed
-        return GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(15));
-    });
+    services.AddSingleton(snapshots);
+    // The anchor lease is taken only if the call opens the database, and released with the store.
+    services.AddScoped(_ => GraphStore.OpenReader(
+        dbPath, GraphSnapshotCache.Enabled ? snapshots.Current : null, TimeSpan.FromSeconds(15), anchor.Acquire));
     services
         .AddMcpServer(options =>
         {

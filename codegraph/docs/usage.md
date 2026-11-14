@@ -265,6 +265,7 @@ codegraph-mcp [<graph.db>] [--web <port>]
 |---|---|
 | `CODEGRAPH_DB` | The graph file for the server. A path argument has priority. |
 | `CODEGRAPH_DAEMON=auto` | The server starts the live daemon on its first tool call. |
+| `CODEGRAPH_SNAPSHOT=off` | The server answers with SQL on the graph file, not from its copy in memory. |
 | `CODEGRAPH_LSP` | The language server command for the live tools, for example `jdtls -data /tmp/ws`. |
 | `CODEGRAPH_TS` | The path of the TypeScript extractor `cli.mjs`. |
 | `CODEGRAPH_EMBEDDINGS_URL` | An embeddings endpoint. It adds meaning-based search to `search_code`. |

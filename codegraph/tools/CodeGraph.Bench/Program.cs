@@ -4,14 +4,17 @@ using CodeGraph.Core;
 using CodeGraph.Core.Live;
 
 // Times what a tool call costs against a graph, as a markdown table for BENCHMARKS.md. Each figure is the median
-// of several runs after one warm-up, so a cold DuckDB page cache does not skew it. With --index <solution> and
+// of several runs after one warm-up, so a cold DuckDB page cache does not skew it. Every graph query is timed twice:
+// through DuckDB, and from the in-memory snapshot the server answers from. With --index <solution> and
 // --indexer <path-to-codegraph-index> it also times a full and a no-op incremental index and watches the file size.
 //
 //   codegraph-bench <graph.db> [--index <solution> --indexer <codegraph-index>] [--runs N] [--live]
+//                   [--parity N]        compare SQL and snapshot answers for N sampled nodes; exit 2 on a mismatch
+//                   [--server <dll>]    time tool calls through a codegraph-mcp server over stdio (repeatable)
 
 if (args.Length == 0)
 {
-    Console.Error.WriteLine("usage: codegraph-bench <graph.db> [--index <solution> --indexer <codegraph-index>] [--runs N] [--live]");
+    Console.Error.WriteLine("usage: codegraph-bench <graph.db> [--index <solution> --indexer <codegraph-index>] [--runs N] [--live] [--parity N] [--server <codegraph-mcp.dll>]...");
     return 1;
 }
 
@@ -20,6 +23,8 @@ string? solution = null;
 string? indexer = null;
 var runs = 7;
 var live = false;
+int? parity = null;
+var servers = new List<string>();
 for (var i = 1; i < args.Length; i++)
 {
     switch (args[i])
@@ -28,10 +33,24 @@ for (var i = 1; i < args.Length; i++)
         case "--indexer" when i + 1 < args.Length: indexer = Path.GetFullPath(args[++i]); break;
         case "--runs" when i + 1 < args.Length: runs = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
         case "--live": live = true; break;
+        case "--parity" when i + 1 < args.Length: parity = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
+        case "--server" when i + 1 < args.Length: servers.Add(args[++i]); break;
     }
 }
 
+if (parity is { } sample)
+{
+    return Parity.Run(dbPath, sample);
+}
+
+if (servers.Count > 0)
+{
+    await ServerBench.RunAsync(dbPath, servers, runs);
+    return 0;
+}
+
 var rows = new List<(string Label, string Value)>();
+var queries = new List<(string Label, string Database, string Memory)>();
 
 if (solution is not null && indexer is not null)
 {
@@ -58,32 +77,43 @@ rows.Add(("daemon probe when none runs", Median(() => probe.PingAsync().GetAwait
 
 using var store = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5));
 var (nodes, edges) = store.Count();
-rows.Insert(0, ("graph", $"{nodes} nodes, {edges} edges"));
+rows.Insert(0, ("graph", $"{nodes} nodes, {edges} edges, {Kilobytes(dbPath)}"));
+
+var heapBefore = GC.GetTotalMemory(forceFullCollection: true);
+var snapshot = store.LoadSnapshot();
+var heapAfter = GC.GetTotalMemory(forceFullCollection: true);
+rows.Add(("snapshot load (first, includes JIT)", Ms(snapshot.LoadTime.TotalMilliseconds)));
+rows.Add(("snapshot load", Median(() => store.LoadSnapshot(), count: Math.Min(runs, 3))));
+rows.Add(("snapshot managed memory", $"{(heapAfter - heapBefore) / 1024 / 1024:N0} MB"));
+using var memory = GraphStore.OpenReader(dbPath, snapshot, TimeSpan.FromSeconds(5));
+
+void Query(string label, Action<GraphStore> query) => queries.Add((label, Median(() => query(store)), Median(() => query(memory))));
+
 var hot = store.MostCalled(1, 1, 0).FirstOrDefault().Method?.Id;
 var anyTest = store.AllNodes(NodeKind.Method).FirstOrDefault(n => n.IsTest)?.Id;
 if (hot is not null)
 {
-    rows.Add(("get_node", Median(() => store.GetNode(hot))));
-    rows.Add(("callers_of depth 1 (most-called method)", Median(() => store.Callers(hot, 1))));
-    rows.Add(("impact_of depth 5", Median(() => store.Impact(hot, 5))));
-    rows.Add(("impact_of depth 20", Median(() => store.Impact(hot, 20))));
-    rows.Add(("covered_by depth 30", Median(() => store.TransitiveTests(hot, 30))));
-    rows.Add(("explain_reachability", Median(() => store.ExplainReachability(hot))));
-    rows.Add(("neighbors", Median(() => { store.EdgesFrom(hot); store.EdgesTo(hot); })));
-    rows.Add(("subgraph depth 2", Median(() => store.SubGraph(hot, GraphStore.AllEdgeKinds, 2))));
+    Query("get_node", s => s.GetNode(hot));
+    Query("callers_of depth 1 (most-called method)", s => s.Callers(hot, 1));
+    Query("impact_of depth 5", s => s.Impact(hot, 5));
+    Query("impact_of depth 20", s => s.Impact(hot, 20));
+    Query("covered_by depth 30", s => s.TransitiveTests(hot, 30));
+    Query("explain_reachability", s => s.ExplainReachability(hot));
+    Query("neighbors", s => { s.EdgesFrom(hot); s.EdgesTo(hot); });
+    Query("subgraph depth 2", s => s.SubGraph(hot, GraphStore.AllEdgeKinds, 2));
 }
 
 if (hot is not null && anyTest is not null)
 {
-    rows.Add(("path_between depth 10 (test → most-called)", Median(() => store.PathBetween(anyTest, hot, [nameof(EdgeKind.Calls)], 10))));
+    Query("path_between depth 10 (test → most-called)", s => s.PathBetween(anyTest, hot, [nameof(EdgeKind.Calls)], 10));
 }
 
-rows.Add(("find_symbol 'Dispose'", Median(() => store.FindSymbol("Dispose"))));
-rows.Add(("search_code 'open store read only'", Median(() => store.Search("open store read only"))));
-rows.Add(("most_called", Median(() => store.MostCalled(20, 1, 0))));
-rows.Add(("coverage_stats", Median(() => store.CoverageStats())));
-rows.Add(("uncovered", Median(() => store.UncoveredMethods())));
-rows.Add(("dead_code_report", Median(() => store.DeadCodeReport())));
+Query("find_symbol 'Dispose'", s => s.FindSymbol("Dispose"));
+Query("most_called", s => s.MostCalled(20, 1, 0));
+Query("coverage_stats", s => s.CoverageStats());
+Query("uncovered", s => s.UncoveredMethods());
+Query("dead_code_report", s => s.DeadCodeReport());
+rows.Add(("search_code 'open store read only' (database either way)", Median(() => store.Search("open store read only"))));
 var freshness = new IndexFreshness(dbPath, TimeSpan.Zero);
 rows.Add(("freshness check, cold", Median(() => new IndexFreshness(dbPath, TimeSpan.Zero).Check(), warmups: 0, count: 3)));
 rows.Add(("freshness check, warm", Median(() => freshness.Check())));
@@ -98,6 +128,14 @@ Console.WriteLine($"|---|---|");
 foreach (var (label, value) in rows)
 {
     Console.WriteLine($"| {label} | {value} |");
+}
+
+Console.WriteLine();
+Console.WriteLine("| query | DuckDB (recursive SQL) | in-memory snapshot |");
+Console.WriteLine("|---|---|---|");
+foreach (var (label, database, inMemory) in queries)
+{
+    Console.WriteLine($"| {label} | {database} | {inMemory} |");
 }
 
 return 0;

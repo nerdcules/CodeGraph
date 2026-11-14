@@ -52,10 +52,25 @@ public sealed class GraphAnchor : IDisposable
     }
 
     /// <summary>Marks a call in flight and makes sure the instance is loaded. Dispose the lease when the call ends.</summary>
-    public Lease Acquire()
+    public Lease Acquire() => AcquireCore(requireCurrent: false, open: true)!;
+
+    /// <summary>
+    /// A lease for the snapshot loader: null when this process may still be reading a file a full rebuild has
+    /// replaced, since a connection opened now would share that instance and read the old graph, and a snapshot read
+    /// from it would be served as the new one. The loader tries again once the other calls end. It does not open the
+    /// anchor either: a load follows every re-index, and an anchor held after it would stand in the next writer's way.
+    /// </summary>
+    public Lease? AcquireCurrent() => AcquireCore(requireCurrent: true, open: false);
+
+    private Lease? AcquireCore(bool requireCurrent, bool open)
     {
         lock (_lock)
         {
+            if (requireCurrent && _active > 0 && (_anchor is null || Stamp() != _openedStamp))
+            {
+                return null; // calls in flight may hold an instance of a file that has since been swapped
+            }
+
             _active++;
             _lastUse = DateTime.UtcNow;
             if (_anchor is not null && _active == 1 && Stamp() != _openedStamp)
@@ -63,7 +78,7 @@ public sealed class GraphAnchor : IDisposable
                 CloseAnchor(); // a full rebuild swapped the file; the held instance is reading the old one
             }
 
-            if (_anchor is null && !_releaseRequested && File.Exists(_dbPath))
+            if (open && _anchor is null && !_releaseRequested && File.Exists(_dbPath))
             {
                 try
                 {

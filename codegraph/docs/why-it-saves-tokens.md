@@ -56,7 +56,7 @@ note holds everything about a type.
 ## Keeping the graph current
 
 
-![Index: read, make records, write, swap. Query: tool call, check freshness, run SQL, answer](images/pipeline.svg)
+![Index: read, make records, write, swap. Query: tool call, check freshness, walk in memory, answer](images/pipeline.svg)
 
 - **Incremental.** Each file's hash is stored. A re-run re-walks only changed files and their
   dependents (callers, subclasses, referencers, tests), then merges the result into the graph in

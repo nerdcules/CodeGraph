@@ -85,6 +85,7 @@ codegraph-mcp [path-to-graph.db] [--web PORT]
 | `CODEGRAPH_INDEXER` | path of `codegraph-index` for `live_status start=true`, when it is not next to the server; see [Live daemon](#live-daemon) |
 | `CODEGRAPH_EMBEDDINGS_URL`, `CODEGRAPH_EMBEDDINGS_MODEL`, `CODEGRAPH_EMBEDDINGS_KEY` | an OpenAI-compatible embeddings endpoint for semantic search; set the same values for `codegraph-index`. See [Semantic search](#semantic-search) |
 | `CODEGRAPH_DAEMON=auto` | start the live daemon on the first tool call when none runs; it stops itself after 120 min unused |
+| `CODEGRAPH_SNAPSHOT=off` | answer every graph read with SQL on the file instead of from the in-memory graph; see [Concurrency](#concurrency) |
 
 ### What clients show for the server
 
@@ -329,7 +330,16 @@ reflect the working tree within one debounce of a save. [BENCHMARKS.md](BENCHMAR
 
 ## Concurrency
 
-DuckDB allows one writer or many readers per file. Each tool call opens its own read-only connection.
+The server answers graph reads (finds, walks, tests, coverage, dead code) from a snapshot of the graph held
+in memory: node records and adjacency arrays in both directions, loaded in the background when the server
+starts and again whenever the file's stamp changes (a re-index, an incremental write, a swap). A snapshot that
+does not match the file is never answered; until the new one has loaded, calls read through DuckDB as below,
+so a call is never slower than it was without snapshots. `index_status` says which is in use on its `reads`
+line. On Jellyfin (21,174 nodes) the snapshot loads in 0.3 s into 17 MB; `impact_of` at depth 20 went from
+0.86 s to under 10 ms through the server. `CODEGRAPH_SNAPSHOT=off` turns it off.
+
+DuckDB allows one writer or many readers per file. A tool call that needs the database (full-text search,
+vectors, metadata, or any read before the snapshot has loaded) opens its own read-only connection.
 Between calls the server keeps one extra read-only connection, the anchor, which keeps the database
 instance loaded so a call's open costs about 1 ms instead of 11. The anchor blocks a writer, so it lets
 go after 1.5 s without a call, after 10 s however busy the server is, and immediately when the daemon

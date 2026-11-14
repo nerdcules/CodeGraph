@@ -21,7 +21,7 @@
 
 ## Overview
 
-![Index: read, make records, write, swap. Query: tool call, check freshness, run SQL, answer](images/pipeline.svg)
+![Index: read, make records, write, swap. Query: tool call, check freshness, walk in memory, answer](images/pipeline.svg)
 
 CodeGraph has two paths:
 
@@ -114,12 +114,28 @@ For the other languages, each index reads the full workspace again.
 
 1. The client sends a tool call over stdio, for example `impact_of` with a node id.
 2. The server checks the freshness of the graph. See [Freshness](#freshness).
-3. The server runs a SQL query on the graph. A walk is a recursive query on indexed edges.
+3. The server walks the graph in memory. See [The graph in memory](#the-graph-in-memory).
 4. The server makes the answer short. A walk shows the nearest 200 rows and the counts for the rest.
 5. The server sends the answer as text.
 
-The server keeps the graph file open between calls.
-Thus a call does not pay the cost to open the file.
+## The graph in memory
+
+The server keeps a copy of the graph in memory, as an IDE keeps its symbols in memory.
+
+- The copy holds all nodes and edges. The edges of each node are in an array, in both directions.
+- A walk follows these arrays. Thus the time of a walk depends on the part of the graph that it reaches.
+  It does not depend on the size of the graph.
+- The server loads the copy when it starts. It loads the copy again after each index.
+  On Jellyfin (21,000 nodes), a load takes 0.3 s and uses 17 MB.
+- Until the copy is loaded, the server answers with SQL on the graph file, as before.
+  Thus a tool call is never slower than before.
+- `search_code` and the metadata still come from the graph file.
+- The graph file stays the system of record. The server never writes to it.
+- Set `CODEGRAPH_SNAPSHOT=off` to answer all tool calls with SQL.
+
+Before, each walk was a recursive SQL query, and each call opened the graph file.
+On Jellyfin, `impact_of` at depth 20 took 0.9 s. Now it takes less than 10 ms through the server.
+See [Performance](performance.md#tool-calls).
 
 ## Freshness
 

@@ -3,6 +3,25 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+### Faster reads
+
+- The MCP server and the web view hold the graph in memory (`GraphSnapshot`): node records and adjacency arrays
+  in both directions, loaded in the background at start and after every re-index. Finds, walks, tests, coverage,
+  dead code, paths and subgraphs answer from it; the database is opened only for full-text search, vectors and
+  metadata. Until a snapshot matching the file has loaded, calls read through DuckDB as before.
+  On Jellyfin (21,174 nodes), through the server at a model's pace: `impact_of` depth 20 from 860 ms to 9.7 ms,
+  `covered_by` depth 30 from 1,173 ms to 5.1 ms, `find_symbol` from 42 ms to 8.8 ms. `CODEGRAPH_SNAPSHOT=off`
+  turns it off; `index_status` says which path answers.
+- The recursive SQL stays as the reference: parity tests run every read both ways over random graphs, and
+  `codegraph-bench --parity N` does the same over a real graph (0 differences in 6,096 checks on Jellyfin).
+  SQL orderings now break ties by id, so both answer in one defined order.
+- The freshness check reads HEAD from `.git` (loose refs, `packed-refs`, linked worktrees) instead of starting
+  `git rev-parse` on most calls; it falls back to git for anything unusual, such as a reftable repository.
+- `codegraph-bench` times every query through DuckDB and from the snapshot, and with `--server` times real
+  tool calls through one or more `codegraph-mcp` builds over stdio.
+
 ## 1.0.0
 
 The first packaged release. Everything below was built between August and November 2026.

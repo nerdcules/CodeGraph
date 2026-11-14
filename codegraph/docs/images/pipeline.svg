@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 330" width="900" height="330" role="img" aria-labelledby="title desc">
 <title id="title">How a graph is built and queried</title>
-<desc id="desc">Top row: the indexer reads code with the compiler, makes records, and writes a new graph file. Bottom row: a tool call checks freshness, runs SQL and returns a short answer.</desc>
+<desc id="desc">Top row: the indexer reads code with the compiler, makes records, and writes a new graph file. Bottom row: a tool call checks freshness, walks the graph the server holds in memory and returns a short answer.</desc>
 <style>
   .bg { fill: #ffffff; }
   text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
@@ -78,9 +78,9 @@
 <text x="335.0" y="262.5" class="m" text-anchor="middle">compare file hashes</text>
 <path d="M212 241 H238" class="line" marker-end="url(#arrow)"/>
 <rect x="460" y="198" width="190" height="86" rx="8" class="a2"/>
-<text x="555.0" y="228.5" class="t" text-anchor="middle">3  Run SQL</text>
-<text x="555.0" y="245.5" class="m" text-anchor="middle">recursive walk on</text>
-<text x="555.0" y="262.5" class="m" text-anchor="middle">indexed edges</text>
+<text x="555.0" y="228.5" class="t" text-anchor="middle">3  Walk in memory</text>
+<text x="555.0" y="245.5" class="m" text-anchor="middle">edge arrays loaded once;</text>
+<text x="555.0" y="262.5" class="m" text-anchor="middle">SQL until they load</text>
 <path d="M432 241 H458" class="line" marker-end="url(#arrow)"/>
 <rect x="680" y="198" width="190" height="86" rx="8" class="a3"/>
 <text x="775.0" y="228.5" class="t" text-anchor="middle">4  Answer</text>
