@@ -47,6 +47,17 @@ The executables report their version with `--version`; the MCP server shows it t
   went from 32.3 to 51.0 MB, still rising; this build stays at 30–38 MB, with no trend. A no-op pass on Jellyfin
   now adds 2 MB instead of 47. After the passes, the graph equals a fresh full index in every table, on both
   repos. BENCHMARKS.md round 14 has the figures; `tools/CodeGraph.Bench/file-growth.sh` repeats them.
+- Windows 11, checked by a Claude Code session there (BENCHMARKS.md round 15): 425 tests passed, 3 skipped; graph
+  swaps under a reading server, install and uninstall in PowerShell 7 and 5.1, and the live daemon all worked.
+  It found four things, now fixed:
+  - With only a newer SDK installed (.NET 11), the indexer died with an unhandled MSBuildLocator exception. It now
+    says to install the .NET 10 SDK, or to set `DOTNET_ROLL_FORWARD=LatestMajor` for a build from source.
+  - A project whose NuGet packages were never restored, such as a fresh clone, indexed incompletely with no clear
+    warning when the framework still resolved. It now gets a note saying to run `dotnet restore`. A pass that
+    walks no file keeps the last walk's compile errors and notes instead of writing zeros over them.
+  - `resilience.py` runs on Windows (no `SIGKILL` there), and reads the node count after a stale-index warning.
+  - `uninstall.ps1` under Windows PowerShell 5.1 keeps the 2-space layout `init` writes, rather than rewriting
+    every line in 5.1's own layout.
 - The server accepts the id under the names models guess for it (`symbolId`, `nodeId`, `memberId`, and their
   snake-case forms, or `id` for the tools that take `symbol`). A Cursor agent passed `symbolId` to every tool, got
   only "An error occurred invoking", and answered without the graph.

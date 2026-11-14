@@ -4,7 +4,6 @@ using System.Runtime.CompilerServices;
 using CodeGraph.Core;
 using CodeGraph.Core.Live;
 using CodeGraph.Indexer;
-using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 
@@ -228,7 +227,12 @@ if (ScipIndexers.For(target) is { } scip)
 
 // MSBuildLocator must run before the JIT touches any Microsoft.CodeAnalysis.MSBuild type,
 // which is why the actual work lives in a separate, non-inlined method.
-MSBuildLocator.RegisterDefaults();
+if (MsBuildSetup.Register() is { } noMsBuild)
+{
+    Console.Error.WriteLine(noMsBuild);
+    return 1;
+}
+
 IndexOptions.AllTargets = allTargets;
 if (watch)
 {
@@ -547,6 +551,21 @@ static async Task IndexAsync(Solution solution, string target, string dbPath, bo
         [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.Unmapped)] = indexer.UnmappedSummary(),
         [MetaKeys.Language(Languages.CSharp, LanguageMetaKeys.IndexedAt)] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
     };
+
+    // The compile figures describe the files a pass walked. A pass that walked none has nothing to say, and
+    // writing its zeros would hide the errors (and the "not restored" note) the last walk found.
+    if (!full && walked == 0)
+    {
+        foreach (var key in new[]
+                 {
+                     LanguageMetaKeys.LanguageVersions, LanguageMetaKeys.CompileErrors, LanguageMetaKeys.LanguageVersionErrors,
+                     LanguageMetaKeys.FirstLanguageVersionError, LanguageMetaKeys.FirstCompileError, LanguageMetaKeys.Notes,
+                     LanguageMetaKeys.Unmapped,
+                 })
+        {
+            meta.Remove(MetaKeys.Language(Languages.CSharp, key));
+        }
+    }
 
     IReadOnlyList<NodeEmbedding>? embeddings = null;
     if (embeddingSettings is not null)

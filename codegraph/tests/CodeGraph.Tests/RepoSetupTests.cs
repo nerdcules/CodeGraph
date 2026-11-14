@@ -337,6 +337,32 @@ public sealed class FirstIndexTests : IDisposable
         Assert.NotNull(store.GetNode("M:Lib.Calc.Add(System.Int32,System.Int32)"));
     }
 
+    [Fact]
+    public async Task A_pass_that_walks_no_file_keeps_the_compile_errors_the_last_walk_found()
+    {
+        var project = WriteLibrary();
+        File.WriteAllText(Path.Combine(_repo, "Broken.cs"), "namespace Lib; class Broken { Missing.Type? Field; }");
+        var db = Path.Combine(_repo, ".codegraph", "graph.db");
+        var errors = CodeGraph.Core.MetaKeys.Language(CodeGraph.Core.Languages.CSharp, CodeGraph.Core.LanguageMetaKeys.CompileErrors);
+        var notes = CodeGraph.Core.MetaKeys.Language(CodeGraph.Core.Languages.CSharp, CodeGraph.Core.LanguageMetaKeys.Notes);
+        IReadOnlyDictionary<string, string> Meta()
+        {
+            using var store = CodeGraph.Core.GraphStore.Open(db, readOnly: true, TimeSpan.FromSeconds(5));
+            return store.ReadMeta();
+        }
+
+        var (code, log) = await RunIndexer(project, "--full");
+        Assert.True(code == 0, log);
+        var afterWalk = Meta();
+        Assert.NotEqual("0", afterWalk[errors]);
+
+        (code, log) = await RunIndexer(project);
+        Assert.True(code == 0, log);
+        Assert.Contains("0 file(s) walked", log);
+        Assert.Equal(afterWalk[errors], Meta()[errors]);
+        Assert.Equal(afterWalk[notes], Meta()[notes]);
+    }
+
     private string WriteLibrary()
     {
         Directory.CreateDirectory(Path.Combine(_repo, ".git"));

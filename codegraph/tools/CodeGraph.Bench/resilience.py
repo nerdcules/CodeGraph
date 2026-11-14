@@ -5,7 +5,7 @@
 <repo template> is a copy of this repository with its graph built (.codegraph/graph.db), so the scenarios can name
 its files and members. Each scenario works on its own copy under <work dir> and prints PASS or FAIL with what it
 saw. Set DOTNET_ROOT when the executables are framework-dependent."""
-import json, os, random, shutil, signal, statistics, subprocess, sys, threading, time
+import json, os, random, re, shutil, signal, statistics, subprocess, sys, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcpclient import Client
@@ -35,7 +35,13 @@ def index(d, *extra, timeout=300):
 
 
 def nodes(text):
-    return text.split(" nodes")[0].strip() if " nodes" in text else None
+    """The node count of a graph_stats answer, past a "⚠ STALE INDEX" warning line if one comes first."""
+    m = re.search(r"(\d+) nodes", text or "")
+    return m.group(1) if m else None
+
+
+# A hard kill, like kill -9. Windows has no SIGKILL; there os.kill with SIGTERM calls TerminateProcess.
+HARD_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 
 # R1: a server started before any graph exists answers with guidance, then serves the graph once it is built.
@@ -81,7 +87,7 @@ for mode, delay in [("full", 2), ("full", 9), ("full", 13), ("full", 14.5), ("fu
     time.sleep(delay)
     finished = p.poll() is not None
     if not finished:
-        p.send_signal(signal.SIGKILL)
+        p.kill()
     p.wait()
     c = Client(MCP, d); t, e, _ = c.call("graph_stats"); c.close()
     outcomes.append((mode, delay, "finished first" if finished else "killed", nodes(t), e))
@@ -101,7 +107,7 @@ def reader(k):
             t, e, ms = c.call(tool, **args)
             with lock:
                 lat.append(ms)
-                if e: errs.append(f"{tool}: {t[:80]}")
+                if e: errs.append(f"{tool}: {t}")  # whole text: a stale banner can come before the error itself
                 if tool == "graph_stats" and nodes(t): counts.add(nodes(t))
     c.close()
 threads = [threading.Thread(target=reader, args=(k,)) for k in range(8)]
@@ -117,7 +123,7 @@ stop.set(); [t.join() for t in threads]
 c = Client(MCP, d); seen = c.call("find_symbol", query="Probe2", nameMatch="Exact")[0]; c.close()
 lat.sort()
 report("R4 8 readers during 3 full + 3 incremental writes", not errs and all(w == 0 for w in writes) and "Probe2" in seen,
-       f"{len(lat)} calls, {len(errs)} errors {errs[:2]}; writer exits {writes}; latency p50 {lat[len(lat)//2]:.1f} ms, "
+       f"{len(lat)} calls, {len(errs)} errors {[x[:400] for x in errs[:3]]}; writer exits {writes}; latency p50 {lat[len(lat)//2]:.1f} ms, "
        f"p99 {lat[int(len(lat)*.99)]:.1f} ms, max {lat[-1]:.0f} ms; node counts seen {sorted(counts)}; new method visible after: {'Probe2' in seen}")
 
 # R5: malformed requests must each get an answer, and the server must keep serving.
@@ -158,7 +164,7 @@ while time.time() < deadline:
     if "running" in status and "loading" not in status: break
     time.sleep(2)
 pid = int(status.split("pid ")[1].split(")")[0]) if "pid " in status else None
-if pid: os.kill(pid, signal.SIGKILL)
+if pid: os.kill(pid, HARD_KILL)
 time.sleep(1)
 after_kill = c.call("live_status")[0].splitlines()[0]
 graph_ok = nodes(c.call("graph_stats")[0])

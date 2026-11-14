@@ -774,6 +774,67 @@ search terms.
 graph into a 23.0 MB file in 0.54 s, with every index and key. Now that the file no longer grows, it is not worth
 swapping the file under the readers for that.
 
+## Round 15: Windows
+
+On 2026-11-14 a Claude Code session on Windows 11 Pro (10.0.26300, x64) ran the branch at `2d13546`. It used the
+.NET 10.0.404 SDK, PowerShell 7.7.0 and Windows PowerShell 5.1, and Python 3.14.7. That session's report is
+`windows-report.md` on the `windows-test-results` branch, and these figures come from it. Its raw logs stayed on
+that machine.
+
+| check | result |
+|---|---|
+| test suite | 425 passed, 0 failed, 3 skipped: two need the TypeScript extractor's npm packages, which were not installed yet, and one uses a shell-script stand-in for a SCIP indexer |
+| full index of this repo, 2 runs | 3,207 nodes, 19,577 edges, 13.8–14.7 s (17.0–18.2 s wall), 20.3–20.5 MB |
+| no-op index | 0.2 s (3.3 s wall), file 22.3 MB |
+| 3 full indexes while a server answered `codegraph-bench --server` | all 3 finished (13.5–13.8 s each); no "access denied", "in use" or IOException text anywhere; the bench answered every call, 0.53–2.8 ms after its first, the same as with no index running (0.56–2.4 ms) |
+| `install.ps1 -FromSource -Client copilot,cursor,roo`, in pwsh 7 and in 5.1 | exit 0 in both; the 6 config files were byte-identical after each; VS Code and Cursor got `--root ${workspaceFolder}`, Visual Studio (`.vs\mcp.json` beside the solution) and JetBrains (`.github\mcp.json`) got the absolute root |
+| one stdio call from the set-up repo | initialize 426 ms, `graph_stats` 58 ms |
+| live daemon, one method added to `Worktree.cs` | 10 files walked in 4.1 s; the new graph was ready 4.6 s after the save; `find_symbol` 105 ms for the first call, 4 ms for the second |
+| `uninstall.ps1`, in pwsh 7 and in 5.1 | all 6 entries removed; another server and another key added to each file were kept |
+| resilience battery | 11 of 12 after a stand-in for `SIGKILL` (below); R4: 424,812 calls from 8 servers during 6 writes, 0 errors, p99 6.9 ms |
+
+The same commit indexed on Linux after a `dotnet restore` gives the same 3,207 nodes and 19,577 edges. The 3,170
+nodes in rounds 13 and 14 came from an older copy of the repo.
+
+**What it found, and what changed:**
+
+- **The indexer crashed when the only SDK installed was a newer one.** With the .NET 11.0.100 SDK alone, every
+  index died at once with exit -532462766, an unhandled "No instances of MSBuild could be detected". The indexer
+  runs on .NET 10, and MSBuildLocator only offers an SDK that the running runtime can load. Now it stops with exit 1
+  and says what to install: the .NET 10 SDK. A build from source can also set `DOTNET_ROLL_FORWARD=LatestMajor`;
+  on Windows, with that set, the tests passed (425) and the index counts were the same. Installing SDK 10.0.404
+  also cured it.
+- **A clone whose packages were never restored indexed incompletely, with no clear warning.** The fresh clone gave
+  2,951 nodes and 17,155 edges with 1,168 compile errors (the first was `CS0246 … 'DuckDB'`), and nothing said why.
+  The next no-op passes then reported 0 compile errors, because a pass that walks no file wrote zeros over the
+  figures. On Linux the same unrestored commit gives 2,316 nodes, and its first error is CS0518 "System.Object is not
+  defined", the case the existing "not restored" note covers. Now:
+  - a project with missing-type errors (CS0246, CS0234) and no `obj/project.assets.json` gets the note "its NuGet
+    packages were not restored … Run dotnet restore and index again", even when the framework resolves;
+  - a pass that walks no file keeps the compile figures and notes of the last walk.
+- **The resilience script did not run on Windows.** `signal.SIGKILL` does not exist there, so it stopped at R3. The
+  Windows session ran it through a shim that maps `SIGKILL` to `SIGTERM`, which calls `TerminateProcess` on
+  Windows, the same hard kill. With the shim, R3 still failed, but every graph after a kill was whole: the answer
+  began with "⚠ STALE INDEX", and the script read that warning as part of the node count. The script now kills
+  with `Popen.kill()` (or `SIGTERM` where there is no `SIGKILL`), and it reads the count past the warning.
+- **Uninstall under Windows PowerShell 5.1 rewrote each config file in 5.1's own layout.** The content was the
+  same, but the layout made every line show as changed. `uninstall.ps1` now lays the JSON out as `init` writes it,
+  2 spaces a level, and it turns 5.1's `\u003c`-style escapes back into the characters. Checked in pwsh on
+  Linux against 5.1's layout as the report quotes it: content and layout come out the same, and running it twice
+  changes nothing.
+
+None of the four changes has been run on Windows yet. The SDK message and the restore note have 8 new tests here
+(436 in all, all passing). One of them runs a pass that walks no file: without the change, it read 0 compile
+errors where the walk had found 25. The script and the uninstall change were checked as described above.
+
+**The battery on Linux with the changed script**, this build. R3 now passes: 8 kills, 5 during full indexes and 3
+during incremental ones, the graph whole (3,170 nodes) after each. 11 of 12 passed. R4 had 8 errors in 891,861 calls; each answer began with the "⚠ STALE
+INDEX" banner, and the script kept only its first 80 characters, so the error itself was lost. Run alone three
+more times, R4 passed each time with 0 errors in 853,764–904,146 calls. The slowest call took 8.6–14.1 s, against
+673 ms in round 13. Other sessions held the load average at 20–31 on 8 cores during those runs, against 1.3–4 in
+round 13, so these runs cannot say whether anything got slower. The cause of the 8 errors is open. The script now
+keeps each error's whole text.
+
 ## Where it ended up
 
 This repo's own graph, first baseline against the build before round 11 and the build after it, same machine and

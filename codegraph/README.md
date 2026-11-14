@@ -25,7 +25,7 @@ faster and cheaper with it; Codex, the Copilot CLI and Cursor were not
 ([measured](docs/why-it-saves-tokens.md#four-assistants-with-and-without)).
 
 - Precision and recall of 100% on generated codebases in eight languages, on current toolchains and on 2023-era ones, bar one old rust-analyzer at 87% call recall ([benchmarks](BENCHMARKS.md))
-- 428 tests, run on Linux, macOS and Windows on every push
+- 436 tests, run on Linux, macOS and Windows on every push
 - Prebuilt for six platforms, nothing to compile ([releases](https://github.com/nerdcules/CodeGraph/releases/latest))
 
 Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the TypeScript compiler; Java,

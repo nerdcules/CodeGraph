@@ -34,7 +34,7 @@ You must have these items for the languages that you index:
 | Item | Version | Necessary for |
 |---|---|---|
 | git | any | All languages. The indexer finds the worktree root with git. |
-| .NET SDK | the one that your projects build with | C#. MSBuild loads the projects, so the SDK must be there, as for `dotnet build`. |
+| .NET SDK | the one that your projects build with, 10 or older | C#. MSBuild loads the projects, so the SDK must be there, as for `dotnet build`. The indexer runs on .NET 10 and cannot load a newer SDK: with only the .NET 11 SDK installed, it stops and says to install the .NET 10 SDK beside it. |
 | Node.js | 22.22 or later | TypeScript, JavaScript and Angular. |
 | A language indexer | see below | Java, Kotlin, Scala, Go, Rust and Python. |
 
@@ -426,6 +426,8 @@ Give `--yes` or `-Yes` to remove without questions.
 | The tools say "no code graph at ...". | The repository has no graph yet. | Run `codegraph-index init` in the repository. |
 | The indexer says "scip-java is not on PATH". | The language indexer is not installed. | Install the indexer from the table in [Install the language tools](#install-the-language-tools). |
 | The indexer reports hundreds of errors on a C# project. | The SDK that the project builds with is not installed, or the project is not restored. | Install that SDK, run `dotnet restore`, and index again. `index_status` shows the first error. |
+| The indexer says "its NuGet packages were not restored". | The repository was never restored, for example a fresh clone, so every call into a package is missing from the graph. | Run `dotnet restore` (or build once), then index again with `--full`. |
+| The indexer says it "cannot load the solution: it runs on .NET 10 and needs a .NET SDK no newer than 10". | Only a newer SDK, such as .NET 11, is installed. | Install the .NET 10 SDK beside it. A build from source can also run with `DOTNET_ROLL_FORWARD=LatestMajor`. |
 | The install script stops with "in use". | `codegraph-mcp` runs. | Close the sessions, or give `--force`. |
 | macOS says the program is damaged or cannot be opened. | The archive came from a browser and is quarantined. | Run `xattr -dr com.apple.quarantine` on the install folder, or install with the script. |
 | The server does not start in the client after a source build. | The client cannot find .NET. | Run `codegraph-index init` again. It adds `DOTNET_ROOT` when necessary. A release build does not need .NET. |
