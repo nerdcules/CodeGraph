@@ -322,7 +322,7 @@ Lifecycle:
   150 ms timeout on it and then remembers it as dead for 3 s.
 - **Idle exit.** `--idle-exit <minutes>` stops it after that long with no save and no live request. The server
   pings before every tool call, so a session in use keeps its daemon. Daemons the server starts use 120 min.
-- **Memory.** `live_status` shows the working set and managed heap; this repo's daemon uses about 220 MB.
+- **Memory.** `live_status` shows the working set and managed heap; this repo's daemon uses about 380 MB.
 
 The server falls back to graph-only answers with `STALE` marks whenever no daemon is running.
 

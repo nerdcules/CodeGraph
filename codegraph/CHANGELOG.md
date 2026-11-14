@@ -24,6 +24,23 @@ The executables report their version with `--version`; the MCP server shows it t
 - `codegraph-bench` times every query through DuckDB and from the snapshot, and with `--server` times real
   tool calls through one or more `codegraph-mcp` builds over stdio.
 
+### Docs
+
+- Every figure re-measured on 14 November 2026 ([BENCHMARKS.md](BENCHMARKS.md), round 12): this repo is now
+  3,119 nodes and 405 tests, the README's question answers 12 dependents and 37 tests in about 3 ms, and costs
+  about 5,500 tokens against about 123,000. A save reaches a fresh answer in about a second on this repo, not
+  "well under a second" as the docs said: the graph doubled since that was measured.
+- New Obsidian screenshots; redrawn live-daemon and index-time charts; an install diagram that shows the release
+  download rather than the build from source; a corpus chart that no longer cuts off the Rust line. Jellyfin,
+  NestJS, RealWorld and the corpus's large profile were measured again for the performance page.
+- `tools/corpus/run.py` mounts whichever of `GOBIN` and `GOPATH/bin` holds scip-go. Under mise, `GOBIN` is Go's own
+  bin and every Go run failed with "scip-go is not on PATH".
+- `tools/obsidian-e2e/screenshots.py` approves the repo's `.mcp.json` entry, as `run_e2e.sh` does. Without it
+  every panel in the screenshots said `spawn codegraph-mcp ENOENT` and the run stopped at Find symbol.
+- The promo video shows the new figures. Its two sessions were run again headless (`claude -p`, Claude Opus 5.5, effort
+  high, Auto mode) and are replayed from their transcripts: with CodeGraph, 42 s, 4 API calls, 180,134 tokens processed and
+  exactly 37 tests; without, 87 s, 9 calls, 459,907 tokens and "about 40". The README's GIF is the first of them.
+
 ## 1.0.0
 
 The first packaged release. Everything below was built between August and November 2026.

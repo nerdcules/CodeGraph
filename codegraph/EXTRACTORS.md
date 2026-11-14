@@ -133,8 +133,8 @@ driving a language server over LSP, so the MCP server needs no change.
 
 Servers push diagnostics with no "done" signal, so `check_change` waits for every watched file to report and go
 quiet. Otherwise it waits three times the server's measured report latency, because a file that stays clean may
-get no report at all. With typescript-language-server, an edit that introduces errors answers in about a second.
-A clean edit takes about two.
+get no report at all. With typescript-language-server on the RealWorld Angular app (47 files), an edit that adds an
+error to a file with one dependent answers in 3.5 to 4.8 s, and a clean edit in 2.5 to 2.8 s.
 
 `CODEGRAPH_LSP` overrides the server command for any language, for example `jdtls -data /tmp/ws`.
 

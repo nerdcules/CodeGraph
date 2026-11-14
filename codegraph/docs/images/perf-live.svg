@@ -51,36 +51,36 @@
 <line x1="230.0" y1="48" x2="230.0" y2="304" class="grid"/>
 <text x="230.0" y="320" class="m" text-anchor="middle">0 ms</text>
 <line x1="375.0" y1="48" x2="375.0" y2="304" class="grid"/>
-<text x="375.0" y="320" class="m" text-anchor="middle">100 ms</text>
+<text x="375.0" y="320" class="m" text-anchor="middle">300 ms</text>
 <line x1="520.0" y1="48" x2="520.0" y2="304" class="grid"/>
-<text x="520.0" y="320" class="m" text-anchor="middle">200 ms</text>
+<text x="520.0" y="320" class="m" text-anchor="middle">600 ms</text>
 <line x1="665.0" y1="48" x2="665.0" y2="304" class="grid"/>
-<text x="665.0" y="320" class="m" text-anchor="middle">300 ms</text>
+<text x="665.0" y="320" class="m" text-anchor="middle">900 ms</text>
 <line x1="810.0" y1="48" x2="810.0" y2="304" class="grid"/>
-<text x="810.0" y="320" class="m" text-anchor="middle">400 ms</text>
+<text x="810.0" y="320" class="m" text-anchor="middle">1,200 ms</text>
 <text x="218" y="67" class="" text-anchor="end">ping</text>
 <text x="218" y="80" class="m" text-anchor="end">pipe round trip</text>
 <rect x="230" y="54" width="2.0" height="22" rx="4" class="bar4"/>
-<text x="238.29" y="70" class="m" text-anchor="start">0.2 ms</text>
+<text x="240.0" y="70" class="m" text-anchor="start">0.3 ms</text>
 <text x="218" y="107" class="" text-anchor="end">symbol_at</text>
 <text x="218" y="120" class="m" text-anchor="end">declaration line</text>
 <rect x="230" y="94" width="2.0" height="22" rx="4" class="bar4"/>
-<text x="238.435" y="110" class="m" text-anchor="start">0.3 ms</text>
+<text x="240.0" y="110" class="m" text-anchor="start">0.3 ms</text>
 <text x="218" y="147" class="" text-anchor="end">diagnostics</text>
 <text x="218" y="160" class="m" text-anchor="end">one file</text>
 <rect x="230" y="134" width="2.0" height="22" rx="4" class="bar4"/>
-<text x="238.58" y="150" class="m" text-anchor="start">0.4 ms</text>
+<text x="240.0" y="150" class="m" text-anchor="start">0.4 ms</text>
 <text x="218" y="187" class="" text-anchor="end">live_references</text>
 <text x="218" y="200" class="m" text-anchor="end">most-called method</text>
-<rect x="230" y="174" width="10.2" height="22" rx="4" class="bar4"/>
-<text x="248.15" y="190" class="m" text-anchor="start">7 ms</text>
+<rect x="230" y="174" width="2.9" height="22" rx="4" class="bar4"/>
+<text x="240.9" y="190" class="m" text-anchor="start">6 ms</text>
 <text x="218" y="227" class="" text-anchor="end">diagnostics</text>
 <text x="218" y="240" class="m" text-anchor="end">whole solution</text>
-<rect x="230" y="214" width="42.0" height="22" rx="4" class="bar4"/>
-<text x="280.05" y="230" class="m" text-anchor="start">29 ms</text>
+<rect x="230" y="214" width="50.3" height="22" rx="4" class="bar4"/>
+<text x="288.3" y="230" class="m" text-anchor="start">104 ms</text>
 <text x="218" y="267" class="" text-anchor="end">check_change</text>
 <text x="218" y="280" class="m" text-anchor="end">edited file</text>
-<rect x="230" y="254" width="558.2" height="22" rx="4" class="bar4"/>
-<text x="796.25" y="270" class="m" text-anchor="start">385 ms</text>
-<text x="20" y="342" class="m" text-anchor="start">Upper end of the range over two runs. check_change compiles the file&#x27;s project and every dependent.</text>
+<rect x="230" y="254" width="581.9" height="22" rx="4" class="bar4"/>
+<text x="819.9" y="270" class="m" text-anchor="start">1,204 ms</text>
+<text x="20" y="342" class="m" text-anchor="start">Upper end of the range over three runs, 14 November 2026. check_change compiles the file&#x27;s project and every dependent.</text>
 </svg>

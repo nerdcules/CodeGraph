@@ -6,6 +6,10 @@ which tests guard it.**
 [![CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml/badge.svg)](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/nerdcules/CodeGraph?label=release)](https://github.com/nerdcules/CodeGraph/releases/latest)
 
+[![A real Claude Code session on 14 November 2026, replayed from its transcript: asked what breaks if GraphStore.Replace changes, Claude calls find_symbol, impact_of, tests_for and snippet, and answers that 37 tests guard it, in 42 seconds](codegraph/docs/images/promo-answer.gif)](codegraph-promo.mp4)
+
+*A real session, replayed from its transcript. Click for the video with sound: the same question with CodeGraph on (42 s, exactly 37 tests) and off (87 s, "about 40").*
+
 It reads a codebase with its compiler (C#, TypeScript and Angular, Java, Go, Rust, Python), stores
 what it finds as a graph, and serves that graph to Claude Code as MCP tools. One question costs one
 tool call instead of twenty file reads. An optional Obsidian plugin shows the same graph to people as

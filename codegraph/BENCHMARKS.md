@@ -555,6 +555,74 @@ re-index, but with the load in the background and reads falling back to DuckDB m
 never sits in front of a call. It is worth revisiting for graphs whose load takes seconds. Keeping the anchor open
 longer is no longer needed either: graph reads do not open the database.
 
+## Round 12: the docs re-measured
+
+Measured 2026-11-14 at `72822e6` (Release, Linux x64, 8 cores, no container) to bring the docs up to date. No code
+changed in this round; the graph did. This repo is now 3,119 nodes and 18,685 edges, up from 1,583 and 8,784 when
+most of the docs were written, and the test suite is 405 tests.
+
+| measurement | value |
+|---|---|
+| graph file, after a full index and after 3 more rebuilds | 20,236 KB, 20,748 KB |
+| full index, wall clock (the indexer's own figure) | 16.2–16.3 s (13.6–14.4 s) |
+| no-op incremental index, wall clock | 2.6–2.7 s |
+| snapshot load, managed memory | 43 ms, 2 MB |
+| live daemon resident memory, solution loaded | about 380 MB |
+
+**The README's question**, "what breaks if I change `GraphStore.Replace`, and which tests cover it?", through
+`codegraph-mcp` over stdio, 11 calls 2 s apart: `find_symbol` 1.5 ms, `impact_of` depth 5 1.8 ms, `snippet` 1.9 ms
+(medians; in two earlier sessions with the machine busy, `impact_of` was 2.4 and 8.0 ms). The answer is now 12
+dependents and 37 guarding tests. What enters the context, at 4 characters a token:
+
+| route | size |
+|---|---|
+| `find_symbol`, `impact_of`, `snippet` | 1,640 + 15,704 + 4,566 = 21,910 characters, about 5,500 tokens |
+| the 15 files those answers name | 258,628 characters, about 65,000 tokens |
+| the 25 files in `src/` and `tests/` that match `.Replace(` | 491,682 characters, about 123,000 tokens |
+
+**Tool calls through the server**, `codegraph-bench --server`, back to back / 2 s apart: first call after start
+67 ms; `graph_stats` 0.37 / 1.2 ms; `find_symbol 'Dispose'` 1.1 / 1.7 ms; `callers_of` depth 1 1.1 / 1.7 ms;
+`impact_of` depth 5 1.1 / 1.9 ms; depth 20 1.7 / 3.5 ms; `covered_by` depth 30 1.4 / 1.4 ms. The store queries
+from memory stay under 0.8 ms (`subgraph` depth 2 is the largest); through DuckDB they are 1.2 to 28 ms.
+
+**Live daemon**, `--live`, three runs (a fresh daemon, the same one warm, another fresh one):
+
+| measurement | value |
+|---|---|
+| live ping (pipe round trip) | 0.22–0.26 ms |
+| live flush when idle | 0.16–0.21 ms |
+| live symbol_at (declaration line) | 0.28–0.29 ms |
+| live references, source symbol (most-called) | 5.0–6.0 ms |
+| live references, metadata symbol (System.IO.File) | 8.4–15 ms |
+| live diagnostics, one file | 0.25–0.39 ms |
+| live diagnostics, whole solution | 50–104 ms |
+| live data_flow (most-called method with parameters) | 0.4–1.8 ms |
+| live check_change, unchanged file | 302–735 ms |
+| live check_change, edited file | 315–1,204 ms |
+| check_change renaming `GraphStore.Replace` (6 projects compile against it) | 0.97–1.09 s, 0 errors before, 42 after |
+| save → fresh `find_symbol` answer through the server, a file 2 others depend on (3 walked) | 0.90–0.96 s |
+| the same, `Worktree.cs` (10 walked) | 1.14–1.29 s |
+
+**Other graphs, re-checked the same day.**
+
+- Jellyfin through the server, calls 2 s apart (round 11's chart): `graph_stats` 4.0 ms, `find_symbol` 7.4 ms,
+  `callers_of` 2.5 ms, `impact_of` depth 5 8.5 ms, depth 20 10 ms, `covered_by` 6.1 ms. Round 11 had 1.4, 8.8, 2.2,
+  7.8, 9.7 and 5.1 ms: within run-to-run noise, so its chart stands. A full index: 44.3 and 45.3 s (was 47 s).
+- NestJS at `4410584` (2026-11-13), no npm install: 1,180 files, 11,228 nodes, 30,062 edges in 7.7–7.8 s, 43 MB.
+  Store queries 2.7–174 ms through DuckDB, under 1.3 ms from memory (`find_symbol` and `most_called` the largest).
+- RealWorld Angular at `d426ec8`, npm packages installed: 670 nodes, 2,503 edges in 2.8–2.9 s, as in round 9. Live,
+  through `--watch` (typescript-language-server ready in 4.9 s), two runs: ping 0.46 ms, symbol_at 16–17 ms, references
+  129–131 ms, diagnostics one file 0.16–0.18 ms, whole workspace 14–16 ms, `check_change` on a clean edit 2.5–2.8 s.
+  Through the server, an edit that adds an error to `auth.component.ts` (one dependent): 3.5–4.8 s.
+- The corpus's large profile, seeds 1 and 2, modern dialect, 2 CPUs per container, 2 at a time: every language in
+  full. Index seconds for the larger seed: JavaScript 4.24, TypeScript 6.14, Angular 8.44, Rust 12.32, C# 12.59,
+  Python 13.35, Java 16.51, Go 18.16 (`docs/images/perf-index.svg`, redrawn). Go needed a fix to `run.py`: under mise,
+  `GOBIN` is Go's own bin, so the runner now mounts whichever of `GOBIN` and `GOPATH/bin` holds scip-go.
+
+The save-to-answer time was 0.64 s on 2026-11-09, with 687 nodes. It is about a second now, and the indexer at
+`aa01b14`, before the snapshot, takes the same 0.97–1.07 s on today's graph, so the change is the graph's size,
+not round 11. The docs said "well under a second"; they now say "about a second".
+
 ## Where it ended up
 
 This repo's own graph, first baseline against the build before round 11 and the build after it, same machine and
@@ -563,9 +631,9 @@ method. The graph grew 5 times over the work: the repo grew, and framework calls
 | measurement | first baseline | before round 11 | with the graph in memory |
 |---|---|---|---|
 | graph | 595 nodes, 3,558 edges | 1,583 nodes, 8,784 edges | 2,885 nodes, 16,955 edges |
-| full index | 11.5 s | 10.5 s | |
-| no-op incremental index | 3.5 s | 2.5 s | |
-| graph file after 3 more full rebuilds | 15,884 KB (and growing) | 12,556 KB (flat) | |
+| full index | 11.5 s | 10.5 s | 16.2 s (3,119 nodes, 18,685 edges, round 12) |
+| no-op incremental index | 3.5 s | 2.5 s | 2.6 s |
+| graph file after 3 more full rebuilds | 15,884 KB (and growing) | 12,556 KB (flat) | 20,748 KB (flat) |
 | open per tool call | 11 ms | 0.024 ms while the anchor holds the graph | none for graph reads |
 | impact_of depth 20 (store) | 7.9 ms | 8.6 ms | 0.067 ms |
 | path_between depth 10 (store) | 11 ms | 3.9 ms | 0.006 ms |

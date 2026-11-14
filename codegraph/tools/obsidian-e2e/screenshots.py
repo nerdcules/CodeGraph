@@ -32,8 +32,12 @@ chmod +x "$HOME/bin/codegraph-index"
 export PATH="$HOME/bin:$PATH"
 cp -r /opt/codegraph/obsidian-plugin "$HOME/plugin-src"
 node "$HOME/plugin-src/install-plugin.mjs" "$vault" > /dev/null
+# Approve the repo's .mcp.json entry up front, as a user does in the plugin's dialog. Without that the plugin
+# falls back to ~/.codegraph/bin and PATH, which the container does not have, and every panel says ENOENT.
+approved=$(node -e 'const c = require(process.argv[1]); console.log(c.fingerprint(c.readMcpEntry(process.argv[2])))' \
+  "$HOME/plugin-src/lib/config.js" "$ROOT")
 cat > "$vault/.obsidian/plugins/codegraph/data.json" <<EOF
-{ "repoRoot": "$ROOT", "folder": "_code", "autoRefresh": true, "depth": 1 }
+{ "repoRoot": "$ROOT", "folder": "_code", "autoRefresh": true, "depth": 1, "approvedRepoConfig": { "$ROOT": "$approved" } }
 EOF
 echo '["codegraph"]' > "$vault/.obsidian/community-plugins.json"
 echo '{ "theme": "obsidian", "baseFontSize": 15 }' > "$vault/.obsidian/appearance.json"

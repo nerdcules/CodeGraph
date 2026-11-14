@@ -133,7 +133,7 @@ def results_svg(results: list[dict]) -> str:
     toolchains = sorted({tc for (_, tc, _) in runs}, key=lambda tc: (tc != "standard", tc))
     langs = [(lang, name) for lang, name in LANGUAGES if any(k[0] == lang for k in runs)]
     dialects = [d for d in ("modern", "classic") if any(k[2] == d for k in runs)]
-    left, col_w, row_h, top = 110, 360, 22 + 16 * len(dialects), 76
+    left, col_w, row_h, top = 110, 390, 22 + 16 * len(dialects), 76
     width = max(left + col_w * max(1, len(toolchains)) + 16, 900)
     height = top + len(langs) * row_h + 40
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" role="img" aria-labelledby="title desc">',
@@ -165,7 +165,9 @@ def results_svg(results: list[dict]) -> str:
                 compiler = re.sub(r"\s*\(.*?\)", "", by("compiler")).split(",")[0]
                 read = "; ".join(t for t in (compiler, by("language_versions")) if t)
                 score = f"{len(ok)}/{len(rs)}" + ("" if cls == "ok" else f", recall {worst * 100:.0f}%" if cls == "warn" else ", failed")
-                lines.append(f"{d} {score} · {read}"[:56])
+                # 62 characters fit the chip; the longest line, an old rust-analyzer with its recall, is 62.
+                line = f"{d} {score} · {read}"
+                lines.append(line if len(line) <= 62 else line[:61] + "…")
             out.append(f'<rect class="{status}" x="{x}" y="{y + 4}" width="{col_w - 12}" height="{row_h - 10}" rx="6"/>')
             for k, line in enumerate(lines):
                 out.append(f'<text class="m" x="{x + 8}" y="{y + 20 + 16 * k}">{esc(line)}</text>')
