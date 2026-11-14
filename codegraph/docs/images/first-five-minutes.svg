@@ -12,7 +12,7 @@
 
   <text x="24" y="170" fill="#8b949e">2  ask, in Claude Code</text>
   <text x="24" y="192" fill="#e6edf3"><tspan fill="#d2a8ff">&gt;</tspan> What breaks if I change GraphStore.Replace, and which tests cover it?</text>
-  <text x="24" y="214" fill="#8b949e">  find_symbol → impact_of  (35 ms)</text>
+  <text x="24" y="214" fill="#8b949e">  find_symbol → impact_of  (9 ms)</text>
   <text x="24" y="232" fill="#e6edf3">  impact of GraphStore.Replace(...): <tspan fill="#ffa657">11 dependents, 33 guarding tests</tspan></text>
   <text x="24" y="250" fill="#e6edf3">  method  GraphImport.WriteAsync(...)        depth 1  src/CodeGraph.Indexer/GraphImport.cs:185-266</text>
   <text x="24" y="268" fill="#e6edf3">  method  ImportCommand.RunAsync(...)        depth 2  src/CodeGraph.Indexer/GraphImport.cs:272-333</text>

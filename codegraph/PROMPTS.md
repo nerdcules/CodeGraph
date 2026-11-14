@@ -1,5 +1,7 @@
 # Prompts that use the graph
 
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · **Prompts** · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+
 With the `codegraph` MCP server connected, Claude can answer structural questions from a small
 graph query instead of reading whole files. You don't need to name the tools. Ask the question
 and Claude picks them, but saying "use codegraph" helps in a new session.
@@ -139,3 +141,7 @@ and the full list of changed files.
   while `Save` may return twenty matches.
 - **Callers outside the solution are invisible.** The graph only knows the indexed solution.
   Reflection, DI registration by convention and calls from other repos won't show up.
+
+---
+
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · **Prompts** · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)

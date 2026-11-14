@@ -2,6 +2,8 @@
 
 # MCP Server: codegraph
 
+[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+
 A read-only [Model Context Protocol](https://modelcontextprotocol.io) server that answers structural
 questions about a C# solution from a compiler-built graph: who calls this, what breaks if it changes,
 which tests guard it, where is the code that does X. Built for Claude Code; works with any MCP client
@@ -362,3 +364,7 @@ file list whenever the database's mtime changes, regardless of its 3 s cache.
 | `You must install or update .NET to run this application` | The executables look for .NET in `DOTNET_ROOT` or the machine's default location, not on `PATH`; with a version-managed dotnet (mise, asdf) that location may lack ASP.NET Core. `codegraph-index init` detects this and adds `"env": { "DOTNET_ROOT": … }` to the `.mcp.json` entry; set the same variable in your shell to run `codegraph-index` by hand. `codegraph-mcp --version` is a quick check. |
 | The server will not start after an upgrade | A running `codegraph-mcp` held its files open during publish. Close Claude Code sessions and re-run the install script, or use `-Force` / `--force`. |
 | Server logs | stderr. Claude Code shows them under the MCP server's output. |
+
+---
+
+[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)

@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · **Performance** · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · **Performance** · [Architecture](architecture.md)
 
 ---
 
@@ -190,4 +190,4 @@ The results go to `artifacts/corpus/summary.md`.
 
 ---
 
-← Previous: [How it works](how-it-works.md) · Next: [Architecture](architecture.md) →
+← Previous: [Language versions](language-versions.md) · Next: [Architecture](architecture.md) →

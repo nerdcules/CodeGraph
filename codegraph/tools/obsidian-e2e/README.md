@@ -1,5 +1,7 @@
 # Obsidian end-to-end
 
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · **Obsidian end-to-end**
+
 This harness runs the CodeGraph plugin inside real Obsidian, headless in Docker, against a generated codebase from
 [tools/corpus](../corpus/README.md). It tests what the unit tests and the corpus checks can't:
 
@@ -90,3 +92,7 @@ with it.
 - Obsidian's D-Bus warnings in the log are expected: the container has no session bus.
 - TypeScript declaration files (`.d.ts`) aren't indexed by the extractor, so the steps that edit a source file
   pick a regular `.ts` file.
+
+---
+
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · **Obsidian end-to-end**

@@ -8,6 +8,7 @@ version="${tag#v}"
 
 awk -v version="$version" '
     /^## / { on = ($2 == version) ; next }
+    /^---$/ { on = 0 }  # the navigation bar at the end of the file
     on { print }
 ' "$changelog" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
 

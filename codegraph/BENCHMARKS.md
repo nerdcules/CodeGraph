@@ -1,5 +1,7 @@
 # Benchmarks
 
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+
 Numbers from `codegraph-bench` (tools/CodeGraph.Bench) against this repository's own graph, Release build,
 Linux x64, .NET 10. Query figures are the median of 7 runs after a warm-up. Index figures are one run of the
 published `codegraph-index`, so they include the MSBuild solution load.
@@ -579,3 +581,7 @@ microseconds here and stay under 2 ms on Jellyfin. Tool calls through the server
 start to about a millisecond; on large solutions `path_between` is 15 to 60 times faster than it was, traversal
 answers are about 150 times smaller, and walks are 10 to 5,000 times faster than the SQL they replaced (the low
 end on a hub that reaches 100,000 nodes, where the time is in returning the rows).
+
+---
+
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)

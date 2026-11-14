@@ -1,5 +1,7 @@
 # CodeGraph for Obsidian
 
+[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin**
+
 This plugin turns a repo's code graph into notes in an Obsidian vault. Developers, architects, testers and product
 people can then browse the code the way they browse their other notes, and the plugin adds a panel that answers
 live questions about the note you have open.
@@ -133,3 +135,7 @@ Two more test layers run in Docker:
   checks its links, coverage and lifecycle. It also drives the real `codegraph-mcp` through this plugin's client.
 - **Real Obsidian.** [tools/obsidian-e2e](../tools/obsidian-e2e/README.md) runs the plugin end to end, headless, on
   more than one Obsidian version.
+
+---
+
+[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin**
