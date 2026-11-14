@@ -31,9 +31,75 @@ Measured on this repository, for "what breaks if I change `GraphStore.Replace`?"
 | Opening the files that answer names, if the model somehow knew which they were | 15 files | 258,628 characters, about 65,000 tokens |
 | Opening every file that matches `.Replace(` | 25 files, and the dependents' own callers are still to find | 491,682 characters, about 123,000 tokens |
 
-So the same answer costs between a twelfth and a twenty-second of the tokens, and it includes the
-transitive dependents and tests that a text search would still have to chase. The
-savings come from a few design choices:
+So the answers are between a twelfth and a twenty-second of the size of the files that hold the same
+facts, and they include the transitive dependents and tests that a text search would still have to chase.
+A real session does not read all those files, though. The next section shows what one did.
+
+## In a real session
+
+Claude Code (Opus 5.5, effort high, `claude -p`) got the question "what breaks if I change
+`GraphStore.Replace`, and which tests cover it?" twice on 14 November 2026: once with the codegraph server, and
+once with no MCP server. The numbers come from the two session logs.
+
+| | With CodeGraph | Without |
+|---|---|---|
+| Time to answer, wall clock | 42 seconds | 87 seconds |
+| Model calls | 4 | 9 |
+| Tool calls | 4 codegraph calls, and one tool search | 8 shell commands (`grep`, `sed`, `awk`) |
+| Input tokens processed, cache reads included | 180,134 | 459,907 |
+| Growth of the context during the session | 18,460 tokens | 21,579 tokens |
+| Answer | "37 tests guard it", with each caller by name | "about 40 tests that call it directly" |
+
+The context grew by about the same amount: without the graph, the model searched with `grep` and read
+parts of files, not whole files. The difference is in the number of model calls. Each call reads the whole
+context again, so nine calls process two and a half times the tokens of four.
+
+Neither count is the whole truth. A run-time check ran each test of release 1.1.0, the code these sessions ran
+on, by itself, and recorded every call of `GraphStore.Replace`: 44 of the 300 tests execute it. All 37 that the
+graph named are among them. The graph missed 5 tests whose class constructor calls `Replace`, and 2 tests that
+run the indexer as a separate process, which no static analysis can follow. CodeGraph now counts what a test
+framework runs around each test, such as the class constructor, so the graph names 42 of the 44.
+
+## Four assistants, with and without
+
+One session each way shows a direction, not a result. So four assistants got the same question three times with
+CodeGraph and three times without, on a copy of this repository with all its documentation removed. A run-time
+check gives the true answer: 44 tests execute `GraphStore.Replace`. The graph names 42 of them. The other 2 start
+the indexer as a separate process. [The method, the answer key and every run](../tools/eval/README.md) are in the
+repository.
+
+| Assistant, model | | Gave a total of tests | Time, median (range) | Usage, median (range) |
+|---|---|---|---|---|
+| Claude Code, Opus 5.5 | with | 3 of 3, each 42 | 37 s (33–37) | 226,000 tokens (172,000–228,000), $0.31 ($0.29–0.43) |
+| | without | 0 of 3 | 54 s (53–65) | 380,000 tokens (254,000–420,000), $0.41 ($0.37–0.49) |
+| Codex CLI, GPT-6.1 Sol | with | 2 of 3, each 42 | 43 s (41–45) | 228,000 tokens (223,000–272,000) |
+| | without | 0 of 3 | 42 s (36–44) | 171,000 tokens (160,000–208,000) |
+| Copilot CLI, Claude Sonnet 5.5 | with | 1 of 3, 42 | 20 s (17–21) | 10.4 AI units (8.7–10.5) |
+| | without | 0 of 3 | 14 s (14–20) | 6.4 AI units (6.0–8.7) |
+| Cursor CLI, Composer 2.5 | with | 1 of 3, 42 | 30 s (17–41) | 167,000 tokens (64,000–337,000) |
+| | without | 0 of 3 | 26 s (25–53) | 504,000 tokens (205,000–515,000) |
+
+Tokens are input tokens with cache reads, as each CLI reports them, so compare them within one assistant only.
+
+What the runs show:
+
+- **A test total comes from the graph.** With CodeGraph, 7 of the 12 answers said how many tests exercise the
+  method, and each said 42, the graph's count. Without it, no answer gave a test total. The nearest were "about 45
+  test call sites", "11 test files" and "about 25 test calls".
+- **The callers were found either way.** All 24 answers named both production callers.
+- **Naming tests one by one was not better with the graph.** The answers without it often listed more test
+  methods by name, because the model read the test files. With it, the answers grouped the tests by class and
+  gave the count. One assistant, Cursor, named a few tests that do not run `Replace`, in both conditions.
+- **Time and cost depend on the assistant.** Claude Code was faster and cheaper with CodeGraph in each of the three rounds. Codex
+  took as long and used more tokens. The Copilot CLI took longer and used more AI units. Cursor's runs varied too
+  much to call; one of its runs with CodeGraph lost every tool call to a wrong argument name, which the server now
+  accepts.
+
+These are three runs of one question on one repository. Read them as a direction.
+
+## Where the savings come from
+
+The savings come from a few design choices:
 
 - **Rows, not files.** An answer row is a full name, a file and a line range, and a node id for
   the next call. The model reads source only with `snippet`, for the members it will touch.

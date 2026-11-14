@@ -397,7 +397,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         [Description("Filter by async modifier")] bool? isAsync = null,
         [Description("Filter by override modifier")] bool? isOverride = null,
         [Description("Method nodes only — Ordinary, Constructor, Destructor, Operator")] string? memberKind = null,
-        [Description("How to match the query against name/full_name — Contains (default), StartsWith, EndsWith, Exact")] string nameMatch = "Contains",
+        [Description("How to match the query against name/full_name — Contains (default), StartsWith, EndsWith, Exact (the name, or a qualified tail such as Type.Member)")] string nameMatch = "Contains",
         [Description("Skip this many results for paging, default 0")] int offset = 0,
         [Description("Optional language filter for a graph holding several: csharp, typescript, javascript, java")] string? language = null)
     {

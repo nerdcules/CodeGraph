@@ -13,7 +13,7 @@
   - [Run the indexer again](#run-the-indexer-again)
   - [Use watch mode](#use-watch-mode)
   - [Let the server start the live daemon](#let-the-server-start-the-live-daemon)
-- [Ask questions in Claude Code](#ask-questions-in-claude-code)
+- [Ask questions in your assistant](#ask-questions-in-your-assistant)
 - [The tools](#the-tools)
 - [Read an answer](#read-an-answer)
 - [Import and export a graph](#import-and-export-a-graph)
@@ -106,14 +106,14 @@ You can let the server start the live daemon.
 Do one of these:
 
 - Run `codegraph-index init --live`. This adds `CODEGRAPH_DAEMON=auto` to `.mcp.json`.
-- Ask Claude Code to call `live_status` with `start=true`.
+- Ask the assistant to call `live_status` with `start=true`.
 
 The live daemon that the server starts stops after 120 minutes with no save and no request.
 
-## Ask questions in Claude Code
+## Ask questions in your assistant
 
 Ask your question in normal words.
-Claude Code selects the tools.
+The assistant selects the tools.
 For example:
 
 - "Who calls `SaveAsync`?"
@@ -121,11 +121,21 @@ For example:
 - "Which tests guard `OrderService.Submit`?"
 - "Show me the dead code in the `Billing` project."
 
-To make Claude Code use the graph first, add this line to `CLAUDE.md`:
+To make the assistant use the graph first, add this line to its instructions file:
 
 ```
 Use the codegraph tools before you read source files to find callers, tests or impact.
 ```
+
+| Assistant | Instructions file |
+|---|---|
+| Claude Code | `CLAUDE.md` |
+| GitHub Copilot | `.github/copilot-instructions.md`, or `AGENTS.md` |
+| Codex, Cursor, Kilo Code | `AGENTS.md` |
+| Gemini CLI | `GEMINI.md` |
+| Roo Code | A file in `.roo/rules/`, or `AGENTS.md` |
+| Continue | A file in `.continue/rules/` |
+| Cline | `.clinerules` |
 
 [PROMPTS.md](../PROMPTS.md) gives more prompts.
 
@@ -135,11 +145,11 @@ A typical turn uses three tools:
 
 1. `find_symbol` finds the node id of the method.
 2. `impact_of` finds the dependents and the tests that guard them.
-3. `snippet` shows only the lines that Claude Code must change.
+3. `snippet` shows only the lines that the assistant must change.
 
 This uses some thousands of tokens.
 To read all the files that contain the name uses tens of thousands of tokens.
-[Why it saves tokens](../README.md#why-it-saves-tokens) shows a measured example.
+[Why it saves tokens](why-it-saves-tokens.md) shows a measured example.
 
 ## The tools
 
@@ -241,12 +251,12 @@ Set `CODEGRAPH_TELEMETRY=off` in `.mcp.json` to keep the calls in memory only.
 
 ```
 codegraph-index <target> [--db <path>] [--full] [--all-targets] [--watch] [--log <file>] [--idle-exit <minutes>]
-codegraph-index init [target | folder] [--live] [--no-index] [--db <path>]
+codegraph-index init [target | folder] [--client <names>] [--live] [--no-index] [--db <path>]
 codegraph-index import <records.ndjson | index.scip | -> [--db <path>]
 codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]
 codegraph-index export obsidian --out <vault>/<folder> [--db <path>] [--language <name>] [--link-root <path>]
 codegraph-index usage [--db <path>] [--days <n>]
-codegraph-mcp [<graph.db>] [--web <port>]
+codegraph-mcp [<graph.db>] [--root <folder>] [--web <port>]
 ```
 
 | Option | Function |
@@ -257,6 +267,8 @@ codegraph-mcp [<graph.db>] [--web <port>]
 | `--watch` | Keep running. Index each save and answer the live tools. |
 | `--log <file>` | Write the log to a file, not to stderr. |
 | `--idle-exit <minutes>` | With `--watch`, stop after this time with no save and no request. |
+| `--client <names>` | With `init`, write the configuration for these assistants. See [Use another assistant](installation.md#use-another-assistant). |
+| `--root <folder>` | Find the graph from this folder, not from the working folder of the server. |
 | `--web <port>` | Serve the graph viewer on this local port. |
 
 ## Environment variables
@@ -264,6 +276,7 @@ codegraph-mcp [<graph.db>] [--web <port>]
 | Variable | Function |
 |---|---|
 | `CODEGRAPH_DB` | The graph file for the server. A path argument has priority. |
+| `CODEGRAPH_ROOT` | The folder from which the server finds the graph. `--root` has priority. |
 | `CODEGRAPH_DAEMON=auto` | The server starts the live daemon on its first tool call. |
 | `CODEGRAPH_SNAPSHOT=off` | The server answers with SQL on the graph file, not from its copy in memory. |
 | `CODEGRAPH_LSP` | The language server command for the live tools, for example `jdtls -data /tmp/ws`. |

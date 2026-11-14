@@ -13,6 +13,8 @@
 - [Install the language tools](#install-the-language-tools)
 - [Set up more repositories](#set-up-more-repositories)
 - [Connect the client](#connect-the-client)
+- [Use another assistant](#use-another-assistant)
+- [Tested with](#tested-with)
 - [Make sure that it works](#make-sure-that-it-works)
 - [Install as a Claude Code plugin](#install-as-a-claude-code-plugin)
 - [Install by hand](#install-by-hand)
@@ -92,6 +94,7 @@ PowerShell 7 can also run `install.ps1` on macOS and Linux.
 | `--install-dir DIR` | `-InstallDir DIR` | Install in a different folder. |
 | `--add-to-path` | `-AddToPath` | Add the install folder to the user PATH. |
 | `--live` | `-Live` | Let the server start the live daemon itself. |
+| `--client NAMES` | `-Client NAMES` | Set up the repositories for these assistants. See [Use another assistant](#use-another-assistant). |
 | `--obsidian-vault DIR` | `-ObsidianVault DIR` | Also install the Obsidian plugin into this vault. See [Obsidian](obsidian.md). |
 | `--from-source` | `-FromSource` | Build a checkout instead of downloading. See [Build from source](#build-from-source). |
 | `--force` | `-Force` | Stop running `codegraph-mcp` processes before the copy. |
@@ -155,7 +158,7 @@ codegraph-index init App.slnx
 
 `init` does these steps:
 
-1. It adds the `codegraph` server to `.mcp.json` at the worktree root. It keeps the other servers.
+1. It adds the `codegraph` server to `.mcp.json` at the worktree root, or to the configuration of each assistant that you give with `--client`. It keeps the other servers.
 2. It starts the server as the client does, to make sure that it can.
 3. It adds `.codegraph/` to `.gitignore`.
 4. It builds the first graph.
@@ -164,6 +167,7 @@ In a repository with a C# solution and an Angular folder, `init` indexes both in
 
 | Option | Function |
 |---|---|
+| `--client NAMES` | Write the configuration for these assistants. Separate the names with commas. The default is `claude`. See [Use another assistant](#use-another-assistant). |
 | `--live` | Add `CODEGRAPH_DAEMON=auto`. The server then starts the live daemon on its first tool call. |
 | `--no-index` | Write the configuration only. Do not build the graph. |
 | `--db PATH` | Keep the graph at a different path. |
@@ -187,12 +191,145 @@ Do not put the path of the graph in the entry.
 The server finds `.codegraph/graph.db` from its working folder.
 Thus one `.mcp.json` file serves all the worktrees of a repository.
 
+## Use another assistant
+
+The server is a standard MCP server over stdio.
+Any assistant that can start an MCP server can use it.
+`init` writes the configuration for the assistants in the tables below.
+Give their names with `--client`, separated by commas:
+
+```bash
+codegraph-index init --client copilot
+codegraph-index init --client cursor,roo,continue
+codegraph-index init --client all
+```
+
+The install scripts take the same names: `--client` in bash, `-Client` in PowerShell.
+
+### GitHub Copilot
+
+`--client copilot` sets up every Copilot that reads a project's servers.
+You can also give one at a time.
+
+| Copilot in | `--client` | `init` writes | Tested |
+|---|---|---|---|
+| The Copilot CLI | `copilot-cli`, the same as `claude` | `.mcp.json` | Tool calls, Copilot CLI 1.0.112 |
+| VS Code, agent mode | `vscode` | `.vscode/mcp.json` | Tool calls, VS Code 1.146 |
+| Visual Studio 2022 17.14 or later, and 2026 | `visualstudio` | `.vs/mcp.json` beside the solution | Not tested yet |
+| JetBrains IDEs, plugin 1.19.2 or later | `jetbrains` | `.github/mcp.json` | Not tested yet |
+
+- **The Copilot CLI** reads `.mcp.json` only in a trusted folder.
+  In an untrusted folder it ignores the file without a warning.
+  Trust the folder when Copilot asks, or add it to `trustedFolders` in `~/.copilot/config.json`.
+  For one run without a person, give `--trust-folder`; it trusts the folder for that session only.
+- **VS Code** replaces `${workspaceFolder}` in the entry with the open folder.
+  It asks you to trust the workspace, not each server.
+  Copilot does not load the 35 tools at the start. It finds them when it needs them, as `codegraph-<tool>`.
+  Extensions that use the MCP servers of VS Code itself get the server from the same file.
+- **Visual Studio** does not document the folder in which it starts a server, or which variables it replaces.
+  Thus the entry gives the absolute path of the repository.
+  `.vs/` belongs to you and is not committed, so the absolute path does no harm.
+- **JetBrains IDEs** start the server in the folder of the IDE and replace no variables.
+  Thus the entry gives the absolute path of the repository.
+  If you commit `.github/mcp.json`, each developer must run `init --client jetbrains` again.
+  The Copilot CLI also reads `.github/mcp.json`. Both entries point to the same graph.
+- **Eclipse and Xcode** have no project file. Add the server in the MCP settings of Copilot,
+  with the absolute path of the repository: `"args": ["--root", "/home/you/dev/App"]`.
+- **The Copilot coding agent on GitHub** runs in GitHub Actions, not on your computer.
+  It cannot use a local graph.
+
+### Other assistants and AI extensions
+
+| Assistant | `--client` | `init` writes | Tested |
+|---|---|---|---|
+| Claude Code, CLI and IDE extensions | `claude`, the default | `.mcp.json` | Tool calls |
+| Codex, CLI and IDE extension | `codex` | `~/.codex/config.toml`, with `codex mcp add` | Tool calls, Codex CLI 0.169.0 and the VS Code extension 26.1111 |
+| Cursor | `cursor` | `.cursor/mcp.json` | Tool calls, Cursor 3.29 and Cursor CLI 2026.11.13 |
+| Gemini CLI, and Gemini Code Assist agent mode | `gemini` | `.gemini/settings.json` | Not tested yet |
+| Roo Code | `roo` | `.roo/mcp.json` | Not tested yet |
+| Kilo Code | `kilo` | `.kilo/kilo.json` | Not tested yet |
+| Continue | `continue` | `.continue/mcpServers/codegraph.json` | Not tested yet |
+
+- **Codex** keeps its servers in one global file, not in the repository.
+  `init` adds one entry, and that entry serves all your repositories:
+  the server finds the graph from the folder that Codex runs in.
+  The CLI runs in the current folder, and the VS Code extension runs in the open workspace.
+  Codex does not ask before it calls the tools, because they are read-only.
+  If the `codex` command is not on PATH, `init` shows the entry for you to paste.
+- **Cursor.** The entry gives `--root ${workspaceFolder}` to the server.
+  The IDE replaces `${workspaceFolder}` with the open folder.
+  The Cursor CLI does not replace it, but it starts the server in the project, and the server then ignores the value.
+  The IDE shows the server as Disabled until you turn it on in Settings, Tools & MCPs, once for each project.
+  After that, the IDE calls the tools without a question.
+  The CLI loads the server only after `cursor-agent mcp enable codegraph`. The two approvals are separate.
+  In a run without a person (`cursor-agent -p`), the CLI refuses each MCP call unless a rule allows it.
+  To allow only the codegraph tools, put this in `.cursor/cli.json`:
+  `{"permissions": {"allow": ["Mcp(codegraph:*)"], "deny": []}}`
+- **Roo Code, Kilo Code and Continue** start the server in the first folder of the workspace.
+  Thus their entries need no root.
+  Continue uses MCP servers only in agent mode.
+- **Kilo Code** uses the format of opencode 1.x: `"type": "local"`, the command and its arguments in one array, and `environment`.
+  If `.kilo/kilo.json` has comments, `init` removes them when it writes the file.
+- **Cline and Windsurf** keep their servers only in a global file.
+  Add the server there, with the absolute path of the repository: `"args": ["--root", "/home/you/dev/App"]`.
+  That entry serves only that one repository.
+- **Other assistants.** Give the same `command` as in `.mcp.json`, with no arguments.
+  If the assistant does not start the server in the project folder, give `--root <project folder>` as arguments,
+  or set `CODEGRAPH_ROOT`.
+
+The VS Code file has a different form:
+
+```json
+{
+  "servers": {
+    "codegraph": {
+      "type": "stdio",
+      "command": "/home/you/.codegraph/bin/codegraph-mcp",
+      "args": ["--root", "${workspaceFolder}"]
+    }
+  }
+}
+```
+
+The Codex entry is TOML:
+
+```toml
+[mcp_servers.codegraph]
+command = "/home/you/.codegraph/bin/codegraph-mcp"
+```
+
+To make the assistant use the graph first, see [Usage](usage.md#ask-questions-in-your-assistant).
+
+## Tested with
+
+These assistants answered from the graph with real tool calls on 14 November 2026.
+Each one ran on a clone of this repository (3,119 nodes), with the configuration that `codegraph-index init --client` writes.
+Each one got the question "What breaks if I change `GraphStore.Replace`, and which tests cover it?".
+In every session, the `impact_of` call returned 12 dependents and 37 guarding tests, and the answer reported the 37 tests.
+[Client tests](client-tests/README.md) has a page for each one, with its configuration, the tool calls and the answer.
+
+| Assistant | Version | How it was checked |
+|---|---|---|
+| Claude Code | CLI 2.1.325 | `claude -p` |
+| GitHub Copilot in VS Code, agent mode | VS Code 1.146.0, agent host 1.0.108 | A chat in agent mode |
+| GitHub Copilot CLI | 1.0.112 | `copilot -p --trust-folder --allow-tool codegraph` |
+| Codex VS Code extension | 26.1111.21308 | A chat in the extension |
+| Codex CLI | 0.169.0 | `codex exec` |
+| Cursor IDE | 3.29.15 | A chat in agent mode |
+| Cursor CLI | 2026.11.13 | `cursor-agent -p --trust` |
+
+The Claude Code VS Code extension (2.1.323) also answered from the graph, on 13 November 2026, on an older graph of this repository.
+
+`init` also writes the configuration for Copilot in Visual Studio and JetBrains IDEs, the Gemini CLI, Roo Code, Kilo Code and Continue.
+Those files follow the documentation and source code of each product, but they are not tested yet.
+
 ## Make sure that it works
 
-1. Start Claude Code in the repository.
-2. Approve the `codegraph` server when Claude Code asks.
-3. Type `/mcp` and make sure that `codegraph` shows as connected.
-4. Ask Claude Code: "Use codegraph graph_stats."
+1. Start your assistant in the repository.
+2. Approve the `codegraph` server when the assistant asks.
+3. Make sure that `codegraph` shows as connected.
+   In Claude Code, type `/mcp`. In Codex, type `/mcp`. In the Cursor CLI, run `cursor-agent mcp list`.
+4. Ask the assistant: "Use codegraph graph_stats."
 5. Make sure that the answer shows a node count and an edge count.
 
 If the answer says "no code graph", build the graph:
@@ -235,7 +372,7 @@ The plugin then uses that install.
 
 ## Upgrade
 
-1. Close the Claude Code sessions that use CodeGraph.
+1. Close the assistant sessions that use CodeGraph.
 2. Run the install command again.
 
 > **CAUTION:** A running `codegraph-mcp` holds its files open.
@@ -264,7 +401,7 @@ The script builds with warnings as errors, runs the tests, and publishes the exe
 
 ## Remove CodeGraph
 
-1. Close the Claude Code sessions that use CodeGraph.
+1. Close the assistant sessions that use CodeGraph.
 2. Run the uninstall script:
 
    ```bash
@@ -276,7 +413,8 @@ The script builds with warnings as errors, runs the tests, and publishes the exe
    ```
 
 The script removes the install folder and the PATH entry.
-For each repository that you give, it removes the `codegraph` entry from `.mcp.json`.
+For each repository that you give, it removes the `codegraph` entry from `.mcp.json` and from the files of the other assistants that `init` sets up.
+If Codex has a `codegraph` entry, it removes that entry too.
 It also removes the `.codegraph/` folder of that repository.
 It asks before each removal.
 Give `--yes` or `-Yes` to remove without questions.
@@ -291,6 +429,8 @@ Give `--yes` or `-Yes` to remove without questions.
 | The install script stops with "in use". | `codegraph-mcp` runs. | Close the sessions, or give `--force`. |
 | macOS says the program is damaged or cannot be opened. | The archive came from a browser and is quarantined. | Run `xattr -dr com.apple.quarantine` on the install folder, or install with the script. |
 | The server does not start in the client after a source build. | The client cannot find .NET. | Run `codegraph-index init` again. It adds `DOTNET_ROOT` when necessary. A release build does not need .NET. |
+| An IDE says "no code graph at /.codegraph/graph.db" or a path in your home folder. | The IDE starts the server outside the project, and the entry has no `--root`. | Run `codegraph-index init --client` with the name of that IDE again. For Cline or Windsurf, add `--root` by hand. |
+| A tool says the graph file is damaged. | The file was cut short or overwritten, for example by a full disk. | Run `codegraph-index` on the solution again. It rebuilds the graph from the source. |
 | Answers show `STALE`. | Files changed after the last index. | Run the indexer again, or start the live daemon. See [Usage](usage.md#keep-the-graph-current). |
 
 ---

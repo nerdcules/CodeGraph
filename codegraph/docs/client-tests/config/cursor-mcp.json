@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "/home/you/.codegraph/bin/codegraph-mcp",
+      "args": ["--root", "${workspaceFolder}"]
+    }
+  }
+}

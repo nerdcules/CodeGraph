@@ -27,6 +27,19 @@ public sealed partial class RoslynIndexer
         "TestMethod", "TestMethodAttribute",
     };
 
+    /// <summary>NUnit and MSTest attributes for methods the framework runs before or after the tests of a class.</summary>
+    private static readonly HashSet<string> TestLifecycleAttributeNames = new(StringComparer.Ordinal)
+    {
+        "SetUp", "SetUpAttribute",
+        "TearDown", "TearDownAttribute",
+        "OneTimeSetUp", "OneTimeSetUpAttribute",
+        "OneTimeTearDown", "OneTimeTearDownAttribute",
+        "TestInitialize", "TestInitializeAttribute",
+        "TestCleanup", "TestCleanupAttribute",
+        "ClassInitialize", "ClassInitializeAttribute",
+        "ClassCleanup", "ClassCleanupAttribute",
+    };
+
     private static readonly HashSet<string> FrameworkEntrypointAttributeNames = new(StringComparer.Ordinal)
     {
         "Function", "FunctionAttribute",
@@ -615,6 +628,46 @@ public sealed partial class RoslynIndexer
             foreach (var scope in scopes)
             {
                 IndexBody(scope, model, memberId, isTest, origin, cancellationToken);
+            }
+
+            if (isTest && symbol is IMethodSymbol test)
+            {
+                IndexTestLifecycle(test, memberId, origin);
+            }
+        }
+    }
+
+    /// <summary>
+    /// What the test framework runs around each test, recorded as calls from the test: the test class's constructors
+    /// and <c>Dispose</c>/<c>DisposeAsync</c> (xUnit creates and disposes the class for every test),
+    /// <c>IAsyncLifetime.InitializeAsync</c>, and methods marked <c>[SetUp]</c>, <c>[TearDown]</c>,
+    /// <c>[OneTimeSetUp]</c> (NUnit) or <c>[TestInitialize]</c>, <c>[ClassInitialize]</c> (MSTest), on the class
+    /// and its base classes in source. Without them, a method that only a constructor reaches counts no test as
+    /// guarding it, though every test of the class runs it.
+    /// </summary>
+    private void IndexTestLifecycle(IMethodSymbol test, string testId, string origin)
+    {
+        var interfaces = test.ContainingType.AllInterfaces.Select(i => i.Name).ToHashSet(StringComparer.Ordinal);
+        for (var type = test.ContainingType; type is not null && IsInSource(type); type = type.BaseType)
+        {
+            foreach (var member in type.GetMembers().OfType<IMethodSymbol>())
+            {
+                var runs = member.MethodKind switch
+                {
+                    MethodKind.Constructor or MethodKind.StaticConstructor => !member.IsImplicitlyDeclared,
+                    MethodKind.Ordinary => member switch
+                    {
+                        { IsStatic: false, Parameters.Length: 0, Name: "Dispose" } => interfaces.Contains("IDisposable"),
+                        { IsStatic: false, Parameters.Length: 0, Name: "DisposeAsync" } => interfaces.Contains("IAsyncDisposable") || interfaces.Contains("IAsyncLifetime"),
+                        { IsStatic: false, Parameters.Length: 0, Name: "InitializeAsync" } => interfaces.Contains("IAsyncLifetime"),
+                        _ => member.GetAttributes().Any(a => a.AttributeClass is { } c && TestLifecycleAttributeNames.Contains(c.Name)),
+                    },
+                    _ => false,
+                };
+                if (runs)
+                {
+                    AddCall(testId, member, callerIsTest: true, origin);
+                }
             }
         }
     }

@@ -23,7 +23,7 @@ means here, and where it stands.
 | "No proof anyone else can trust." | No CI, no badge, no changelog, numbers buried in BENCHMARKS.md. | **Closed.** CI badge on three platforms, a CHANGELOG, release notes and checksums; the token and corpus numbers in the first paragraph of the README. |
 | "The first five minutes are not designed." | The README opened with architecture. | **Closed.** Install, one question, the real answer, and the usage line a week later, with a picture of the terminal. The repository's front page opens with a real Claude Code session, replayed from its transcript, and a video of the same question with CodeGraph on and off. The install itself is not recorded yet. |
 | "The value is invisible once installed." | Every call went silently into `telemetry.jsonl`. | **Closed.** `codegraph-index usage`, the same line after each index run, and at the top of `usage_stats`. |
-| "One sentence of positioning." | "A compiler-built code graph with an MCP server" was accurate and abstract. | **Closed.** "CodeGraph gives Claude Code the compiler's answers: who calls this, what breaks if I change it, which tests guard it." Everywhere, including the GitHub description. |
+| "One sentence of positioning." | "A compiler-built code graph with an MCP server" was accurate and abstract. | **Closed.** "CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I change it, which tests guard it." Everywhere. It named only Claude Code until `init --client` set up the other assistants too. |
 | "Identity for teams." | The graph is per machine; the only shared piece is `.mcp.json`. | **Open.** A graph built in CI for the team, and a pull-request check on language-version errors. |
 
 ## Closed in 1.0.0
@@ -34,7 +34,7 @@ means here, and where it stands.
 | No proof anyone else can trust | CI on three platforms with a badge on the README; a [CHANGELOG](../CHANGELOG.md); release notes on each tag; checksums on each release. |
 | The first five minutes were not designed | The README opens with the one-line install, one question, and the answer it gets. |
 | The value was invisible once installed | `codegraph-index usage` prints what the graph did in the last week; the indexer prints the same line after each run; `usage_stats` opens with it. |
-| No one-sentence positioning | "CodeGraph gives Claude Code the compiler's answers: who calls this, what breaks if I change it, which tests guard it." Used everywhere. |
+| No one-sentence positioning | "CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I change it, which tests guard it." Used everywhere. |
 
 ## Open
 

@@ -6,10 +6,10 @@
 
 ---
 
-CodeGraph gives Claude Code the compiler's answers: who calls this, what breaks if I change it, which
-tests guard it.
+CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I change
+it, which tests guard it.
 The indexer reads your code with the compiler of the language and writes a graph file.
-The MCP server answers questions from that file.
+The MCP server answers questions from that file, for Claude Code, GitHub Copilot, Codex, Cursor, the Gemini CLI, Roo Code, Kilo Code, Continue or any other MCP client.
 Obsidian is optional: the [Obsidian](obsidian.md) plugin only shows the graph to people as notes.
 
 ![Architecture: extractors write graph.db, the MCP server reads it, the live daemon keeps it current](images/architecture.svg)
@@ -18,7 +18,7 @@ Obsidian is optional: the [Obsidian](obsidian.md) plugin only shows the graph to
 
 | You are | Start here | Then |
 |---|---|---|
-| A developer who uses Claude Code | [Installation](installation.md) | [Usage](usage.md), [Use cases](use-cases.md), [Prompts](../PROMPTS.md) |
+| A developer who uses an AI coding assistant | [Installation](installation.md) | [Usage](usage.md), [Use cases](use-cases.md), [Prompts](../PROMPTS.md) |
 | An architect, a tester or a product manager who reads code without an AI | [Obsidian](obsidian.md) | [Use cases](use-cases.md#share-the-structure-of-the-code-with-people-who-do-not-code) |
 | Deciding whether to trust it | [Why it saves tokens](why-it-saves-tokens.md) | [How it works](how-it-works.md), [Performance](performance.md), [Benchmarks](../BENCHMARKS.md) |
 | A contributor | [Contributing](contributing.md) | [Architecture](architecture.md), [Extractors](../EXTRACTORS.md), [Language versions](language-versions.md) |
@@ -28,7 +28,8 @@ Obsidian is optional: the [Obsidian](obsidian.md) plugin only shows the graph to
 
 | Page | Read it to |
 |---|---|
-| [Installation](installation.md) | Install a release, connect a repository to Claude Code, upgrade, remove. |
+| [Installation](installation.md) | Install a release, connect a repository to your assistant, upgrade, remove. |
+| [Client tests](client-tests/README.md) | See how each AI coding assistant was tested: its configuration, its tool calls and its answer. |
 | [Usage](usage.md) | Build a graph, keep it current, use the tools, see what they did for you. |
 | [Obsidian](obsidian.md) | Read the graph as linked notes in Obsidian, with a live panel. |
 | [Use cases](use-cases.md) | Find the tool for a question about your code. |
@@ -78,7 +79,7 @@ A word has one meaning in all pages:
 | the server | The `codegraph-mcp` executable, an MCP server. |
 | the graph | The `.codegraph/graph.db` file of a worktree. |
 | the live daemon | The indexer when it runs with `--watch`. |
-| the client | Claude Code, or another MCP client. |
+| the client | The assistant that calls the tools: Claude Code, GitHub Copilot, Codex, Cursor, the Gemini CLI, an AI extension such as Roo Code, Kilo Code or Continue, or another MCP client. |
 | a node | One type, member, file or project in the graph. |
 | an edge | One relation between two nodes, for example `Calls`. |
 

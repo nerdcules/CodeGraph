@@ -18,6 +18,7 @@ if (args is ["--version"])
 
 // Parse positional db path and optional --web PORT flag.
 var dbPath = (string?)null;
+var rootArg = (string?)null;
 int? webPort = null;
 var hostArgs = new List<string>();
 
@@ -27,6 +28,10 @@ for (var i = 0; i < args.Length; i++)
     {
         webPort = p;
         i++;                // skip the number
+    }
+    else if (args[i] is "--root" && i + 1 < args.Length)
+    {
+        rootArg = args[++i]; // the project folder, from a client that does not start servers in it
     }
     else if (!args[i].StartsWith("--") && dbPath is null)
     {
@@ -40,21 +45,24 @@ for (var i = 0; i < args.Length; i++)
 
 dbPath ??= Environment.GetEnvironmentVariable("CODEGRAPH_DB");
 
-// No explicit path: use this worktree's graph, found from the current directory (Claude Code starts MCP
-// servers in the project directory), so one .mcp.json serves every worktree of a repo.
+// No explicit path: use this worktree's graph, found from the project folder. Claude Code, Codex, the Copilot CLI
+// and the Cursor CLI start MCP servers in the project; an IDE passes it as --root ${workspaceFolder} (or
+// CODEGRAPH_ROOT). One config then serves every worktree of a repo.
 var discovered = false;
 if (string.IsNullOrWhiteSpace(dbPath))
 {
-    var cwd = Directory.GetCurrentDirectory();
-    dbPath = Worktree.FindDb(cwd) ?? Worktree.DefaultDbPath(cwd);
+    var start = Worktree.UsableRoot(rootArg) ?? Worktree.UsableRoot(Environment.GetEnvironmentVariable("CODEGRAPH_ROOT"))
+        ?? Directory.GetCurrentDirectory();
+    dbPath = Worktree.FindDb(start) ?? Worktree.DefaultDbPath(start);
     discovered = true;
 }
 
 dbPath = Path.GetFullPath(dbPath);
 if (!discovered && !File.Exists(dbPath))
 {
-    Console.Error.WriteLine("usage: codegraph-mcp [path-to-graph.db] [--web PORT]");
+    Console.Error.WriteLine("usage: codegraph-mcp [path-to-graph.db] [--root DIR] [--web PORT]");
     Console.Error.WriteLine("       no path: finds .codegraph/graph.db from the current directory up to the git worktree root");
+    Console.Error.WriteLine("       --root DIR  look from DIR instead (for clients that start servers elsewhere); or set CODEGRAPH_ROOT");
     Console.Error.WriteLine("       --web PORT  also serve the graph visualiser on http://localhost:PORT");
     Console.Error.WriteLine("       set CODEGRAPH_DB as an alternative to the positional argument");
     return 1;
@@ -120,7 +128,7 @@ void AddGraph(IServiceCollection services)
                 codegraph answers structural questions about the indexed codebase from a compiler-built graph, so prefer
                 it to grepping or opening files. Typical turn: find_symbol (or search_code when you only know what the
                 code does) → impact_of / callers_of / references_to → snippet on the two or three declarations that matter.
-                Ids in [brackets] are opaque (Roslyn doc-comment ids for C#, ts:/java:/scip: prefixes otherwise); pass them back verbatim. An answer that starts with
+                Ids in [brackets] are opaque (Roslyn doc-comment ids for C#, ts:/java:/scip: prefixes otherwise); pass them back verbatim, without the brackets. An answer that starts with
                 "⚠ STALE INDEX" is from a graph older than the working tree; rows ending in STALE come from edited files.
                 Call impact_of before changing anything shared, and tests_for / covered_by to find the tests that guard it.
                 When codegraph-index --watch is running (live_status), four tools answer from the live compiler (Roslyn, the TypeScript language service, or a language server):
@@ -163,10 +171,29 @@ void AddGraph(IServiceCollection services)
                 }
             }
 
+            // Answers print ids in [brackets]; a model that copies the brackets along still gets its node.
+            if (context.Params?.Arguments is { } arguments)
+            {
+                NodeIds.NameTheId(context.Params.Name, arguments);
+                foreach (var key in arguments.Keys.Where(NodeIds.Arguments.Contains).ToList())
+                {
+                    if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String
+                        && arguments[key].GetString() is { } raw && NodeIds.Unwrap(raw) is var id && id != raw)
+                    {
+                        arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
+                    }
+                }
+            }
+
             CallToolResult result;
             try
             {
                 result = await next(context, cancellationToken);
+            }
+            catch (Exception e) when (ToolErrors.Explain(context.Params?.Name ?? "?", e, context.Params?.Arguments, dbPath) is { } explained)
+            {
+                // The SDK would answer "An error occurred invoking 'x'." and nothing else; say what failed and what to do.
+                result = new CallToolResult { IsError = true, Content = [new TextContentBlock { Text = explained }] };
             }
             catch
             {

@@ -23,7 +23,7 @@ with an Angular `ClientApp/` gets both, in one graph.
 | types, members, signatures, modifiers | yes | yes | names and kinds; modifiers read from the source line |
 | calls, property reads, overrides, implementations | yes | yes | from references and `is_implementation` |
 | calls into the framework and packages (External nodes) | yes | yes, `lib` and npm packages | yes, methods only |
-| tests and `TestedBy` | xUnit, NUnit, MSTest | Jasmine, Jest, Vitest `it` / `test` blocks | `@Test` (JUnit, TestNG), `test_*` (Python), `TestXxx` (Go) |
+| tests and `TestedBy` | xUnit, NUnit, MSTest; a test also calls its class's constructors, `Dispose` and setup methods | Jasmine, Jest, Vitest `it` / `test` blocks | `@Test` (JUnit, TestNG), `test_*` (Python), `TestXxx` (Go) |
 | framework entry points | framework-triggered methods | lifecycle hooks, decorated methods, templates | Spring annotations, `main` |
 | dependency injection | | constructor parameters and `inject()` (`Injects`) | |
 | templates | | Angular templates: `Renders` and template calls | |

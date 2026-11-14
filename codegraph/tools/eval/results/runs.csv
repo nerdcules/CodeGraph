@@ -1,0 +1,25 @@
+assistant,model,codegraph,run,wall_s,tool_calls,codegraph_calls,usage,usage_unit,cost_usd,stated_test_total,real_tests_named,tests_named_that_do_not_run_it,names_both_production_callers,note
+claude,"Claude Code 2.1.325, claude-opus-5-5, effort high",without,1,64.7,10,0,380493,input tokens incl. cache,0.49,,12,0,yes,
+claude,"Claude Code 2.1.325, claude-opus-5-5, effort high",without,2,53.8,10,0,419942,input tokens incl. cache,0.41,,17,0,yes,"""11 test files"""
+claude,"Claude Code 2.1.325, claude-opus-5-5, effort high",without,3,52.9,7,0,254151,input tokens incl. cache,0.37,,20,0,yes,"""about 45 test call sites"""
+claude,"Claude Code 2.1.325, claude-opus-5-5, effort high",with,1,37.0,7,4,228468,input tokens incl. cache,0.43,42,10,0,yes,
+claude,"Claude Code 2.1.325, claude-opus-5-5, effort high",with,2,32.6,6,5,172223,input tokens incl. cache,0.29,42,10,0,yes,
+claude,"Claude Code 2.1.325, claude-opus-5-5, effort high",with,3,36.9,7,4,225677,input tokens incl. cache,0.31,42,9,0,yes,
+codex,"Codex CLI 0.169.0, gpt-6.1-sol",without,1,35.5,6,0,159674,input tokens incl. cache,,,4,0,yes,
+codex,"Codex CLI 0.169.0, gpt-6.1-sol",without,2,41.8,6,0,170714,input tokens incl. cache,,,10,0,yes,
+codex,"Codex CLI 0.169.0, gpt-6.1-sol",without,3,44.3,7,0,207944,input tokens incl. cache,,,12,0,yes,
+codex,"Codex CLI 0.169.0, gpt-6.1-sol",with,1,41.4,9,1,223432,input tokens incl. cache,,,12,0,yes,
+codex,"Codex CLI 0.169.0, gpt-6.1-sol",with,2,45.1,14,8,271707,input tokens incl. cache,,42,4,0,yes,
+codex,"Codex CLI 0.169.0, gpt-6.1-sol",with,3,43.4,15,9,228335,input tokens incl. cache,,42,4,0,yes,
+copilot,"Copilot CLI 1.0.112, claude-sonnet-5.5",without,1,20.0,6,0,8.7,AI units,,,0,0,yes,
+copilot,"Copilot CLI 1.0.112, claude-sonnet-5.5",without,2,13.8,2,0,5.95,AI units,,,0,0,yes,"""about 25 test calls"""
+copilot,"Copilot CLI 1.0.112, claude-sonnet-5.5",without,3,13.7,3,0,6.4,AI units,,,0,0,yes,"""about 12 test files"""
+copilot,"Copilot CLI 1.0.112, claude-sonnet-5.5",with,1,20.2,7,3,10.44,AI units,,42,2,0,yes,
+copilot,"Copilot CLI 1.0.112, claude-sonnet-5.5",with,2,21.2,5,3,10.52,AI units,,,30,0,yes,
+copilot,"Copilot CLI 1.0.112, claude-sonnet-5.5",with,3,16.5,5,3,8.68,AI units,,,0,0,yes,
+cursor,"Cursor CLI 2026.11.13, composer-2.5",without,1,52.8,44,0,504074,input tokens incl. cache,,,25,0,yes,
+cursor,"Cursor CLI 2026.11.13, composer-2.5",without,2,26.4,29,0,514536,input tokens incl. cache,,,2,0,yes,
+cursor,"Cursor CLI 2026.11.13, composer-2.5",without,3,24.7,20,0,205343,input tokens incl. cache,,,24,1,yes,
+cursor,"Cursor CLI 2026.11.13, composer-2.5",with,1,41.0,42,8,336940,input tokens incl. cache,,,26,1,yes,
+cursor,"Cursor CLI 2026.11.13, composer-2.5",with,2,30.2,32,10,167254,input tokens incl. cache,,,12,2,yes,every codegraph call after find_symbol failed: the model passed symbolId instead of id
+cursor,"Cursor CLI 2026.11.13, composer-2.5",with,3,16.7,7,7,63659,input tokens incl. cache,,42,14,1,yes,

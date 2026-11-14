@@ -28,6 +28,11 @@
 .PARAMETER Live
     The MCP server starts the live daemon itself on its first call (CODEGRAPH_DAEMON=auto in .mcp.json).
 
+.PARAMETER Client
+    The assistants to set each repo up for: claude (the default; also the Copilot CLI), copilot (CLI, VS Code,
+    Visual Studio, JetBrains), vscode, visualstudio, jetbrains, cursor, gemini, codex, roo, kilo, continue, or all.
+    Comma-separated or an array.
+
 .PARAMETER ObsidianVault
     Also install the Obsidian plugin into this vault folder.
 
@@ -53,6 +58,7 @@ param(
     [string] $InstallDir,
     [switch] $AddToPath,
     [switch] $Live,
+    [string[]] $Client = @(),
     [string] $ObsidianVault,
     [switch] $FromSource,
     [switch] $SkipTests,
@@ -256,6 +262,7 @@ try {
         Step "Setting up $target"
         $initArgs = @('init', $target)
         if ($Live) { $initArgs += '--live' }
+        if ($Client.Count -gt 0) { $initArgs += @('--client', ($Client -join ',')) }
         Invoke-WithRoot $(if ($rootFor) { $rootFor } else { $env:DOTNET_ROOT }) $indexExe $initArgs
         if ($LASTEXITCODE -ne 0) { $failed++ }
     }
@@ -290,7 +297,7 @@ if ($rootFor) {
     Write-Host "Run by hand, the executables need DOTNET_ROOT=$rootFor in the environment (.mcp.json entries carry it already)."
 }
 Write-Host 'Set up a repo (writes .mcp.json and .gitignore at its root, then builds the graph):'
-Write-Host "  $call init <repo-or-solution> [--live]"
+Write-Host "  $call init <repo-or-solution> [--live] [--client copilot,cursor,gemini,codex,roo,kilo,continue]"
 Write-Host 'Keep a graph fresh while you work:'
 Write-Host "  $call <App.sln> --watch"
 if ($failed -gt 0) { throw "$failed repo setup(s) failed; see above" }

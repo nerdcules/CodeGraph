@@ -60,7 +60,7 @@ public sealed class GraphSnapshotTests
                  memory.DeadCodeReport(publicApi, limit: 3, offset: 2).Candidates.Select(r => r.Method.Id));
         }
 
-        foreach (var (query, match) in new[] { ("M1", "Contains"), ("m", "StartsWith"), ("2", "EndsWith"), ("Run", "Exact"), ("T3", "Contains"), ("", "Contains") })
+        foreach (var (query, match) in new[] { ("M1", "Contains"), ("m", "StartsWith"), ("2", "EndsWith"), ("Run", "Exact"), ("T3.Run", "Exact"), ("N.T3.M2", "Exact"), ("3.Run", "Exact"), ("T3", "Contains"), ("", "Contains") })
         {
             Same(sql.FindSymbol(query, nameMatch: match, limit: 100), memory.FindSymbol(query, nameMatch: match, limit: 100));
             Same(sql.FindSymbol(query, nameMatch: match, limit: 4, offset: 3), memory.FindSymbol(query, nameMatch: match, limit: 4, offset: 3));

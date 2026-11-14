@@ -67,7 +67,7 @@ release closes: prebuilt binaries, an installer, a Claude Code plugin, and this 
 who is reading it. The [roadmap](roadmap.md) lists what is still missing, in order.
 
 **Measure or you are guessing.** The number that justifies the whole project is on the front page: about
-5,500 tokens for an impact question with the graph, against about 123,000 without it. I did not know
+5,500 tokens of answers for an impact question, against about 123,000 for the files that match the name. I did not know
 that number until I measured it, and it changed what I worked on next.
 
 **Let the tool tell you when it is wrong.** The stale warning, the compiler-version notes, the

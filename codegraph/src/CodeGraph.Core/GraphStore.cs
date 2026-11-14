@@ -218,6 +218,16 @@ public sealed class GraphStore : IDisposable
     /// Opens a store, retrying while another process holds the DuckDB file lock. DuckDB allows one writer
     /// or many readers per file, so the indexer and the MCP servers take turns.
     /// </summary>
+    /// <summary>
+    /// Whether <paramref name="error"/> says the graph file itself is damaged (a failed block checksum, a file that
+    /// is not a DuckDB database): rebuilding from source is the cure, retrying is not.
+    /// </summary>
+    public static bool IsCorrupt(Exception error) =>
+        error is DuckDBException { Message: var message }
+        && (message.Contains("Corrupt", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("checksum", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not a valid DuckDB database", StringComparison.OrdinalIgnoreCase));
+
     public static GraphStore Open(string dbPath, bool readOnly, TimeSpan wait)
     {
         // A missing file is not a lock: fail now instead of spinning out the whole wait.
@@ -255,7 +265,8 @@ public sealed class GraphStore : IDisposable
     public void Write(IEnumerable<GraphNode> nodes, IEnumerable<GraphEdge> edges)
     {
         using var transaction = Connection.BeginTransaction();
-        WriteCore(transaction, nodes, edges, []);
+        StageGraph(transaction, nodes, edges, []);
+        MergeStagedGraph(transaction);
         transaction.Commit();
     }
 
@@ -278,6 +289,7 @@ public sealed class GraphStore : IDisposable
         IEnumerable<NodeEmbedding>? embeddings = null,
         string language = Languages.CSharp)
     {
+        var current = ReadMeta();
         using var transaction = Connection.BeginTransaction();
 
         if (full)
@@ -286,59 +298,31 @@ public sealed class GraphStore : IDisposable
             {
                 Execute($"DELETE FROM {table};", transaction);
             }
+
+            StageGraph(transaction, nodes, edges, origins);
+            MergeStagedGraph(transaction);
+            if (search is not null)
+            {
+                WriteSearch(transaction, search);
+            }
+
+            if (embeddings is not null)
+            {
+                WriteEmbeddings(transaction, embeddings);
+            }
         }
-        else if (removedFiles.Count > 0)
+        else
         {
-            var removed = Lines(removedFiles);
-            Execute($"DELETE FROM search_terms WHERE node_id IN (SELECT id FROM nodes WHERE file_path IN ({PathList}));", transaction, removed);
-            Execute($"DELETE FROM search_docs WHERE node_id IN (SELECT id FROM nodes WHERE file_path IN ({PathList}));", transaction, removed);
-            Execute($"DELETE FROM embeddings WHERE node_id IN (SELECT id FROM nodes WHERE file_path IN ({PathList}));", transaction, removed);
-            Execute(
-                $"""
-                 DELETE FROM edges e
-                 WHERE EXISTS (SELECT 1 FROM edge_origins o
-                               WHERE o.from_id = e.from_id AND o.to_id = e.to_id AND o.kind = e.kind
-                                 AND o.file_path IN ({PathList}))
-                   AND NOT EXISTS (SELECT 1 FROM edge_origins o
-                                   WHERE o.from_id = e.from_id AND o.to_id = e.to_id AND o.kind = e.kind
-                                     AND o.file_path NOT IN ({PathList}));
-                 """, transaction, removed);
-            Execute($"DELETE FROM edge_origins WHERE file_path IN ({PathList});", transaction, removed);
-            Execute($"DELETE FROM nodes WHERE file_path IN ({PathList});", transaction, removed);
-            Execute($"DELETE FROM files WHERE path IN ({PathList});", transaction, removed);
+            WriteChanges(transaction, removedFiles, nodes, edges, origins, search, embeddings);
         }
 
-        // No dangling-edge sweep: edges to node-less targets (implicit constructors) are legitimate and a full
-        // index keeps them too. A file pointing at a removed member is a dependent, so it was re-walked above.
-        WriteCore(transaction, nodes, edges, origins);
-
-        // External nodes belong to no file, so removing a file never removes them; one whose last caller just went
-        // would linger. A full index never has such a node, and incremental must equal full.
-        if (!full && removedFiles.Count > 0)
-        {
-            Execute(
-                """
-                DELETE FROM nodes WHERE kind = 'External'
-                  AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.to_id = nodes.id);
-                """, transaction);
-        }
-        if (search is not null)
-        {
-            WriteSearch(transaction, search);
-        }
-
-        if (embeddings is not null)
-        {
-            WriteEmbeddings(transaction, embeddings);
-        }
-
-        WriteFiles(transaction, files, language);
+        WriteFiles(transaction, files, language, replacing: !full);
 
         using (var command = Connection.CreateCommand())
         {
             command.Transaction = transaction;
             command.CommandText = "INSERT OR REPLACE INTO meta (key, value) VALUES ($key, $value);";
-            foreach (var (key, value) in meta)
+            foreach (var (key, value) in meta.Where(m => current.GetValueOrDefault(m.Key) != m.Value))
             {
                 command.Parameters.Clear();
                 command.Parameters.Add(P("key", key));
@@ -349,9 +333,146 @@ public sealed class GraphStore : IDisposable
 
         transaction.Commit();
 
-        // Every re-index deletes and re-inserts rows; without a checkpoint the freed blocks stay in the write-ahead
-        // log's shadow and the file grows by a few MB per run, for as long as a --watch session lasts.
+        // Without a checkpoint the freed blocks stay in the write-ahead log's shadow and the file grows by a few MB
+        // per run, for as long as a --watch session lasts.
         Execute("CHECKPOINT;");
+    }
+
+    /// <summary>
+    /// The incremental half of <see cref="Replace"/>: the end state is the one deleting every row of
+    /// <paramref name="removedFiles"/> and writing the new rows would give, but only rows that differ are touched.
+    /// DuckDB writes every row group and index a delete or insert touches as new blocks at the next checkpoint, so
+    /// a pass that deleted and re-inserted a file's unchanged rows grew the file by megabytes; a pass that changes
+    /// nothing now writes nothing but its meta.
+    /// </summary>
+    private void WriteChanges(
+        DuckDBTransaction transaction,
+        IReadOnlyCollection<string> removedFiles,
+        IEnumerable<GraphNode> nodes,
+        IEnumerable<GraphEdge> edges,
+        IEnumerable<EdgeOrigin> origins,
+        IEnumerable<SearchDocument>? search,
+        IEnumerable<NodeEmbedding>? embeddings)
+    {
+        Stage(transaction, "replaced_paths", "path VARCHAR");
+        Execute($"INSERT INTO replaced_paths SELECT path FROM ({PathList}) t(path) WHERE path <> '';", transaction, Lines(removedFiles));
+        // The nodes the replaced files held before this pass: their search rows and vectors are replaced with them.
+        Stage(transaction, "replaced_nodes", "id VARCHAR");
+        Execute("INSERT INTO replaced_nodes SELECT id FROM nodes WHERE file_path IN (SELECT path FROM replaced_paths);", transaction);
+        StageGraph(transaction, nodes, edges, origins);
+
+        // An edge goes when a replaced file produced it, no other file still does, and the new rows do not have it.
+        Execute(
+            """
+            DELETE FROM edges e
+            WHERE EXISTS (SELECT 1 FROM edge_origins o
+                          WHERE o.from_id = e.from_id AND o.to_id = e.to_id AND o.kind = e.kind
+                            AND o.file_path IN (SELECT path FROM replaced_paths))
+              AND NOT EXISTS (SELECT 1 FROM edge_origins o
+                              WHERE o.from_id = e.from_id AND o.to_id = e.to_id AND o.kind = e.kind
+                                AND o.file_path NOT IN (SELECT path FROM replaced_paths))
+              AND NOT EXISTS (SELECT 1 FROM stage_edges s
+                              WHERE s.from_id = e.from_id AND s.to_id = e.to_id AND s.kind = e.kind);
+            """, transaction);
+        Execute(
+            """
+            DELETE FROM edge_origins o
+            WHERE o.file_path IN (SELECT path FROM replaced_paths)
+              AND NOT EXISTS (SELECT 1 FROM stage_edge_origins s
+                              WHERE s.from_id = o.from_id AND s.to_id = o.to_id AND s.kind = o.kind AND s.file_path = o.file_path);
+            """, transaction);
+        Execute(
+            """
+            DELETE FROM nodes
+            WHERE file_path IN (SELECT path FROM replaced_paths)
+              AND id NOT IN (SELECT id FROM stage_nodes);
+            """, transaction);
+
+        // No dangling-edge sweep: edges to node-less targets (implicit constructors) are legitimate and a full
+        // index keeps them too. A file pointing at a removed member is a dependent, so it was re-walked above.
+        MergeStagedGraph(transaction);
+
+        // External nodes belong to no file, so removing a file never removes them; one whose last caller just went
+        // would linger. A full index never has such a node, and incremental must equal full.
+        if (removedFiles.Count > 0)
+        {
+            Execute(
+                """
+                DELETE FROM nodes WHERE kind = 'External'
+                  AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.to_id = nodes.id);
+                """, transaction);
+        }
+
+        // Search rows: the replaced files' old nodes and the documents written now lose what the new documents do
+        // not have, then gain what they do not hold yet.
+        var documents = search as IReadOnlyCollection<SearchDocument> ?? search?.ToList() ?? [];
+        Stage(transaction, "stage_search_docs", "node_id VARCHAR, length INTEGER");
+        Stage(transaction, "stage_search_terms", "node_id VARCHAR, term VARCHAR, tf INTEGER");
+        using (var appender = StageAppender("stage_search_docs"))
+        {
+            foreach (var document in documents)
+            {
+                appender.CreateRow().AppendValue(document.NodeId).AppendValue(document.Length).EndRow();
+            }
+        }
+
+        using (var appender = StageAppender("stage_search_terms"))
+        {
+            foreach (var document in documents)
+            {
+                foreach (var (term, tf) in document.Terms)
+                {
+                    appender.CreateRow().AppendValue(document.NodeId).AppendValue(term).AppendValue(tf).EndRow();
+                }
+            }
+        }
+
+        const string SearchScope = "(SELECT id FROM replaced_nodes UNION SELECT node_id FROM stage_search_docs)";
+        Execute(
+            $"""
+             DELETE FROM search_terms t WHERE t.node_id IN {SearchScope}
+               AND NOT EXISTS (SELECT 1 FROM stage_search_terms s WHERE s.node_id = t.node_id AND s.term = t.term AND s.tf = t.tf);
+             """, transaction);
+        Execute(
+            $"""
+             DELETE FROM search_docs d WHERE d.node_id IN {SearchScope}
+               AND NOT EXISTS (SELECT 1 FROM stage_search_docs s WHERE s.node_id = d.node_id AND s.length = d.length);
+             """, transaction);
+        Execute(
+            """
+            INSERT INTO search_docs SELECT node_id, length FROM stage_search_docs s
+            WHERE NOT EXISTS (SELECT 1 FROM search_docs d WHERE d.node_id = s.node_id);
+            """, transaction);
+        Execute(
+            """
+            INSERT INTO search_terms SELECT node_id, term, tf FROM stage_search_terms s
+            WHERE NOT EXISTS (SELECT 1 FROM search_terms t WHERE t.node_id = s.node_id AND t.term = s.term);
+            """, transaction);
+        Execute("DELETE FROM stage_search_docs;", transaction);
+        Execute("DELETE FROM stage_search_terms;", transaction);
+
+        // Vectors, the same way; a vector is a function of its text hash (another model means a full rebuild).
+        Stage(transaction, "stage_embeddings", "node_id VARCHAR, text_hash VARCHAR, vector BLOB");
+        using (var appender = StageAppender("stage_embeddings"))
+        {
+            foreach (var embedding in (embeddings ?? []).DistinctBy(e => e.NodeId))
+            {
+                appender.CreateRow().AppendValue(embedding.NodeId).AppendValue(embedding.TextHash).AppendValue(embedding.Vector.ToBytes()).EndRow();
+            }
+        }
+
+        Execute(
+            """
+            DELETE FROM embeddings m
+            WHERE m.node_id IN (SELECT id FROM replaced_nodes UNION SELECT node_id FROM stage_embeddings)
+              AND NOT EXISTS (SELECT 1 FROM stage_embeddings s WHERE s.node_id = m.node_id AND s.text_hash = m.text_hash AND s.vector = m.vector);
+            """, transaction);
+        Execute(
+            """
+            INSERT INTO embeddings SELECT node_id, text_hash, vector FROM stage_embeddings s
+            WHERE NOT EXISTS (SELECT 1 FROM embeddings m WHERE m.node_id = s.node_id);
+            """, transaction);
+        Execute("DELETE FROM stage_embeddings;", transaction);
     }
 
     /// <summary>Index metadata: schema version, solution, git commit, time. Empty for a database from before metadata existed.</summary>
@@ -562,7 +683,7 @@ public sealed class GraphStore : IDisposable
     // (one run burned 12 CPU-minutes on edges alone). The appender loads a table in a second but cannot merge,
     // so rows are appended to a temp table first and one statement per table merges them in with the same
     // conflict rules a per-row insert had: nodes and files update in place, edges and origins ignore duplicates.
-    private void WriteCore(DuckDBTransaction transaction, IEnumerable<GraphNode> nodes, IEnumerable<GraphEdge> edges, IEnumerable<EdgeOrigin> origins)
+    private void StageGraph(DuckDBTransaction transaction, IEnumerable<GraphNode> nodes, IEnumerable<GraphEdge> edges, IEnumerable<EdgeOrigin> origins)
     {
         Stage(transaction, "stage_nodes", StageNodeSchema);
         using (var appender = StageAppender("stage_nodes"))
@@ -593,26 +714,6 @@ public sealed class GraphStore : IDisposable
             }
         }
 
-        // The last row for an id wins, as the last per-row upsert used to. ON CONFLICT DO UPDATE rejects a source
-        // with duplicate keys, so the staging rows are deduplicated first.
-        Execute(
-            """
-            INSERT INTO nodes
-            SELECT * FROM stage_nodes
-            QUALIFY row_number() OVER (PARTITION BY id ORDER BY rowid DESC) = 1
-            ON CONFLICT (id) DO UPDATE SET
-                kind = excluded.kind, name = excluded.name, full_name = excluded.full_name,
-                signature = excluded.signature, file_path = excluded.file_path,
-                start_line = excluded.start_line, end_line = excluded.end_line,
-                is_test = excluded.is_test, type_kind = excluded.type_kind,
-                accessibility = excluded.accessibility, is_static = excluded.is_static,
-                is_abstract = excluded.is_abstract, is_virtual = excluded.is_virtual,
-                is_sealed = excluded.is_sealed, is_async = excluded.is_async,
-                is_override = excluded.is_override, member_kind = excluded.member_kind,
-                language = excluded.language;
-            """, transaction);
-        Execute("DELETE FROM stage_nodes;", transaction);
-
         Stage(transaction, "stage_edges", "from_id VARCHAR, to_id VARCHAR, kind VARCHAR");
         using (var appender = StageAppender("stage_edges"))
         {
@@ -621,9 +722,6 @@ public sealed class GraphStore : IDisposable
                 appender.CreateRow().AppendValue(edge.FromId).AppendValue(edge.ToId).AppendValue(edge.Kind.ToString()).EndRow();
             }
         }
-
-        Execute("INSERT INTO edges SELECT DISTINCT from_id, to_id, kind FROM stage_edges ON CONFLICT DO NOTHING;", transaction);
-        Execute("DELETE FROM stage_edges;", transaction);
 
         Stage(transaction, "stage_edge_origins", "from_id VARCHAR, to_id VARCHAR, kind VARCHAR, file_path VARCHAR");
         using (var appender = StageAppender("stage_edge_origins"))
@@ -638,12 +736,59 @@ public sealed class GraphStore : IDisposable
                     .EndRow();
             }
         }
+    }
 
-        Execute("INSERT INTO edge_origins SELECT DISTINCT from_id, to_id, kind, file_path FROM stage_edge_origins ON CONFLICT DO NOTHING;", transaction);
+    /// <summary>
+    /// Merges the staged rows in with the conflict rules a per-row insert had: nodes update in place (the last row
+    /// for an id wins), edges and origins ignore duplicates. A row the graph already holds unchanged is not written
+    /// at all, so DuckDB has no row group or index to rewrite for it.
+    /// </summary>
+    private void MergeStagedGraph(DuckDBTransaction transaction)
+    {
+        // ON CONFLICT DO UPDATE rejects a source with duplicate keys, so the staging rows are deduplicated first.
+        Execute(
+            $"""
+             INSERT INTO nodes
+             SELECT * FROM (SELECT * FROM stage_nodes QUALIFY row_number() OVER (PARTITION BY id ORDER BY rowid DESC) = 1) s
+             WHERE NOT EXISTS (SELECT 1 FROM nodes n WHERE n.id = s.id AND {SameNode})
+             ON CONFLICT (id) DO UPDATE SET
+                 kind = excluded.kind, name = excluded.name, full_name = excluded.full_name,
+                 signature = excluded.signature, file_path = excluded.file_path,
+                 start_line = excluded.start_line, end_line = excluded.end_line,
+                 is_test = excluded.is_test, type_kind = excluded.type_kind,
+                 accessibility = excluded.accessibility, is_static = excluded.is_static,
+                 is_abstract = excluded.is_abstract, is_virtual = excluded.is_virtual,
+                 is_sealed = excluded.is_sealed, is_async = excluded.is_async,
+                 is_override = excluded.is_override, member_kind = excluded.member_kind,
+                 language = excluded.language;
+             """, transaction);
+        Execute(
+            """
+            INSERT INTO edges SELECT DISTINCT from_id, to_id, kind FROM stage_edges s
+            WHERE NOT EXISTS (SELECT 1 FROM edges e WHERE e.from_id = s.from_id AND e.to_id = s.to_id AND e.kind = s.kind)
+            ON CONFLICT DO NOTHING;
+            """, transaction);
+        Execute(
+            """
+            INSERT INTO edge_origins SELECT DISTINCT from_id, to_id, kind, file_path FROM stage_edge_origins s
+            WHERE NOT EXISTS (SELECT 1 FROM edge_origins o
+                              WHERE o.from_id = s.from_id AND o.to_id = s.to_id AND o.kind = s.kind AND o.file_path = s.file_path)
+            ON CONFLICT DO NOTHING;
+            """, transaction);
+        Execute("DELETE FROM stage_nodes;", transaction);
+        Execute("DELETE FROM stage_edges;", transaction);
         Execute("DELETE FROM stage_edge_origins;", transaction);
     }
 
-    private void WriteFiles(DuckDBTransaction transaction, IEnumerable<FileStamp> files, string language)
+    /// <summary>Every node column equal, NULLs included, between the graph's row n and a staged row s.</summary>
+    private static readonly string SameNode = string.Join(" AND ",
+        NodeColumns.Split(',', StringSplitOptions.TrimEntries).Skip(1).Select(c => $"n.{c} IS NOT DISTINCT FROM s.{c}"));
+
+    /// <summary>
+    /// Writes the stamps that differ from the stored ones. With <paramref name="replacing"/> (an incremental pass)
+    /// a replaced path that has no stamp now loses its row, as the replaced files' other rows do.
+    /// </summary>
+    private void WriteFiles(DuckDBTransaction transaction, IEnumerable<FileStamp> files, string language, bool replacing)
     {
         Stage(transaction, "stage_files", "path VARCHAR, hash VARCHAR, size BIGINT, mtime_ticks BIGINT");
         using (var appender = StageAppender("stage_files"))
@@ -654,11 +799,18 @@ public sealed class GraphStore : IDisposable
             }
         }
 
+        if (replacing)
+        {
+            Execute("DELETE FROM files WHERE path IN (SELECT path FROM replaced_paths) AND path NOT IN (SELECT path FROM stage_files);", transaction);
+        }
+
         Execute(
             """
             INSERT INTO files (path, hash, size, mtime_ticks, language)
-            SELECT path, hash, size, mtime_ticks, $language FROM stage_files
-            QUALIFY row_number() OVER (PARTITION BY path ORDER BY rowid DESC) = 1
+            SELECT path, hash, size, mtime_ticks, $language
+            FROM (SELECT * FROM stage_files QUALIFY row_number() OVER (PARTITION BY path ORDER BY rowid DESC) = 1) s
+            WHERE NOT EXISTS (SELECT 1 FROM files f WHERE f.path = s.path AND f.hash = s.hash AND f.size = s.size
+                                AND f.mtime_ticks = s.mtime_ticks AND f.language = $language)
             ON CONFLICT (path) DO UPDATE SET hash = excluded.hash, size = excluded.size, mtime_ticks = excluded.mtime_ticks,
                 language = excluded.language;
             """, transaction, language: language);
@@ -940,6 +1092,8 @@ public sealed class GraphStore : IDisposable
     /// <summary>
     /// Case-insensitive name match on name or full name. Exact name matches sort first,
     /// then shorter names, so <c>FindSymbol("Save")</c> returns <c>Save</c> before <c>SaveAllAsync</c>.
+    /// <c>Exact</c> also takes a qualified tail of the full name without its parameter list, so
+    /// <c>GraphStore.Replace</c> finds <c>CodeGraph.Core.GraphStore.Replace(bool, …)</c>.
     /// </summary>
     public IReadOnlyList<GraphNode> FindSymbol(
         string query,
@@ -974,7 +1128,9 @@ public sealed class GraphStore : IDisposable
         command.CommandText =
             $"""
              SELECT {NodeColumns} FROM nodes
-             WHERE (name ILIKE $pattern ESCAPE '\' OR full_name ILIKE $pattern ESCAPE '\')
+             WHERE (name ILIKE $pattern ESCAPE '\' OR full_name ILIKE $pattern ESCAPE '\'
+                    OR ($qualified AND (split_part(full_name, '(', 1) ILIKE $pattern ESCAPE '\'
+                                        OR split_part(full_name, '(', 1) ILIKE $tail ESCAPE '\')))
                AND ($kind IS NULL OR kind = $kind)
                AND ($type_kind IS NULL OR type_kind = $type_kind)
                AND ($accessibility IS NULL OR accessibility = $accessibility)
@@ -993,6 +1149,8 @@ public sealed class GraphStore : IDisposable
              LIMIT $limit OFFSET $offset;
              """;
         command.Parameters.Add(P("pattern", pattern));
+        command.Parameters.Add(P("qualified", nameMatch.Equals("exact", StringComparison.OrdinalIgnoreCase)));
+        command.Parameters.Add(P("tail", $"%.{literal}"));
         command.Parameters.Add(P("exact", query));
         command.Parameters.Add(P("offset", Math.Max(0, offset)));
         command.Parameters.Add(P("kind", kind?.ToString()));

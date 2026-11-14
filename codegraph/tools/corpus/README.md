@@ -1,6 +1,6 @@
 # Generated corpus
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [Obsidian end-to-end](../obsidian-e2e/README.md)
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [With and without](../eval/README.md) · [Obsidian end-to-end](../obsidian-e2e/README.md)
 
 Synthetic codebases with a known answer key, to test each extractor against. `gen.py` builds one seeded model
 (modules, classes, interfaces, inheritance, overrides, overloads, generics, nested types, statics, lambdas, tests,
@@ -90,4 +90,4 @@ the .NET 10 runtime beside it, in the dialects asked for, at the level that SDK 
 
 ---
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [Obsidian end-to-end](../obsidian-e2e/README.md)
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [With and without](../eval/README.md) · [Obsidian end-to-end](../obsidian-e2e/README.md)

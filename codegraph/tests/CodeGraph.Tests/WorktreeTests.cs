@@ -19,6 +19,44 @@ public sealed class WorktreeTests : IDisposable
         Assert.Equal(Path.Combine(worktree, ".codegraph", "graph.db"), Worktree.DefaultDbPath(src));
     }
 
+    [Theory]
+    [InlineData("[M:App.Program.Run(System.String)]", "M:App.Program.Run(System.String)")]
+    [InlineData(" [ts:src/app.ts#App] ", "ts:src/app.ts#App")]
+    [InlineData("M:App.Program.Run(System.String[])", "M:App.Program.Run(System.String[])")]
+    [InlineData("[", "[")]
+    public void A_bracketed_id_copied_from_an_answer_is_unwrapped(string given, string expected) =>
+        Assert.Equal(expected, NodeIds.Unwrap(given));
+
+    [Fact]
+    public void An_id_passed_under_another_name_reaches_the_argument_the_tool_takes()
+    {
+        var call = new Dictionary<string, string> { ["symbolId"] = "M:A.B", ["depth"] = "2" };
+        Assert.True(NodeIds.NameTheId("impact_of", call));
+        Assert.Equal("M:A.B", call["id"]);
+        Assert.False(call.ContainsKey("symbolId"));
+
+        var live = new Dictionary<string, string> { ["id"] = "M:A.B" };
+        Assert.True(NodeIds.NameTheId("live_references", live));
+        Assert.Equal("M:A.B", live["symbol"]);
+
+        var right = new Dictionary<string, string> { ["id"] = "M:A.B", ["nodeId"] = "M:X" };
+        Assert.False(NodeIds.NameTheId("tests_for", right));
+        Assert.Equal("M:A.B", right["id"]);
+    }
+
+    [Fact]
+    public void A_root_from_the_client_counts_only_when_it_is_a_real_folder()
+    {
+        var folder = Directory.CreateDirectory(Path.Combine(_root, "open-folder")).FullName;
+
+        Assert.Equal(folder, Worktree.UsableRoot(folder));
+        // The Cursor CLI passes ${workspaceFolder} through as written; the server then looks from where it started.
+        Assert.Null(Worktree.UsableRoot("${workspaceFolder}"));
+        Assert.Null(Worktree.UsableRoot(""));
+        Assert.Null(Worktree.UsableRoot(null));
+        Assert.Null(Worktree.UsableRoot(Path.Combine(_root, "missing")));
+    }
+
     [Fact]
     public void FindDb_walks_up_to_the_worktree_root()
     {

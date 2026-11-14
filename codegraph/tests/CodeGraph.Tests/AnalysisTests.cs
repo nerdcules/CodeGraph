@@ -179,6 +179,23 @@ public sealed class AnalysisTests
     }
 
     [Fact]
+    public void FindSymbol_exact_takes_a_qualified_tail_of_the_full_name_without_its_parameters()
+    {
+        using var db = new TempDb();
+        db.Store.Write(
+            [
+                Graph.Node("M:App.Core.GraphStore.Replace(System.Boolean)", NodeKind.Method, "Replace", "App.Core.GraphStore.Replace(bool)"),
+                Graph.Node("M:App.Core.MyGraphStore.Replace", NodeKind.Method, "Replace", "App.Core.MyGraphStore.Replace()"),
+                Graph.Node("T:App.Core.GraphStore", NodeKind.Type, "GraphStore", "App.Core.GraphStore"),
+            ], []);
+
+        Assert.Equal(["M:App.Core.GraphStore.Replace(System.Boolean)"], db.Store.FindSymbol("GraphStore.Replace", nameMatch: "Exact").Select(n => n.Id));
+        Assert.Equal(["M:App.Core.GraphStore.Replace(System.Boolean)"], db.Store.FindSymbol("App.Core.GraphStore.Replace", nameMatch: "Exact").Select(n => n.Id));
+        Assert.Equal(["T:App.Core.GraphStore"], db.Store.FindSymbol("Core.GraphStore", nameMatch: "Exact").Select(n => n.Id));
+        Assert.Empty(db.Store.FindSymbol("Store.Replace", nameMatch: "Exact"));
+    }
+
+    [Fact]
     public void Opening_a_missing_graph_read_only_fails_at_once_instead_of_waiting_out_the_lock_retry()
     {
         var path = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"), "graph.db");

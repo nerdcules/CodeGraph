@@ -5,9 +5,10 @@
 [CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
 
 A read-only [Model Context Protocol](https://modelcontextprotocol.io) server that answers structural
-questions about a C# solution from a compiler-built graph: who calls this, what breaks if it changes,
-which tests guard it, where is the code that does X. Built for Claude Code; works with any MCP client
-that speaks stdio.
+questions about a codebase from a compiler-built graph: who calls this, what breaks if it changes,
+which tests guard it, where is the code that does X. It works with any MCP client that speaks stdio;
+`codegraph-index init --client` writes the config for Claude Code, GitHub Copilot (CLI, VS Code, Visual
+Studio, JetBrains), Codex, Cursor, the Gemini CLI, Roo Code, Kilo Code and Continue.
 
 | | |
 |---|---|
@@ -39,7 +40,7 @@ graph. Set up another repo later with `codegraph-index init` from inside it. See
 from source (`--from-source`).
 
 `uninstall.ps1` / `uninstall.sh` reverses the install: folder, PATH entry, and with `-Repo` /
-`--repo` a repo's `.mcp.json` entry and `.codegraph/` graph.
+`--repo` a repo's MCP config entries and `.codegraph/` graph, and Codex's global entry.
 
 Languages: C# through Roslyn, TypeScript and Angular through the bundled Node extractor (needs Node.js), and
 Java, Kotlin, Scala, Python, Go and Rust through their SCIP indexers. [EXTRACTORS.md](EXTRACTORS.md) lists
@@ -69,19 +70,37 @@ codegraph-index path/to/App.sln            # full the first time, incremental af
 codegraph-index path/to/App.sln --watch    # re-index on every save, no MSBuild reload
 ```
 
+Other clients read other files. `codegraph-index init --client <names>` writes each one
+([installation](docs/installation.md#use-another-assistant)):
+
+| Client | File | Key | The project folder reaches the server through |
+|---|---|---|---|
+| Claude Code, the Copilot CLI | `.mcp.json` | `mcpServers` | the working directory |
+| Copilot in VS Code | `.vscode/mcp.json` | `servers`, with `"type": "stdio"` | `--root ${workspaceFolder}` |
+| Copilot in Visual Studio | `.vs/mcp.json` beside the solution | `servers` | `--root <absolute worktree root>` |
+| Copilot for JetBrains | `.github/mcp.json` | `servers` | `--root <absolute worktree root>` |
+| Cursor | `.cursor/mcp.json` | `mcpServers` | `--root ${workspaceFolder}` (IDE), the working directory (CLI) |
+| Gemini CLI | `.gemini/settings.json` | `mcpServers` | the working directory |
+| Codex | `~/.codex/config.toml`, global | `mcp_servers` | the working directory |
+| Roo Code | `.roo/mcp.json` | `mcpServers` | the working directory (the first workspace folder) |
+| Kilo Code | `.kilo/kilo.json` | `mcp`, with `"type": "local"`, one `command` array, `environment` | the working directory |
+| Continue | `.continue/mcpServers/codegraph.json` | `mcpServers` | the working directory (the first workspace folder) |
+
 Add `.codegraph/` to `.gitignore`. A repo that has not been indexed still starts the server;
 every tool answers `no code graph at …, build it with codegraph-index` until one exists.
 
 ### Command line
 
 ```
-codegraph-mcp [path-to-graph.db] [--web PORT]
+codegraph-mcp [path-to-graph.db] [--root DIR] [--web PORT]
 ```
 
 | | |
 |---|---|
 | `path-to-graph.db` | explicit graph; otherwise discovered from the working directory |
 | `CODEGRAPH_DB` | environment alternative to the positional path |
+| `--root DIR` | find the graph from `DIR` instead of the working directory, for a client that starts servers elsewhere; an unexpanded `${...}` placeholder is ignored |
+| `CODEGRAPH_ROOT` | environment alternative to `--root` |
 | `--web PORT` | also serve the graph visualiser on `http://localhost:PORT` |
 | `CODEGRAPH_TELEMETRY=off` | keep usage counts in memory only; see [Telemetry](#telemetry) |
 | `CODEGRAPH_INDEXER` | path of `codegraph-index` for `live_status start=true`, when it is not next to the server; see [Live daemon](#live-daemon) |
@@ -169,7 +188,7 @@ and override.
 
 | tool | arguments | answers |
 |---|---|---|
-| `find_symbol` | `query`, `kind?`, `limit` (1–100, 20), `typeKind?`, `accessibility?`, `isStatic?`, `isAbstract?`, `isVirtual?`, `isAsync?`, `isOverride?`, `memberKind?`, `nameMatch` (Contains / StartsWith / EndsWith / Exact), `offset` | Types and members by name, case-insensitive. Exact name matches first, then shorter names. |
+| `find_symbol` | `query`, `kind?`, `limit` (1–100, 20), `typeKind?`, `accessibility?`, `isStatic?`, `isAbstract?`, `isVirtual?`, `isAsync?`, `isOverride?`, `memberKind?`, `nameMatch` (Contains / StartsWith / EndsWith / Exact), `offset` | Types and members by name, case-insensitive. Exact name matches first, then shorter names. `Exact` also takes a qualified tail such as `GraphStore.Replace`. |
 | `search_code` | `query`, `kind?`, `file?`, `limit` (1–100, 20), `mode` (auto / lexical / semantic / hybrid) | "Where's the code that does X": BM25 full-text over names, signatures, comments, string literals and body identifiers, fused with vector similarity when the graph has [embeddings](#semantic-search). Each hit shows its rank by words and by meaning. |
 | `outline` | `id` | Direct children, no bodies: members of a type, types in a file, files in a project. |
 | `members_of` | `id`, `kind?`, `accessibility?`, `isStatic?`, `isAbstract?`, `isAsync?`, `isVirtual?`, `isOverride?`, `limit` (500), `offset` | Members of a type filtered by kind and modifiers. |
@@ -200,7 +219,7 @@ and override.
 
 | tool | arguments | answers |
 |---|---|---|
-| `tests_for` | `id` | Test methods that call or read this member directly, including through an interface or base member it implements. |
+| `tests_for` | `id` | Test methods that call or read this member directly, including through an interface or base member it implements. In C#, what the framework runs around a test counts as called by it: the test class's constructors and `Dispose`, `IAsyncLifetime`, and `[SetUp]` / `[TestInitialize]`-style methods. |
 | `covered_by` | `id`, `depth` (1–30, 10) | Tests that reach this member transitively, following interface and virtual dispatch, with hop count. |
 | `coverage_stats` | | Share of production methods reachable from any test through the call graph. Static reachability, not line coverage. |
 | `uncovered` | `file?`, `limit` (1–500, 100), `offset` | Production methods no test reaches. |
@@ -362,8 +381,8 @@ file list whenever the database's mtime changes, regardless of its 3 s cache.
 | `live daemon: the solution is still loading` | The daemon is in its MSBuild load; retry in a few seconds. |
 | Two solutions in one worktree | Give each its own graph with `codegraph-index … --db <path>` and pass that path (or `CODEGRAPH_DB`) to the server. |
 | `You must install or update .NET to run this application` | The executables look for .NET in `DOTNET_ROOT` or the machine's default location, not on `PATH`; with a version-managed dotnet (mise, asdf) that location may lack ASP.NET Core. `codegraph-index init` detects this and adds `"env": { "DOTNET_ROOT": … }` to the `.mcp.json` entry; set the same variable in your shell to run `codegraph-index` by hand. `codegraph-mcp --version` is a quick check. |
-| The server will not start after an upgrade | A running `codegraph-mcp` held its files open during publish. Close Claude Code sessions and re-run the install script, or use `-Force` / `--force`. |
-| Server logs | stderr. Claude Code shows them under the MCP server's output. |
+| The server will not start after an upgrade | A running `codegraph-mcp` held its files open during publish. Close the assistant sessions and re-run the install script, or use `-Force` / `--force`. |
+| Server logs | stderr. Claude Code shows them under the MCP server's output. In VS Code, Copilot's agent records them in `~/.copilot/session-state/<id>/events.jsonl`. |
 
 ---
 

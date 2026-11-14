@@ -4,14 +4,15 @@
 
 .DESCRIPTION
     Deletes the install folder, takes it out of the user PATH if install.ps1 -AddToPath put it there, and
-    optionally removes the `codegraph` server entry from a repo's .mcp.json and that repo's .codegraph/ graph.
+    optionally removes the `codegraph` server entry from a repo's MCP configs and that repo's .codegraph/ graph.
     Running codegraph processes keep the executables locked; the script refuses unless -Force stops them.
 
 .PARAMETER InstallDir
     The folder install.ps1 published into. Default: C:\tools\codegraph on Windows, ~/.codegraph/bin elsewhere.
 
 .PARAMETER Repo
-    A repo whose .mcp.json loses its `codegraph` entry and whose .codegraph/ folder is deleted. Repeatable.
+    A repo whose MCP configs (.mcp.json and those of the other assistants init sets up) lose their `codegraph`
+    entry and whose .codegraph/ folder is deleted. Repeatable.
 
 .PARAMETER Force
     Stop running codegraph-mcp / codegraph-index processes first.
@@ -108,11 +109,32 @@ foreach ($dir in $Repo) {
     $dir = [System.IO.Path]::GetFullPath($dir)
     Step "Repo: $dir"
 
-    $configPath = Join-Path $dir '.mcp.json'
-    if (Test-Path $configPath) {
-        # Objects, not -AsHashtable: Windows PowerShell 5.1 does not have that parameter.
-        $config = Get-Content $configPath -Raw | ConvertFrom-Json
-        $servers = if ($config) { $config.PSObject.Properties['mcpServers'] } else { $null }
+    # Each assistant's project config that init can write, with the key its servers sit under; Visual Studio's
+    # .vs/mcp.json sits beside the solution, so look a few folders down for it.
+    $configs = @(
+        @{ File = '.mcp.json'; Key = 'mcpServers' },
+        @{ File = '.cursor/mcp.json'; Key = 'mcpServers' },
+        @{ File = '.vscode/mcp.json'; Key = 'servers' },
+        @{ File = '.github/mcp.json'; Key = 'servers' },
+        @{ File = '.gemini/settings.json'; Key = 'mcpServers' },
+        @{ File = '.roo/mcp.json'; Key = 'mcpServers' },
+        @{ File = '.kilo/kilo.json'; Key = 'mcp' },
+        @{ File = '.continue/mcpServers/codegraph.json'; Key = 'mcpServers' }
+    )
+    $configs += @(Get-ChildItem -Path $dir -Filter mcp.json -Recurse -Depth 3 -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Directory.Name -eq '.vs' } |
+        ForEach-Object { @{ File = $_.FullName.Substring($dir.Length).TrimStart('\', '/'); Key = 'servers' } })  # no GetRelativePath in Windows PowerShell 5.1
+    foreach ($entry in $configs) {
+        $configPath = Join-Path $dir $entry.File
+        if (-not (Test-Path $configPath)) { continue }
+        try {
+            # Objects, not -AsHashtable: Windows PowerShell 5.1 does not have that parameter.
+            $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        } catch {
+            Write-Warning "could not read $configPath; remove the `"codegraph`" entry by hand"
+            continue
+        }
+        $servers = if ($config) { $config.PSObject.Properties[$entry.Key] } else { $null }
         if ($servers -and $servers.Value.PSObject.Properties['codegraph']) {
             if (Confirm-Step "Remove the codegraph server entry from $configPath?") {
                 $servers.Value.PSObject.Properties.Remove('codegraph')
@@ -130,6 +152,18 @@ foreach ($dir in $Repo) {
         if (Confirm-Step "Delete the graph and telemetry in $graphDir?") {
             Remove-Item -Recurse -Force $graphDir
             Write-Host 'deleted'
+        }
+    }
+}
+
+# ---- Codex ------------------------------------------------------------------------------------------------
+# init --client codex puts one entry in Codex's global config rather than in a repo.
+if (Get-Command codex -ErrorAction SilentlyContinue) {
+    & codex mcp get codegraph *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Step 'Codex'
+        if (Confirm-Step "Remove the codegraph server from Codex's global config?") {
+            & codex mcp remove codegraph
         }
     }
 }

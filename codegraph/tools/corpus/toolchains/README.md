@@ -1,6 +1,6 @@
 # Older toolchains
 
-[CodeGraph](../../../README.md) · [Docs](../../../docs/README.md) · [Contributing](../../../docs/contributing.md) · [Corpus](../README.md) · **Older toolchains** · [Obsidian end-to-end](../../obsidian-e2e/README.md)
+[CodeGraph](../../../README.md) · [Docs](../../../docs/README.md) · [Contributing](../../../docs/contributing.md) · [Corpus](../README.md) · **Older toolchains** · [With and without](../../eval/README.md) · [Obsidian end-to-end](../../obsidian-e2e/README.md)
 
 One image per toolchain a repo might still be on, with the .NET 10 runtime copied in beside it so codegraph-index
 and codegraph-mcp run unchanged. `run.py --toolchains dotnet8,node20,...` builds each, builds the corpus image on
@@ -22,4 +22,4 @@ they are built; the runs do not. The `jdk17` image warms its own Maven repositor
 
 ---
 
-[CodeGraph](../../../README.md) · [Docs](../../../docs/README.md) · [Contributing](../../../docs/contributing.md) · [Corpus](../README.md) · **Older toolchains** · [Obsidian end-to-end](../../obsidian-e2e/README.md)
+[CodeGraph](../../../README.md) · [Docs](../../../docs/README.md) · [Contributing](../../../docs/contributing.md) · [Corpus](../README.md) · **Older toolchains** · [With and without](../../eval/README.md) · [Obsidian end-to-end](../../obsidian-e2e/README.md)

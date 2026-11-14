@@ -623,6 +623,157 @@ The save-to-answer time was 0.64 s on 2026-11-09, with 687 nodes. It is about a 
 `aa01b14`, before the snapshot, takes the same 0.97–1.07 s on today's graph, so the change is the graph's size,
 not round 11. The docs said "well under a second"; they now say "about a second".
 
+## Round 13: performance and resilience after the client work
+
+Measured 2026-11-14 on the `any-mcp-client` branch, on top of `2e1799b` (Release, Linux x64, 8 cores, no
+container). The machine was not idle: other sessions held the load average between 1.3 and 4. The branch adds
+`init --client`, `--root`, argument repair and test-setup edges, so this round checks that none of it cost speed,
+and runs a resilience battery for the first time.
+
+**This repo**, a copy of its code at the branch (docs removed, code identical): 3,170 nodes, 19,297 edges.
+
+| measurement | round 13 | round 12 |
+|---|---|---|
+| full index, wall clock (the indexer's own figure), 3 runs | 16.7–17.6 s (14.3–15.0 s) | 16.2–16.3 s (13.6–14.4 s) |
+| no-op incremental index, 3 runs | 2.7–2.9 s | 2.6–2.7 s |
+| graph file after a full index, and after 3 more | 23,308–23,820 KB, flat | 20,236–20,748 KB, flat |
+| snapshot load, managed memory | 45 ms, 2 MB | 43 ms, 2 MB |
+| store queries from memory, all 14 | 0.001–0.76 ms | under 0.8 ms |
+| parity, SQL against memory | 7,776 checks over 547 nodes, 0 mismatches | |
+| live daemon resident memory, solution loaded | about 405 MB | about 380 MB |
+
+The graph has 1.6% more nodes and 3.3% more edges than in round 12, and 204 of the new edges are the test-setup
+edges. The index times moved by about as much.
+
+**Tool calls through the server**, `codegraph-bench --server`, back to back / 2 s apart: first call after start
+75 ms; `graph_stats` 0.36 / 1.1 ms; `find_symbol 'Dispose'` 1.2 / 1.5 ms; `callers_of` depth 1 0.73 / 2.8 ms;
+`impact_of` depth 5 1.2 / 2.0 ms; depth 20 0.83 / 1.1 ms; `covered_by` depth 30 0.69 / 1.2 ms. Round 12's figures
+were 0.37–1.7 ms back to back and 1.2–3.5 ms 2 s apart.
+
+**Live daemon**, `--live`, five calls each, the second run (the first found the solution still loading): ping
+0.21 ms; flush when idle 0.21 ms; symbol_at 0.37 ms; references to a source symbol 6.3 ms, to System.IO.File 17 ms;
+diagnostics for one file 0.45 ms, for the solution 138 ms; data_flow 0.54 ms; check_change on an unchanged file
+744 ms, on an edited one 1,184 ms. All are inside or near round 12's ranges.
+
+**Save to a fresh answer.** A new method saved into `Worktree.cs`, then `find_symbol` for it at once through
+the server (the server flushes the daemon, skipping its 500 ms wait): 10 of 10 found, median 1.43 s, range
+1.21–6.14 s; one save of the ten took 6.1 s. Round 12 measured 1.14–1.29 s for the same file.
+
+**The file under the live daemon.** A fresh full index writes 23.3 MB. The first pass after it, even one that walks
+no file, adds about 9 MB: an incremental pass re-emits every project node and its edges and rewrites the file
+stamps, and DuckDB writes the row groups it touches as new blocks. Over 100 saves the file went 32.5, 32.0, 44.3,
+45.1, 46.9, 47.1, 47.1, 46.9, 47.6, 48.4 and 49.9 MB (every 10 saves): it mostly reuses freed blocks, but it still
+creeps, by about 3 MB over the last 50 saves. A full index writes a fresh file and resets it. Fixed in
+[round 14](#round-14-the-graph-file-under-the-live-daemon).
+
+**Jellyfin** at `1fbd873`, re-indexed with this build: 21,174 nodes and 109,420 edges. Against the graph of the
+same commit from round 12, 474 edges are new and none is gone: 230 calls from a test to its class's constructor,
+7 to its `Dispose`, and the 237 TestedBy edges that go with them. Static coverage (`coverage_stats`) of its 6,689
+production methods went from 2,752 reachable from a test (41.1%) to 2,829 (42.3%): 77 methods that only test
+setup reaches now count as tested.
+
+| measurement | round 13 | round 12 |
+|---|---|---|
+| full index, the indexer's own figure (wall clock), 2 runs | 44.9–45.0 s (59.7–60.1 s) | 44.3–45.3 s |
+| no-op incremental index | 0.9 s (15.8 s wall, most of it the solution load) | |
+| graph file | 126,732 KB | |
+| snapshot load, managed memory | 287 ms, 17 MB | |
+| parity | 4,626 checks over 322 nodes, 0 mismatches | |
+| through the server, 2 s apart: `graph_stats`, `find_symbol`, `callers_of`, `impact_of` depth 5 and 20, `covered_by` | 1.1, 6.8, 5.5, 8.3, 6.7, 5.6 ms | 4.0, 7.4, 2.5, 8.5, 10, 6.1 ms |
+
+**Resilience.** [`tools/CodeGraph.Bench/resilience.py`](tools/CodeGraph.Bench/resilience.py) runs each scenario on its
+own copy of this repo against the Release server and indexer. The first run found two bugs; both are fixed, and
+the second run passed all 12.
+
+| scenario | result |
+|---|---|
+| A server started before any graph exists, then the graph is built under it | Pass. Before: "no code graph at …"; after the build, the next call answers without a restart. |
+| A damaged graph file (64 random 4 KB blocks overwritten): the server | Pass. It stays up; calls that hit a damaged block now say the file is damaged and how to rebuild it. Before the fix they said only "An error occurred invoking 'find_symbol'". |
+| A damaged graph file: the indexer | Pass after a fix. Before it, both an incremental run and `--full` crashed (SIGABRT): `--full` still read the old file to keep other languages' rows. Now an incremental run rebuilds from source and `--full` skips the unreadable rows, both saying so. |
+| `kill -9` of the indexer at 5 moments of a full index and 3 of an incremental one | Pass. After every kill the graph opened and held its 3,170 nodes; the next index succeeded. |
+| 8 servers calling in a loop while the indexer ran 3 full and 3 incremental passes | Pass. 951,741 calls, 0 errors, p50 1.5 ms, p99 6.8 ms, max 673 ms (a reload after a swap); a method added between passes was found afterwards. |
+| Malformed requests: not JSON, an unknown tool, a missing or mistyped argument, depth −5 and 10⁹, a 1 MB query, control characters, an unknown id, a SQL-looking query, an id in brackets or named `symbolId` | Pass. Each got an answer, the server kept serving, and the graph was intact after. Before the fix, the missing and mistyped arguments got only "An error occurred"; now they name the problem and list the tool's parameters. |
+| The live daemon killed under a server that started it | Pass. live_status says no daemon and how to start one, graph tools keep answering, a live tool says it needs the daemon, and `live_status start=true` starts a new one. |
+| stdin closed | Pass. The server exits 0 at once. |
+| `--root` a missing folder, a file, an unexpanded `${workspaceFolder}`, or empty | Pass. Each falls back to the working directory and says "no code graph at …". |
+| A file edited with no daemon | Pass. The answer starts with "⚠ STALE INDEX". |
+| `init` against a `.mcp.json` that is not an object, a `.vscode/mcp.json` with comments and trailing commas, and a read-only `.cursor/mcp.json` | Pass. The first and third exit 1 with "cannot update …" and leave the file alone; the second merges and keeps the other server (and drops the comments). |
+
+The first run also failed the stale-answer scenario, but the test was wrong: a daemon left by the scenario before
+it re-indexed the edit, so the answer was rightly fresh.
+
+## Round 14: the graph file under the live daemon
+
+Round 13 left one finding open: under `--watch` the graph file grew with every pass and kept creeping. Measured
+on 2026-11-14, Release builds, the same copy of this repo as round 13 (3,170 nodes, 19,297 edges).
+
+**The cause.** An incremental pass deleted every row of each file it re-walked, and of every project file, then
+inserted the new rows, nearly all of them the same as the ones it had deleted. It also rewrote all 107 file
+stamps and every meta key. At a checkpoint, DuckDB writes every row group and index part that a delete or insert
+touched as new blocks, then frees the old ones. Checked with DuckDB 1.5.2 on a freshly written copy of the graph
+(92 blocks of 256 KB):
+- Inserting one edge added 4 blocks. Deleting one added 7.
+- Deleting and re-inserting the 12 rows that hang off project files added 26 blocks.
+- The primary-key indexes take about 55 of the 92 blocks, the table data about 13.
+
+**The change.** An incremental pass now writes only what differs. It deletes the rows of a replaced file that the
+new rows do not have, inserts the new rows the graph does not hold, and updates a node only when a column
+changed. The same goes for search terms, vectors, file stamps and meta keys. The end state is the one the old
+delete-and-insert gave. `Replace` in `GraphStore.cs`; a full index is unchanged.
+
+**This repo, the command-line indexer.** [`file-growth.sh cli`](tools/CodeGraph.Bench/file-growth.sh): a full
+index, 8 no-op passes, then 30 passes that each change one method in `Worktree.cs` (10
+files walked). "Before" is this branch's build without the change.
+
+| graph file | before | after |
+|---|---|---|
+| fresh full index | 23.0 MB | 23.0 MB |
+| 8 no-op passes | 32.0–33.8 MB | 25.0–26.3 MB |
+| 30 edit passes | 33.0–44.5 MB, rising from 42.5 to 44.5 over the last 20 | 36.0–38.5 MB, no trend |
+
+**This repo, the live daemon.** [`file-growth.sh daemon`](tools/CodeGraph.Bench/file-growth.sh): a full index, then
+`--watch`, then 150 saves 3 s apart, each changing one method in `Worktree.cs`. The file size is read every 10
+saves. "Before" is the 1.1.0 build, whose `Replace` is the code before this change.
+
+| | 1.1.0 | this build, run 1 | this build, run 2 |
+|---|---|---|---|
+| fresh full index | 23.3 MB | 23.0 MB | 23.3 MB |
+| once the daemon is up | 32.3 MB | 25.0 MB | 25.3 MB |
+| saves 10 to 150 | 43.8 → 51.0 MB, rising | 30.3–38.0 MB, 37.0 at save 150 | 37.8–38.3 MB |
+| passes, the indexer's own time | 150, median 1.4 s (0.3–6.9 s) | | 149, median 1.0 s (0.2–7.8 s) |
+
+Round 13 measured 32.5 → 49.9 MB over 100 saves with the build before this change. The remaining room above the
+fresh 23 MB is where DuckDB writes a pass's touched row groups before it frees the old ones. The file reuses it
+and has stopped growing: 150 saves in two runs showed no trend. The pass times come from a machine that other
+sessions were also loading, so read them as "no slower", not as a speed-up.
+
+**Jellyfin** at `1fbd873`, the command-line indexer. A full index, a no-op pass, 5 passes that each add a class
+to `MediaBrowser.Model/Entities/MediaStream.cs` (61 files walked), then one that restores the file.
+
+| | 1.1.0 | this build |
+|---|---|---|
+| fresh full index | 124.5 MB | 124.5 MB |
+| after the no-op pass | 171.8 MB, 0.9 s | 126.5 MB, 0.3 s |
+| after each of the 6 edit and restore passes | 199.3–240.3 MB | 161.8–173.0 MB |
+| edit pass, the indexer's own time | 22.9–28.3 s | 21.4–24.6 s |
+
+These are 7 passes, too few to show whether Jellyfin's file levels off; this repo's 150 saves do.
+
+**Still the same graph.** After the restore pass, every table was compared with a fresh full index of the same
+source (`EXCEPT` both ways). Both graphs had 0 rows that differed:
+- this repo: 3,170 nodes, 19,297 edges, 19,387 edge origins, 107 file stamps, 2,112 search documents and 62,094
+  search terms;
+- Jellyfin: 21,174, 109,420, 110,217, 2,021, 17,010 and 370,629.
+
+Neither graph has vectors, so the vector path is covered by the unit tests only. All 428 tests pass. One new
+test runs 10 unchanged passes over a 5,000-node graph. On the 1.1.0 code it fails: the file grew 15,360 KB from
+9,740 KB, and its test class took 42.8 s instead of 4.7 s. A second new test checks that a pass swaps a node's
+search terms.
+
+**Not done.** The file could be compacted back to its fresh size: DuckDB's `COPY FROM DATABASE` copied the grown
+graph into a 23.0 MB file in 0.54 s, with every index and key. Now that the file no longer grows, it is not worth
+swapping the file under the readers for that.
+
 ## Where it ended up
 
 This repo's own graph, first baseline against the build before round 11 and the build after it, same machine and

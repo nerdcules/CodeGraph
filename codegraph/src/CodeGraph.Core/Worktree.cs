@@ -28,6 +28,23 @@ public static class Worktree
         return null;
     }
 
+    /// <summary>
+    /// A project folder handed to the server by its client (<c>--root</c> or CODEGRAPH_ROOT), or null when the value
+    /// is no use: empty, not a folder, or a placeholder the client left unexpanded. The Cursor IDE and VS Code expand
+    /// <c>${workspaceFolder}</c> in a server's arguments; the Cursor CLI passes it through as written, and starts the
+    /// server in the project instead, so an unexpanded value falls back to the current directory.
+    /// </summary>
+    public static string? UsableRoot(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Contains("${", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var full = Path.GetFullPath(value);
+        return Directory.Exists(full) ? full : null;
+    }
+
     /// <summary>The db path the indexer writes by default: under the worktree root, else beside <paramref name="start"/>.</summary>
     public static string DefaultDbPath(string start) =>
         Path.Combine(RootOf(start) ?? Path.GetFullPath(start), DbRelativePath);

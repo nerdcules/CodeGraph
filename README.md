@@ -1,18 +1,23 @@
 # CodeGraph
 
-**CodeGraph gives Claude Code the compiler's answers: who calls this, what breaks if I change it,
-which tests guard it.**
+**CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I
+change it, which tests guard it.**
+
+It works with any MCP client, and sets itself up for Claude Code, GitHub Copilot (CLI, VS Code, Visual
+Studio, JetBrains), Codex, Cursor, the Gemini CLI, and the Roo Code, Kilo Code and Continue extensions.
+[Tested with](codegraph/docs/installation.md#tested-with) Claude Code, GitHub Copilot, Codex and Cursor.
 
 [![CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml/badge.svg)](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/nerdcules/CodeGraph?label=release)](https://github.com/nerdcules/CodeGraph/releases/latest)
 
 [![A real Claude Code session on 14 November 2026, replayed from its transcript: asked what breaks if GraphStore.Replace changes, Claude calls find_symbol, impact_of, tests_for and snippet, and answers that 37 tests guard it, in 42 seconds](codegraph/docs/images/promo-answer.gif)](codegraph-promo.mp4)
 
-*A real session, replayed from its transcript. Click for the video with sound: the same question with CodeGraph on (42 s, exactly 37 tests) and off (87 s, "about 40").*
+*A real session, replayed from its transcript. Click for the video with sound: the same question with CodeGraph on (42 s, "37 tests guard it") and off (87 s, "about 40"). A later run-time check found 44 tests that execute the method ([why](codegraph/docs/why-it-saves-tokens.md#in-a-real-session)).*
 
 It reads a codebase with its compiler (C#, TypeScript and Angular, Java, Go, Rust, Python), stores
-what it finds as a graph, and serves that graph to Claude Code as MCP tools. One question costs one
-tool call instead of twenty file reads. An optional Obsidian plugin shows the same graph to people as
+what it finds as a graph, and serves that graph to your assistant as MCP tools. In the session above, the
+assistant answered with four codegraph calls in 42 seconds; without CodeGraph it ran eight shell commands, took
+87 seconds and estimated "about 40" tests. An optional Obsidian plugin shows the same graph to people as
 linked notes.
 
 Install, with the path of a repository to set up:
@@ -25,7 +30,9 @@ curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\YourApp -AddToPath
 ```
 
-Then start Claude Code in that repository and ask what breaks if you change something.
+Then start your assistant in that repository and ask what breaks if you change something. The script
+sets the repository up for Claude Code and the Copilot CLI; add `--client copilot,cursor,codex` and so on (or
+`all`) for the others.
 
 The project lives in [codegraph/](codegraph/). Its [README](codegraph/README.md) shows the first five
 minutes, the questions you can ask, and where to go next depending on who you are; the
