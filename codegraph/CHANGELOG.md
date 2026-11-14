@@ -5,7 +5,7 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased
+## 1.1.0
 
 ### Faster reads
 

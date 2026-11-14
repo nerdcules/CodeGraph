@@ -1,6 +1,6 @@
 {
   "name": "codegraph",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "The compiler's answers for Claude Code: who calls this, what breaks if I change it, which tests guard it. A code graph MCP server for C#, TypeScript, Java, Go, Rust and Python.",
   "author": { "name": "Alan Seunarayan", "url": "https://github.com/nerdcules" },
   "homepage": "https://github.com/nerdcules/CodeGraph",
