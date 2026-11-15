@@ -2,7 +2,7 @@
 
 Date: 2026-11-15. Machine: Windows 11 Pro 10.0.26300, x64. SDKs: 10.0.404 and 11.0.100. pwsh 7.7.0, Windows PowerShell 5.1.26100.9818, Python 3.14.7, Node v24.20.0.
 
-All logs, clones, install folders and copies are in `C:\Users\seuna\AppData\Local\Temp\cg-win3` (`$env:TEMP\cg-win3`). I did not change product code. I did not change the user PATH, and I did not use `-AddToPath`. The changes outside `$env:TEMP\cg-win3` are: the `git pull`, `npm ci` and build outputs in the clone `Z:\CodeGraph`, and `C:\tools\codegraph` (finding 1).
+All logs, clones, install folders and copies are in `C:\Users\seuna\AppData\Local\Temp\cg-win3` (`$env:TEMP\cg-win3`). I did not change product code. I did not change the user PATH, and I did not use `-AddToPath`. The changes outside `$env:TEMP\cg-win3` are: the `git pull`, `npm ci` and build outputs in the clone `Z:\CodeGraph`, and `C:\tools\codegraph` (finding 1). The user deleted `C:\tools` after the test.
 
 ## Summary
 
@@ -25,7 +25,7 @@ All logs, clones, install folders and copies are in `C:\Users\seuna\AppData\Loca
 1. **`-ObsidianVault` does not cause a parameter error. It starts a release install into the default folder.** `$Repo` has `Position = 0, ValueFromRemainingArguments = $true`, so PowerShell binds `-ObsidianVault` and `x` as 2 repo paths. With no `-InstallDir` and no `-FromSource`, `.\install.ps1 -ObsidianVault x` downloaded `codegraph-win-x64.zip` (latest, 1.1.0) and installed it into `C:\tools\codegraph`. Then it ran `init` on `-ObsidianVault` (`unknown option: -ObsidianVault`) and on `x` (`not found: Z:\CodeGraph\codegraph\x`), and threw `2 repo setup(s) failed; see above`. The full output is in step 2.
    - `C:\tools` and `C:\tools\codegraph` did not exist before. Both have the creation time 10:31:16, which is the time of this run. Thus the run deleted nothing that was there before.
    - The user PATH has no `codegraph` entry.
-   - The user approved the deletion of `C:\tools`, but the Claude Code harness blocks `Remove-Item` on that path. At the time of this report, `C:\tools\codegraph` still holds release 1.1.0.
+   - The user approved the deletion of `C:\tools`, but the Claude Code harness blocks `Remove-Item` on that path. After the report, the user deleted it with `rm -rf /c/tools`. `Test-Path C:\tools` then gave `False`.
    - I did not run the 5.1 variant, because it does the same thing. The user agreed to skip it.
 2. **`find_symbol` waits for the new graph.** For each of the 5 saves, the first `find_symbol` call after the save already found the new method. That one call took 1.5 s to 4.4 s. Thus the time in step 4 is the time of one call, not a poll loop.
 3. **The daemon's `--log` file holds the progress spinner.** The `--log` file of the step 4 daemon has 513 lines for 1 start, 5 saves and 1 restore. 322 of them are spinner frames, such as `| indexing: [2/6] CodeGraph.Indexer: 3/6 files (1s)`.
