@@ -907,6 +907,16 @@ It found two more things, now changed:
 The first `find_symbol` after each save returned the new method, so each figure in the live-daemon row is the
 time of one call that waited for the daemon's pass, not of a polling loop.
 
+**The fourth run on Windows**, at `ef202fe` on the same day, checked those two changes. Its report is
+`windows-report-4.md` on the same branch. The suite passed 440 of 441, with 1 skipped (the shell-script SCIP test).
+`install.ps1 -ObsidianVault x` and `-Bogus`, each with an `-InstallDir` under the test folder, stopped with
+"unknown option" in pwsh 7 and in Windows PowerShell 5.1 (exit 1 with `-File`): no download, no install folder,
+and no `C:\tools`. A daemon started with `--log` in its own console window, through 3 saves and a restore, wrote a
+47-line log with no spinner frame and no bare carriage return; the run-3 log had 322 spinner lines and 448 bare
+carriage returns in 513 lines. Every line of a Windows log ends in CRLF, so the plan's count of lines holding a
+carriage return (47 of 47) did not measure the spinner; the bare ones did. The daemon's passes for the 3 saves
+took 4.2, 2.1 and 2.1 s.
+
 **The battery on Linux with the changed script**, this build. R3 now passes: 8 kills, 5 during full indexes and 3
 during incremental ones, the graph whole (3,170 nodes) after each. 11 of 12 passed. R4 had 8 errors in 891,861 calls; each answer began with the "⚠ STALE
 INDEX" banner, and the script kept only its first 80 characters, so the error itself was lost. Run alone three

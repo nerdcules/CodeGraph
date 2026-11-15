@@ -77,6 +77,8 @@ The executables report their version with `--version`; the MCP server shows it t
   - `install.ps1` read an unknown option, such as the retired `-ObsidianVault`, as a repo, and installed into the
     default folder. It now stops with "unknown option" before it downloads or writes anything.
   - The daemon's `--log` file held its progress spinner (322 of 513 lines). `--log` now turns the spinner off.
+  A fourth run there, at `ef202fe`, confirmed both: unknown options stop the install in pwsh 7 and 5.1, and the
+  daemon's log had no spinner frame in 47 lines.
   - `uninstall.ps1` and `uninstall.sh` name each file and folder they remove, not just "entry removed".
 - The server accepts the id under the names models guess for it (`symbolId`, `nodeId`, `memberId`, and their
   snake-case forms, or `id` for the tools that take `symbol`). A Cursor agent passed `symbolId` to every tool, got
