@@ -966,7 +966,8 @@ on the Mac.
   random. Commit `f007cdd` adds `Directory.Build.targets`, which makes each project reference, embedded resource and
   copied None or Content item absolute in the spelling of the solution; `install.sh` and `tools/release/package.sh`
   resolve their own folder with `pwd -P`; and `tests/install-through-symlink.sh` clones the repo, reaches the clone
-  through a symlink, and restores, builds and installs from source through it. The macOS CI job runs that script.
+  through a symlink, and restores, builds and installs from source through it. The macOS CI job runs that script,
+  and since the commit after `43aeb92` the Linux job does too.
   Linux resolves the working directory the same way, so the script shows the bug there too. On Linux on 2026-11-15,
   with the .NET 11.0.100 SDK (`global.json` rolls forward to the latest major):
 

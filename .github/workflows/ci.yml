@@ -47,8 +47,9 @@ jobs:
         run: npm test
 
       # The OS reports a process's working directory with symlinks resolved; a checkout under macOS /tmp once built twice.
+      # Linux resolves it the same way and showed the same bug, so the check runs on both.
       - name: Install from a checkout reached through a symlink
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' || runner.os == 'Linux'
         run: tests/install-through-symlink.sh
 
       - name: Packaging script runs

@@ -128,7 +128,7 @@ The executables report their version with `--version`; the MCP server shows it t
   and 2 skipped. `Directory.Build.targets` now makes each project reference, embedded resource and
   copied None or Content item absolute, with the spelling of the solution; `install.sh` and
   `tools/release/package.sh` resolve their root with `pwd -P`; and `tests/install-through-symlink.sh` runs restore,
-  a Release build and the install through a symlink, in the macOS CI job.
+  a Release build and the install through a symlink, in the macOS and Linux CI jobs.
 
 ## 1.1.0
 
