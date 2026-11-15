@@ -1,6 +1,6 @@
 # Generated corpus
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [With and without](../eval/README.md) · [Obsidian end-to-end](../obsidian-e2e/README.md)
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [With and without](../eval/README.md)
 
 Synthetic codebases with a known answer key, to test each extractor against. `gen.py` builds one seeded model
 (modules, classes, interfaces, inheritance, overrides, overloads, generics, nested types, statics, lambdas, tests,
@@ -8,7 +8,8 @@ an entry point, planted dead code, and Angular components, services and template
 language (C#, Java, TypeScript, JavaScript, Angular, Go, Rust or Python), in one construction. `expected.json` lists every method, type and edge the graph should hold.
 `check.py` indexes the codebase, exports the graph (`codegraph-index export --dead-code`) and scores it.
 
-After scoring, each run also tests the Obsidian side.
+After scoring, each run also tests the Obsidian export and the Obsidian plugin's live path.
+Both are retired for now and no longer shipped. The code stays in the repository, and these checks still run.
 
 - **The vault** ([vault_check.py](vault_check.py)). It runs `codegraph-index export obsidian` and checks:
   - every wikilink points at a note that exists, and every `#heading` is a heading in it;
@@ -29,7 +30,7 @@ After scoring, each run also tests the Obsidian side.
   Callers precision is below 100 on purpose: `callers_of` counts a call to an interface or base member as a call to
   every implementation, and the answer key holds direct calls only.
 
-Real Obsidian is tested separately, in [tools/obsidian-e2e](../obsidian-e2e/README.md).
+The harness that tested the plugin in real Obsidian, `tools/obsidian-e2e`, is retired too.
 
 ```bash
 python3 tools/corpus/run.py --base <local image with the .NET 10 SDK, Node.js 22.22.3+ or 24.15+ and Python 3> --jobs 4 --seeds 1,2
@@ -90,4 +91,4 @@ the .NET 10 runtime beside it, in the dialects asked for, at the level that SDK 
 
 ---
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [With and without](../eval/README.md) · [Obsidian end-to-end](../obsidian-e2e/README.md)
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · **Corpus** · [Older toolchains](toolchains/README.md) · [With and without](../eval/README.md)

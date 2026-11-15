@@ -2,7 +2,7 @@
 
 # MCP Server: codegraph
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
 
 A read-only [Model Context Protocol](https://modelcontextprotocol.io) server that answers structural
 questions about a codebase from a compiler-built graph: who calls this, what breaks if it changes,
@@ -391,4 +391,4 @@ file list whenever the database's mtime changes, regardless of its 3 s cache.
 
 ---
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)

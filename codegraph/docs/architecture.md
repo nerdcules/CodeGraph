@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · **Architecture** · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · **Architecture** · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -34,7 +34,6 @@
 | `codegraph-mcp` | The MCP server. It keeps a copy of the graph in memory and answers 35 tools over stdio. |
 | The live daemon | Keeps the code loaded. It indexes each save and answers the live tools over a local pipe. |
 | Language servers | typescript-language-server, jdtls, gopls, pyright or rust-analyzer. The live daemon uses them for languages other than C#. |
-| The Obsidian plugin | Runs the Obsidian export into a vault, and asks `codegraph-mcp` for its live panel. See [Obsidian](obsidian.md). |
 
 ## Source layout
 
@@ -45,11 +44,11 @@
 | `src/CodeGraph.Mcp` | `codegraph-mcp`: the MCP server and its tools. |
 | `src/CodeGraph.Web` | The graph viewer for `codegraph-mcp --web`. |
 | `extractors/typescript` | `codegraph-ts`: the TypeScript and Angular extractor, with typescript-language-server. |
-| `obsidian-plugin` | The Obsidian plugin. Plain CommonJS with no dependencies, bundled into `main.js`. |
+| `obsidian-plugin` | The Obsidian plugin (retired; kept in the repo). Plain CommonJS with no dependencies, bundled into `main.js`. |
 | `tests/CodeGraph.Tests` | The .NET test suite. |
 | `tools/CodeGraph.Bench` | The benchmark tool. |
 | `tools/corpus` | The generated codebases and the Docker test matrix. |
-| `tools/obsidian-e2e` | The plugin tests in real Obsidian, headless in Docker, and the screenshot script. |
+| `tools/obsidian-e2e` | The plugin tests in real Obsidian, headless in Docker, and the screenshot script (retired; kept in the repo). |
 
 Only `src/CodeGraph.Indexer` and `extractors/typescript` know about compilers.
 The indexer drives Roslyn, the SCIP indexers and the language servers. The extractor drives the TypeScript compiler and `@angular/compiler`.
@@ -64,8 +63,6 @@ The store and the server do not depend on a language.
 | `codegraph-mcp` | The client | When the client stops | The graph | Telemetry only |
 | `codegraph-ts`, SCIP indexer | The indexer | After the index | Source files | Records on stdout, or an index file |
 | Language server | The live daemon | With the live daemon | Source files | Nothing |
-| `codegraph-mcp` for Obsidian | The Obsidian plugin, from `.mcp.json` | When the vault closes | The graph | Telemetry only |
-| `codegraph-index export obsidian` | The Obsidian plugin, or you | After the export | The graph | Notes in the vault |
 
 ## The graph file
 

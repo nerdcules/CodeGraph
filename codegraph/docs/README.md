@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-**Home** · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
+**Home** · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -10,7 +10,6 @@ CodeGraph gives your AI coding assistant the compiler's answers: who calls this,
 it, which tests guard it.
 The indexer reads your code with the compiler of the language and writes a graph file.
 The MCP server answers questions from that file, for Claude Code, GitHub Copilot, Codex, Cursor, the Gemini CLI, Roo Code, Kilo Code, Continue or any other MCP client.
-Obsidian is optional: the [Obsidian](obsidian.md) plugin only shows the graph to people as notes.
 
 ![Architecture: extractors write graph.db, the MCP server reads it, the live daemon keeps it current](images/architecture.svg)
 
@@ -19,7 +18,6 @@ Obsidian is optional: the [Obsidian](obsidian.md) plugin only shows the graph to
 | You are | Start here | Then |
 |---|---|---|
 | A developer who uses an AI coding assistant | [Installation](installation.md) | [Usage](usage.md), [Use cases](use-cases.md), [Prompts](../PROMPTS.md) |
-| An architect, a tester or a product manager who reads code without an AI | [Obsidian](obsidian.md) | [Use cases](use-cases.md#share-the-structure-of-the-code-with-people-who-do-not-code) |
 | Deciding whether to trust it | [Why it saves tokens](why-it-saves-tokens.md) | [How it works](how-it-works.md), [Performance](performance.md), [Benchmarks](../BENCHMARKS.md) |
 | A contributor | [Contributing](contributing.md) | [Architecture](architecture.md), [Extractors](../EXTRACTORS.md), [Language versions](language-versions.md) |
 | Curious | [The story](story.md) | [What is missing](roadmap.md) |
@@ -31,7 +29,6 @@ Obsidian is optional: the [Obsidian](obsidian.md) plugin only shows the graph to
 | [Installation](installation.md) | Install a release, connect a repository to your assistant, upgrade, remove. |
 | [Client tests](client-tests/README.md) | See how each AI coding assistant was tested: its configuration, its tool calls and its answer. |
 | [Usage](usage.md) | Build a graph, keep it current, use the tools, see what they did for you. |
-| [Obsidian](obsidian.md) | Read the graph as linked notes in Obsidian, with a live panel. |
 | [Use cases](use-cases.md) | Find the tool for a question about your code. |
 | [Why it saves tokens](why-it-saves-tokens.md) | See the measurement behind the claim, and how the graph stays current. |
 | [How it works](how-it-works.md) | Learn how the indexer builds the graph and how the server answers. |

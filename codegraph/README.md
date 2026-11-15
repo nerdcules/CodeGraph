@@ -2,7 +2,7 @@
 
 # CodeGraph
 
-**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
 
 **CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I
 change it, which tests guard it.**
@@ -120,7 +120,6 @@ applies a save in about 1 to 1.5 seconds (BENCHMARKS rounds 12 and 13), and answ
 | You are | Read |
 |---|---|
 | A developer who uses an AI coding assistant | [Installation](docs/installation.md), [Usage](docs/usage.md), [Prompts that use the graph](PROMPTS.md), [Use cases](docs/use-cases.md) |
-| Someone who reads code without an AI assistant: an architect, a tester, a product manager | [The code as notes in Obsidian](docs/obsidian.md): browse projects, types, tests and reports as linked notes, with no editor and no tokens |
 | Deciding whether to trust it | [Why it saves tokens](docs/why-it-saves-tokens.md), [How it works](docs/how-it-works.md), [Performance](docs/performance.md), [Benchmarks](BENCHMARKS.md), [Trust and privacy](#trust-and-privacy) |
 | Adding a language, or hacking on it | [Contributing](docs/contributing.md), [Architecture](docs/architecture.md), [The extractor contract](EXTRACTORS.md), [Language versions](docs/language-versions.md), [Every tool](MCP-SERVER.md) |
 | Curious where this came from | [The story](docs/story.md): a developer, Claude Code, and the thought that the compiler already knew the answer |
@@ -142,7 +141,6 @@ applies a save in about 1 to 1.5 seconds (BENCHMARKS rounds 12 and 13), and answ
   servers, Cursor lists a new one as Disabled until you enable it,
   VS Code starts them only in a folder you trust, and the Copilot CLI reads `.mcp.json` only in a
   trusted folder ([client tests](docs/client-tests/README.md)).
-  The Obsidian plugin does the same: it starts the server only after you approve that exact command.
 - **Checked builds.** Every release is built by the [release workflow](../.github/workflows/release.yml)
   from a tag, with a `SHA256SUMS` file the installers verify. The executables are not code-signed yet.
 
@@ -179,4 +177,4 @@ product. [docs/roadmap.md](docs/roadmap.md) has the detail.
 
 ---
 
-**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)

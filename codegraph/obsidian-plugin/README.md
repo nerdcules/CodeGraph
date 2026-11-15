@@ -1,6 +1,8 @@
 # CodeGraph for Obsidian
 
-[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin**
+Retired for now: the Obsidian plugin and export are not shipped or supported. The code stays in the repository; this page describes it as it was at commit 07bcb17.
+
+[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin (retired)**
 
 This plugin turns a repo's code graph into notes in an Obsidian vault. Developers, architects, testers and product
 people can then browse the code the way they browse their other notes, and the plugin adds a panel that answers
@@ -140,4 +142,4 @@ Two more test layers run in Docker:
 
 ---
 
-[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin**
+[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin (retired)**

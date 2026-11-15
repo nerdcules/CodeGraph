@@ -1,6 +1,6 @@
 # Languages and extractors
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
 
 CodeGraph's store and MCP tools know nothing about C#. What a language needs is an *extractor*: a program that
 reads the code with that language's own compiler and writes graph records. Three routes are built in.
@@ -150,4 +150,4 @@ error to a file with one dependent answers in 3.5 to 4.8 s, and a clean edit in 
 
 ---
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)

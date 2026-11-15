@@ -33,9 +33,6 @@
     Visual Studio, JetBrains), vscode, visualstudio, jetbrains, cursor, gemini, codex, roo, kilo, continue, or all.
     Comma-separated or an array.
 
-.PARAMETER ObsidianVault
-    Also install the Obsidian plugin into this vault folder.
-
 .PARAMETER FromSource
     Build this checkout and publish it, instead of downloading a release. Needs the .NET 10 SDK; Node.js for
     TypeScript.
@@ -59,7 +56,6 @@ param(
     [switch] $AddToPath,
     [switch] $Live,
     [string[]] $Client = @(),
-    [string] $ObsidianVault,
     [switch] $FromSource,
     [switch] $SkipTests,
     [switch] $Force
@@ -265,24 +261,6 @@ try {
         if ($Client.Count -gt 0) { $initArgs += @('--client', ($Client -join ',')) }
         Invoke-WithRoot $(if ($rootFor) { $rootFor } else { $env:DOTNET_ROOT }) $indexExe $initArgs
         if ($LASTEXITCODE -ne 0) { $failed++ }
-    }
-
-    if ($ObsidianVault) {
-        Step "Installing the Obsidian plugin into $ObsidianVault"
-        if (-not (Test-Path (Join-Path $ObsidianVault '.obsidian'))) {
-            Write-Warning "$ObsidianVault has no .obsidian folder: open it as a vault in Obsidian once first"
-            $failed++
-        } elseif ($FromSource -and (Get-Command node -ErrorAction SilentlyContinue)) {
-            & node (Join-Path $root 'obsidian-plugin/install-plugin.mjs') $ObsidianVault
-            if ($LASTEXITCODE -ne 0) { $failed++ }
-        } else {
-            $pluginDir = Join-Path $ObsidianVault '.obsidian/plugins/codegraph'
-            $zip = Join-Path $tmp 'codegraph-obsidian.zip'
-            Get-Asset 'codegraph-obsidian.zip' $zip
-            New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
-            Expand-Archive -Path $zip -DestinationPath $pluginDir -Force
-            Write-Host "installed to $pluginDir; enable `"CodeGraph`" under Settings → Community plugins"
-        }
     }
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

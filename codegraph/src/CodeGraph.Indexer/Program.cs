@@ -126,7 +126,6 @@ if (usage || targetArg is null)
     Console.Error.WriteLine("               a tsconfig.json, angular.json or nx.json (init also finds a C# solution in a folder)");
     Console.Error.WriteLine("       codegraph-index import <records.ndjson | index.scip | -> [--db <path>]");
     Console.Error.WriteLine("       codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]");
-    Console.Error.WriteLine("       codegraph-index export obsidian --out <vault>/<folder> [--db <path>] [--language <name>] [--link-root <path>]");
     Console.Error.WriteLine("       codegraph-index init [solution|dir] [--client <names>] [--live] [--no-index] [index options]");
     Console.Error.WriteLine("       codegraph-index usage [--db <path>] [--days <n>]   what the graph did for its users");
     Console.Error.WriteLine("       default db: <git worktree root>/.codegraph/graph.db (solution dir outside a repo)");

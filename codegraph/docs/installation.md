@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · **Installation** · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
+[Home](README.md) · **Installation** · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -83,7 +83,6 @@ PowerShell 7 can also run `install.ps1` on macOS and Linux.
 3. It unpacks the archive into the install folder.
 4. It makes sure that both executables start.
 5. It runs `codegraph-index init` on each repository that you give.
-6. With `--obsidian-vault`, it downloads the Obsidian plugin from the same release and installs it into that vault.
 
 ### Script options
 
@@ -95,7 +94,6 @@ PowerShell 7 can also run `install.ps1` on macOS and Linux.
 | `--add-to-path` | `-AddToPath` | Add the install folder to the user PATH. |
 | `--live` | `-Live` | Let the server start the live daemon itself. |
 | `--client NAMES` | `-Client NAMES` | Set up the repositories for these assistants. See [Use another assistant](#use-another-assistant). |
-| `--obsidian-vault DIR` | `-ObsidianVault DIR` | Also install the Obsidian plugin into this vault. See [Obsidian](obsidian.md). |
 | `--from-source` | `-FromSource` | Build a checkout instead of downloading. See [Build from source](#build-from-source). |
 | `--force` | `-Force` | Stop running `codegraph-mcp` and `codegraph-index` processes before the copy. |
 

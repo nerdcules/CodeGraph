@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- [REPO]... [options]
 #   ./install.sh [REPO_OR_SOLUTION]... [--version vX.Y.Z] [--install-dir DIR] [--add-to-path] [--live]
 #                [--client NAMES]
-#                [--obsidian-vault DIR] [--from-source] [--skip-tests] [--force]
+#                [--from-source] [--skip-tests] [--force]
 #
 #   REPO_OR_SOLUTION  a repo folder or a .sln / .slnx / .csproj to set up: writes .mcp.json, adds .codegraph/ to
 #                     .gitignore and builds the graph (codegraph-index init). Asked for when none is given.
@@ -16,7 +16,6 @@
 #   --client          the assistants to set each repo up for, comma-separated: claude (the default; also the
 #                     Copilot CLI), copilot (CLI, VS Code, Visual Studio, JetBrains), vscode, visualstudio,
 #                     jetbrains, cursor, gemini, codex, roo, kilo, continue, or all
-#   --obsidian-vault  also install the Obsidian plugin into that vault
 #   --from-source     build from this checkout instead of downloading (needs the .NET 10 SDK; Node.js for TypeScript)
 #   --skip-tests      with --from-source, publish without running the test suite
 #   --force           stop running codegraph processes before overwriting them
@@ -33,7 +32,6 @@ add_to_path=false
 force=false
 live=false
 clients=""
-obsidian_vault=""
 repos=()
 
 while [ $# -gt 0 ]; do
@@ -46,7 +44,6 @@ while [ $# -gt 0 ]; do
         --force)       force=true; shift ;;
         --live)        live=true; shift ;;
         --client)      clients="${clients:+$clients,}$2"; shift 2 ;;
-        --obsidian-vault) obsidian_vault="$2"; shift 2 ;;
         -h|--help)     sed -n '2,24p' "$0"; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 1 ;;
         *)  repos+=("$1"); shift ;;
@@ -253,29 +250,6 @@ for repo in ${repos[@]+"${repos[@]}"}; do
     step "Setting up $repo"
     index init "$repo" ${init_args[@]+"${init_args[@]}"} || failed=$((failed + 1))
 done
-
-if [ -n "$obsidian_vault" ]; then
-    step "Installing the Obsidian plugin into $obsidian_vault"
-    if [ ! -d "$obsidian_vault/.obsidian" ]; then
-        echo "$obsidian_vault has no .obsidian folder: open it as a vault in Obsidian once first" >&2
-        failed=$((failed + 1))
-    elif [ "$from_source" = true ] && command -v node >/dev/null 2>&1; then
-        node "$root/obsidian-plugin/install-plugin.mjs" "$obsidian_vault" || failed=$((failed + 1))
-    else
-        plugin_dir="$obsidian_vault/.obsidian/plugins/codegraph"
-        download "$(release_url codegraph-obsidian.zip)" "$tmp/codegraph-obsidian.zip"
-        mkdir -p "$plugin_dir"
-        if command -v unzip >/dev/null; then
-            unzip -oq "$tmp/codegraph-obsidian.zip" -d "$plugin_dir"
-        elif command -v python3 >/dev/null; then
-            python3 -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$tmp/codegraph-obsidian.zip" "$plugin_dir"
-        else
-            echo "neither unzip nor python3 is on PATH; unpack $tmp/codegraph-obsidian.zip into $plugin_dir by hand" >&2
-            failed=$((failed + 1))
-        fi
-        echo "installed to $plugin_dir; enable \"CodeGraph\" under Settings → Community plugins"
-    fi
-fi
 
 if [ "$needs_root" = true ]; then
     root_hint="DOTNET_ROOT=\"$dotnet_root\" "

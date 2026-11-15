@@ -1,6 +1,6 @@
 # With and without CodeGraph
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · **With and without** · [Obsidian end-to-end](../obsidian-e2e/README.md)
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · **With and without**
 
 Four AI coding assistants got the same question about this repository, three times with the codegraph server and
 three times without it, on 14 November 2026. This folder holds the answer key, the scripts, and one row for each
@@ -87,4 +87,4 @@ local paths.
 
 ---
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · **With and without** · [Obsidian end-to-end](../obsidian-e2e/README.md)
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · **With and without**

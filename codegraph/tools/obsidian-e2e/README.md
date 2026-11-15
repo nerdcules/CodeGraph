@@ -1,6 +1,8 @@
 # Obsidian end-to-end
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · [With and without](../eval/README.md) · **Obsidian end-to-end**
+Retired for now: the Obsidian plugin and export are not shipped or supported. The code stays in the repository; this page describes it as it was at commit 07bcb17.
+
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · [With and without](../eval/README.md) · **Obsidian end-to-end (retired)**
 
 This harness runs the CodeGraph plugin inside real Obsidian, headless in Docker, against a generated codebase from
 [tools/corpus](../corpus/README.md). It tests what the unit tests and the corpus checks can't:
@@ -97,4 +99,4 @@ with it.
 
 ---
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · [With and without](../eval/README.md) · **Obsidian end-to-end**
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · [With and without](../eval/README.md) · **Obsidian end-to-end (retired)**

@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · **Why it saves tokens** · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · **Why it saves tokens** · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -112,14 +112,9 @@ The savings come from a few design choices:
 - **No wasted turns.** The stale warning stops the model from reasoning from an old graph and
   redoing the work. With the live daemon, `check_change` compiles a proposed edit and lists what
   it breaks, so the model doesn't need a build-and-read-the-errors loop to find out.
-- **People don't need the assistant at all.** The notes and reports of the [Obsidian](obsidian.md) export hold the
-  same answers, worked out in advance. A tester who reads "which tests reach this type" in a
-  note, or a product manager who browses the project map, spends no tokens.
 
 `usage_stats` reports, for the current session and all time, the tokens each tool returned and
-an estimate of the source tokens those answers saved the model from reading. Point the assistant
-at the tools, not at the Obsidian notes: a tool answer holds only the rows asked for, while a
-note holds everything about a type.
+an estimate of the source tokens those answers saved the model from reading.
 
 
 ## Keeping the graph current

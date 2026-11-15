@@ -1,6 +1,6 @@
 # Changelog
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md)
 
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
@@ -95,6 +95,14 @@ The executables report their version with `--version`; the MCP server shows it t
   87 s, 4 model calls against 9, and a context that grew by about the same amount. The README no longer says "one
   tool call instead of twenty file reads".
 
+### Obsidian, retired for now
+
+- The Obsidian plugin and export are retired for now. Releases no longer include `codegraph-obsidian.zip`,
+  `install.sh` and `install.ps1` no longer take `--obsidian-vault` / `-ObsidianVault`, CI no longer runs the
+  plugin's tests, the CLI help no longer lists `export obsidian`, and no product page links to it. The code stays in
+  the repo: `codegraph-index export obsidian` still runs, its .NET tests still run with the suite, the corpus still
+  checks the export, and its pages are kept, marked retired.
+
 ## 1.1.0
 
 ### Faster reads
@@ -176,4 +184,4 @@ The first packaged release. Everything below was built between August and Novemb
 
 ---
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md)

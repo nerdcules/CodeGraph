@@ -1,6 +1,6 @@
 # CodeGraph
 
-**Overview** · [CodeGraph](codegraph/README.md) · [Docs](codegraph/docs/README.md) · [MCP server](codegraph/MCP-SERVER.md) · [Extractors](codegraph/EXTRACTORS.md) · [Benchmarks](codegraph/BENCHMARKS.md) · [Prompts](codegraph/PROMPTS.md) · [Changelog](codegraph/CHANGELOG.md) · [Claude Code plugin](codegraph/plugin/README.md) · [Obsidian plugin](codegraph/obsidian-plugin/README.md)
+**Overview** · [CodeGraph](codegraph/README.md) · [Docs](codegraph/docs/README.md) · [MCP server](codegraph/MCP-SERVER.md) · [Extractors](codegraph/EXTRACTORS.md) · [Benchmarks](codegraph/BENCHMARKS.md) · [Prompts](codegraph/PROMPTS.md) · [Changelog](codegraph/CHANGELOG.md) · [Claude Code plugin](codegraph/plugin/README.md)
 
 **CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I
 change it, which tests guard it.**
@@ -20,8 +20,7 @@ Cursor.
 It reads a codebase with its compiler (C#, TypeScript and Angular, Java, Go, Rust, Python), stores
 what it finds as a graph, and serves that graph to your assistant as MCP tools. In the session above, the
 assistant answered with four codegraph calls in 42 seconds; without CodeGraph it ran eight shell commands, took
-87 seconds and estimated "about 40" tests. An optional Obsidian plugin shows the same graph to people as
-linked notes.
+87 seconds and estimated "about 40" tests.
 
 Install, with the path of a repository to set up:
 
@@ -46,4 +45,4 @@ how a developer and an AI assistant built this.
 
 ---
 
-**Overview** · [CodeGraph](codegraph/README.md) · [Docs](codegraph/docs/README.md) · [MCP server](codegraph/MCP-SERVER.md) · [Extractors](codegraph/EXTRACTORS.md) · [Benchmarks](codegraph/BENCHMARKS.md) · [Prompts](codegraph/PROMPTS.md) · [Changelog](codegraph/CHANGELOG.md) · [Claude Code plugin](codegraph/plugin/README.md) · [Obsidian plugin](codegraph/obsidian-plugin/README.md)
+**Overview** · [CodeGraph](codegraph/README.md) · [Docs](codegraph/docs/README.md) · [MCP server](codegraph/MCP-SERVER.md) · [Extractors](codegraph/EXTRACTORS.md) · [Benchmarks](codegraph/BENCHMARKS.md) · [Prompts](codegraph/PROMPTS.md) · [Changelog](codegraph/CHANGELOG.md) · [Claude Code plugin](codegraph/plugin/README.md)

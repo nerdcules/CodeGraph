@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · **Contributing**
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · **Contributing**
 
 ---
 
@@ -21,7 +21,7 @@ Users do not need it: [Installation](installation.md) installs a prebuilt releas
 
 ## Build and test
 
-You need the .NET 10 SDK and git. Node.js adds the TypeScript extractor and the Obsidian plugin: 22.22.3 or later,
+You need the .NET 10 SDK and git. Node.js adds the TypeScript extractor: 22.22.3 or later,
 or 24.15 or later, which is what the extractor's packages declare (round 10 in BENCHMARKS.md also indexed on Node 20).
 
 ```bash
@@ -30,7 +30,6 @@ cd codegraph
 dotnet build -warnaserror
 dotnet test
 (cd extractors/typescript && npm test)
-(cd obsidian-plugin && node build.mjs --check && npm test)
 ```
 
 The build treats warnings and NuGet audit findings as errors, and `nuget.config` pins nuget.org as the
@@ -63,13 +62,13 @@ src/CodeGraph.Indexer   codegraph-index: Roslyn extractor, record and SCIP impor
 extractors/typescript   codegraph-ts: TypeScript and Angular extractor (Node), with typescript-language-server
 src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
 src/CodeGraph.Web       graph viewer UI and its API routes, embedded into codegraph-mcp --web
-obsidian-plugin         Obsidian plugin: the graph as linked notes, plus a live panel over codegraph-mcp
+obsidian-plugin         Obsidian plugin (retired; kept in the repo): the graph as linked notes, plus a live panel
 plugin                  Claude Code plugin: the server, a skill, and a launcher that installs the release
 tests/CodeGraph.Tests   store, search, telemetry, extraction, incremental and watch-mode sync, live daemon, exports
 tools/CodeGraph.Bench   codegraph-bench: the numbers in BENCHMARKS.md
 tools/corpus            generated codebases in eight languages, run in Docker, with answer keys
 tools/eval              runs of four assistants with and without CodeGraph, scored against a run-time answer key
-tools/obsidian-e2e      the plugin end to end in real Obsidian, headless, per Obsidian version
+tools/obsidian-e2e      the Obsidian plugin end to end in real Obsidian, headless (retired; kept in the repo)
 tools/release           package.sh builds the release archives; notes.sh writes the release notes
 install.* / setup.*     install a release (or --from-source) and set up repos / run from a checkout
 uninstall.*             remove the install folder, PATH entry, a repo's .mcp.json entry and graph
@@ -79,19 +78,15 @@ uninstall.*             remove the install folder, PATH entry, a repo's .mcp.jso
 
 ## The slower test layers
 
-Two layers run in Docker and are not part of CI:
+One layer runs in Docker and is not part of CI.
+[tools/corpus](../tools/corpus/README.md) generates codebases in eight languages with answer keys and
+scores precision and recall, in a modern and a classic dialect, on the current toolchains and on older
+SDK images. Run it after a change to an extractor or to the importer:
 
-- [tools/corpus](../tools/corpus/README.md) generates codebases in eight languages with answer keys and
-  scores precision and recall, in a modern and a classic dialect, on the current toolchains and on older
-  SDK images. Run it after a change to an extractor or to the importer:
-
-  ```bash
-  python3 tools/corpus/run.py --base <local image> --dialects modern,classic
-  python3 tools/corpus/run.py --toolchains dotnet8,node20,jdk17,go121,rust170,python38
-  ```
-
-- [tools/obsidian-e2e](../tools/obsidian-e2e/README.md) runs the plugin inside real Obsidian, headless,
-  per Obsidian version.
+```bash
+python3 tools/corpus/run.py --base <local image> --dialects modern,classic
+python3 tools/corpus/run.py --toolchains dotnet8,node20,jdk17,go121,rust170,python38
+```
 
 [Language versions](language-versions.md) tells how to check a new compiler or language version, and
 [BENCHMARKS.md](../BENCHMARKS.md) records a round per change that touched performance or coverage.

@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · **The story** · [What is missing](roadmap.md) · [Contributing](contributing.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · **The story** · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -50,7 +50,8 @@ From there the questions kept coming from use, not from a roadmap:
   in memory and re-indexes a save in about one to one and a half seconds (BENCHMARKS rounds 12 and 13). Once the compiler was resident, it could also
   answer things a stored graph cannot: compiler errors, and what an edit would break *before* writing it.
 - "My architect wants to see this, and she does not use Claude Code" led to the Obsidian export: the same
-  graph as linked notes, so a person can browse it with no editor and no tokens.
+  graph as linked notes, so a person can browse it with no editor and no tokens. It is retired for now:
+  the code is still in the repository, but releases no longer ship the plugin.
 - "Our front end is Angular" led to a TypeScript extractor, then to a language-neutral record format,
   then to Java, Go, Rust and Python through their SCIP indexers.
 - "Does it work on a repo that is still on .NET 8 and C# 7?" led to the version checks, the generated

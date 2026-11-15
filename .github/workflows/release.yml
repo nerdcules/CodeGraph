@@ -30,19 +30,6 @@ jobs:
       - run: dotnet test CodeGraph.slnx -c Release --no-build
       - working-directory: codegraph/extractors/typescript
         run: npm test
-      - working-directory: codegraph/obsidian-plugin
-        run: |
-          node build.mjs --check
-          npm test
-      - name: Package the Obsidian plugin
-        working-directory: codegraph/obsidian-plugin
-        run: |
-          mkdir -p ../dist
-          zip -j ../dist/codegraph-obsidian.zip main.js manifest.json styles.css
-      - uses: actions/upload-artifact@v4
-        with:
-          name: obsidian
-          path: codegraph/dist/*
 
   package:
     needs: test

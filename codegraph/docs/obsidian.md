@@ -2,7 +2,9 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · **Obsidian** · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
+Retired for now: the Obsidian plugin and export are not shipped or supported. The code stays in the repository; this page describes it as it was at commit 07bcb17.
+
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md) · **Obsidian (retired)**
 
 ---
 
@@ -339,4 +341,4 @@ The script writes `docs/images/obsidian-*.png`.
 
 ---
 
-← Previous: [Usage](usage.md) · Next: [Use cases](use-cases.md) →
+Up: [Home](README.md)

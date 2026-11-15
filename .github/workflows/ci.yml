@@ -46,12 +46,6 @@ jobs:
         working-directory: codegraph/extractors/typescript
         run: npm test
 
-      - name: Obsidian plugin tests
-        working-directory: codegraph/obsidian-plugin
-        run: |
-          node build.mjs --check
-          npm test
-
       - name: Packaging script runs
         if: runner.os == 'Linux'
         env:
