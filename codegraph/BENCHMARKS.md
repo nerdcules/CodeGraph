@@ -975,7 +975,10 @@ on the Mac.
   | `a3150ec`, before | exit 1: "restored more than once: CodeGraph.Core.csproj CodeGraph.Indexer.csproj" | the first build failed in restore ("project.assets.json already exists"); the second passed but also built CodeGraph.Core and CodeGraph.Indexer in Debug, and the suite then ran 421 of 441 tests: 88 passed, 331 failed ("Could not load file or assembly 'CodeGraph.Core'"), 2 skipped. The test output had no `Fixtures/` folder, and the web UI was embedded as `CodeGraph.Mcp.index.html` |
   | `f007cdd`, after | exit 0: each of 6 projects restored once, Release output only, the install's executables start (`--version` 1.1.0) | 441: 439 passed, 0 failed, 2 skipped (the Windows drive-letter tests); the Release build printed no Debug output; the fixtures were in `Fixtures/`, and the web UI was embedded as `CodeGraph.Mcp.wwwroot.index.html` |
 
-  The fix had not run on the Mac when this was written.
+  In CI run 43758540573 at `78a7307`, the macOS job (an Apple silicon runner; the install published osx-arm64)
+  ran the script: each of 6 projects restored once, Release output only, and the install finished. The suite
+  passed there 439 of 441 with 2 skipped, as on Linux; Windows passed 440 with 1 skipped. The fix has not run on
+  the Intel Mac.
 
 **R4 on its own.** Round 15's 8 errors were never seen in full, so R4 was cut out of the battery into a script that
 repeats it, keeps every error's whole text, and can start CPU burners (processes that spin in a loop) for the whole

@@ -41,7 +41,7 @@ means here, and where it stands.
 1. **macOS is tested by CI and one run on a Mac.** The daemon uses .NET's file watcher and named pipes, which
    are cross-platform, and the suite passes on the macOS runner. One run on an Intel Mac (macOS 15) covered the
    installers, the live daemon and the resilience battery, and found a build bug in checkouts reached through a
-   symlink; the fix is checked on Linux, not yet on a Mac (BENCHMARKS round 16). Nobody has used it there day
+   symlink; the fix is checked on Linux and in macOS CI, not yet on that Mac (BENCHMARKS round 16). Nobody has used it there day
    to day. The
    executables are not signed or notarised, so an archive unpacked from a browser download needs
    `xattr -dr com.apple.quarantine`. The installer avoids this by downloading with curl.

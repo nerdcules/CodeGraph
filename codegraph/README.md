@@ -153,7 +153,7 @@ product. [docs/roadmap.md](docs/roadmap.md) has the detail.
    builds the Release configuration and runs the test suite on macOS for every push to main and every pull
    request, and the release workflow builds the macOS archives on each version tag. One run on an Intel Mac
    (macOS 15, 2026-11-15) covered the installers, the live daemon and the resilience battery, and found a build
-   bug in checkouts reached through a symlink. The fix is checked on Linux, not yet on a Mac
+   bug in checkouts reached through a symlink. The fix is checked on Linux and in macOS CI, not yet on that Mac
    ([BENCHMARKS.md](BENCHMARKS.md) round 16). No one has lived with it there yet.
 2. **No package managers.** There is a release archive and an installer, but no Homebrew tap, winget
    package or `dotnet tool`. The Claude Code plugin in [plugin/](plugin/) removes the install step on
