@@ -4,8 +4,9 @@ namespace CodeGraph.Tests;
 
 /// <summary>
 /// File URIs from a language server back to the paths the graph stores. On Windows, the URI code bundled in
-/// typescript-language-server writes the drive letter lower-case, and every reference then missed its enclosing
-/// member: the Windows CI run of 2026-11-15 got [null, null] for the live TypeScript references.
+/// typescript-language-server lower-cases the drive letter and percent-encodes its colon (file:///d%3A/…), which
+/// .NET read as D:\d:\…, so every reference missed its enclosing member: the Windows CI runs of 2026-11-15 got
+/// [null, null] for the live TypeScript references.
 /// </summary>
 public sealed class LspPathTests
 {

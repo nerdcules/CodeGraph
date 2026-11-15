@@ -858,9 +858,11 @@ It found two more things, now changed:
   file, so only a Windows run can show the fix works. The Windows CI run of pull request #4 at `7c726c2` (run
   43700576787, the first CI run with the TypeScript packages installed before the tests) got past the log read,
   then failed further on: both references came back with no enclosing member (`[null, null]`). The URI code
-  bundled in typescript-language-server (`lib/cli.mjs`) lower-cases a Windows drive letter, while the graph holds the path as the extractor resolved it (`D:\…`), and the lookup from a
-  position to its member compared paths exactly. It now upper-cases the drive letter of a language server's path
-  on Windows and compares paths without case there. That is read from the code and the bundle, not yet seen on
+  bundled in typescript-language-server (`lib/cli.mjs`) lower-cases a Windows drive letter and percent-encodes
+  its colon (`file:///d%3A/…`); .NET reads that as the rooted path `/d:/…`, which became `D:\d:\…` (the next CI
+  run showed this in a unit test), while the graph holds the path as the extractor resolved it (`D:\…`), and the lookup from a
+  position to its member compared paths exactly. On Windows it now drops that leading slash, upper-cases the
+  drive letter, and compares paths without case. That is read from the code and the bundle, not yet seen on
   Windows. Linux and macOS ran all 436 tests in that run, with none skipped.
 - **The uninstall did not name what it removed.** It printed "entry removed" once per file and "deleted" for each
   folder. `uninstall.ps1` and `uninstall.sh` now print the path of each file and folder. Both were run here against

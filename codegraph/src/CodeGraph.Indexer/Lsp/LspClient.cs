@@ -85,8 +85,9 @@ internal sealed class LspClient : IAsyncDisposable
 
     /// <summary>
     /// The local path of a file URI. typescript-language-server's bundled URI code lower-cases a Windows drive
-    /// letter, while the graph stores paths as the indexer resolved them (<c>D:\…</c>), so on Windows
-    /// the drive letter is upper-cased to match.
+    /// letter, and .NET reads a URI whose drive colon is percent-encoded (<c>file:///d%3A/a</c>) as the rooted path
+    /// <c>/d:/a</c>, which GetFullPath turns into <c>D:\d:\a</c> (seen in Windows CI). On Windows the leading slash
+    /// goes and the drive letter is upper-cased, to match the paths the graph stores (<c>D:\…</c>).
     /// </summary>
     public static string PathOf(string uri)
     {
@@ -95,7 +96,13 @@ internal sealed class LspClient : IAsyncDisposable
             return uri;
         }
 
-        var path = Path.GetFullPath(parsed.LocalPath);
+        var local = parsed.LocalPath;
+        if (OperatingSystem.IsWindows() && local.Length >= 3 && local[0] is ('/' or '\\') && char.IsAsciiLetter(local[1]) && local[2] == ':')
+        {
+            local = local[1..];
+        }
+
+        var path = Path.GetFullPath(local);
         return OperatingSystem.IsWindows() && path.Length >= 2 && path[1] == ':' && char.IsAsciiLetterLower(path[0])
             ? char.ToUpperInvariant(path[0]) + path[1..]
             : path;
