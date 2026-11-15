@@ -116,7 +116,7 @@ if (Test-Path $InstallDir) {
     Step "Install folder: $InstallDir"
     if (Confirm-Step "Delete $InstallDir and everything in it?") {
         Remove-Item -Recurse -Force $InstallDir
-        Write-Host 'deleted'
+        Write-Host "deleted $InstallDir"
     }
 } else {
     Write-Host "no install folder at $InstallDir"
@@ -186,7 +186,7 @@ foreach ($dir in $Repo) {
                 $servers.Value.PSObject.Properties.Remove('codegraph')
                 $json = Format-Json ($config | ConvertTo-Json -Depth 10)
                 [System.IO.File]::WriteAllText($configPath, $json + "`n", [System.Text.UTF8Encoding]::new($false))
-                Write-Host 'entry removed'
+                Write-Host "removed the codegraph entry from $configPath"
             }
         } else {
             Write-Host "no codegraph entry in $configPath"
@@ -197,7 +197,7 @@ foreach ($dir in $Repo) {
     if (Test-Path $graphDir) {
         if (Confirm-Step "Delete the graph and telemetry in $graphDir?") {
             Remove-Item -Recurse -Force $graphDir
-            Write-Host 'deleted'
+            Write-Host "deleted $graphDir"
         }
     }
 }

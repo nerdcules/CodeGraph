@@ -63,7 +63,7 @@ if [ -d "$install_dir" ]; then
     step "Install folder: $install_dir"
     if confirm "Delete $install_dir and everything in it?"; then
         rm -rf "$install_dir"
-        echo deleted
+        echo "deleted $install_dir"
     fi
 else
     echo "no install folder at $install_dir"
@@ -118,7 +118,7 @@ del servers["codegraph"]
 with open(path, "w", encoding="utf-8") as f:
     json.dump(config, f, indent=2)
     f.write("\n")
-print("entry removed")
+print(f"removed the codegraph entry from {path}")
 PY
         else
             echo "python3 is not available; remove the \"codegraph\" entry from $config by hand" >&2
@@ -127,7 +127,7 @@ PY
 
     if [ -d "$dir/.codegraph" ] && confirm "Delete the graph and telemetry in $dir/.codegraph?"; then
         rm -rf "$dir/.codegraph"
-        echo deleted
+        echo "deleted $dir/.codegraph"
     fi
 done
 

@@ -823,9 +823,31 @@ nodes in rounds 13 and 14 came from an older copy of the repo.
   Linux against 5.1's layout as the report quotes it: content and layout come out the same, and running it twice
   changes nothing.
 
-None of the four changes has been run on Windows yet. The SDK message and the restore note have 8 new tests here
-(436 in all, all passing). One of them runs a pass that walks no file: without the change, it read 0 compile
-errors where the walk had found 25. The script and the uninstall change were checked as described above.
+**The re-test on Windows**, the same machine on 2026-11-14 at `d3350b3`, with SDKs 10.0.404 and 11.0.100
+installed. Its report is `windows-report-2.md` on the same branch.
+
+| check | result |
+|---|---|
+| test suite | 434 passed, 1 failed, 1 skipped (the shell-script stand-in). The TypeScript packages were installed now, so the live TypeScript test ran for the first time on Windows, and it failed: below |
+| fresh clone, not restored, `--full` | the "not restored" note for the 4 projects with missing types (Core 19 errors, Indexer 163, Mcp 76, Tests 929); none for Web and Bench; 2,975 nodes, 17,322 edges |
+| the same clone, a pass without `--full` | 0 files walked; the graph meta and `index_status` still read 1,187 compile errors and the 4 notes |
+| after `dotnet restore`, `--full` | 3,232 nodes, 19,777 edges; a restored clone of `2d13546` gives 3,207 and 19,577, the same as Linux |
+| `uninstall.ps1` in Windows PowerShell 5.1 | exit 0; all 6 config files kept the other server and key, 2-space indents, LF, no BOM, the layout `init` writes |
+| resilience battery, no shim | 12 of 12. R3: 5 kills, each leaving the graph whole (3,232 nodes). R4: 435,009 calls, 0 errors, p99 6.4 ms, max 526 ms |
+
+It found two more things, now changed:
+
+- **The live TypeScript test could not read the daemon's log on Windows.** It read `daemon.log` with
+  `File.ReadAllText` to build its assertion messages, and it built them even when the assertion passed. The daemon
+  holds the file open for writing, and Windows refuses a reader that only shares for reading, so the test failed
+  with an IOException 3 times in 3. The test now opens the log sharing read and write. Linux does not lock the
+  file, so only a Windows run can show the fix works; that has not been done yet.
+- **The uninstall did not name what it removed.** It printed "entry removed" once per file and "deleted" for each
+  folder. `uninstall.ps1` and `uninstall.sh` now print the path of each file and folder. Both were run here against
+  a scratch install and repo.
+
+`--root` with a folder that holds no graph still falls back to the graph of the folder the server runs in (R8
+passes); this is unchanged since the first run.
 
 **The battery on Linux with the changed script**, this build. R3 now passes: 8 kills, 5 during full indexes and 3
 during incremental ones, the graph whole (3,170 nodes) after each. 11 of 12 passed. R4 had 8 errors in 891,861 calls; each answer began with the "⚠ STALE

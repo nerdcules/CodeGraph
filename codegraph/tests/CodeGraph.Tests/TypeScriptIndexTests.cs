@@ -166,24 +166,39 @@ public sealed class TypeScriptLiveTests : IDisposable
             status = await live.PingAsync(TestContext.Current.CancellationToken);
         }
 
-        Assert.True(status is { Loading: false }, File.Exists(Path.Combine(_root, "daemon.log")) ? File.ReadAllText(Path.Combine(_root, "daemon.log")) : "no daemon log");
+        Assert.True(status is { Loading: false }, DaemonLog());
 
         const string FormatName = "ts:src/app/user.service.ts#UserService.formatName";
         var references = await live.CallAsync<CodeGraph.Core.Live.LiveReferences>("references", new { symbol = FormatName, limit = 50 }, TestContext.Current.CancellationToken);
-        string Log() => File.Exists(Path.Combine(_root, "daemon.log")) ? File.ReadAllText(Path.Combine(_root, "daemon.log")) : "no daemon log";
-        Assert.True(references!.References.Count == 2, $"references: {System.Text.Json.JsonSerializer.Serialize(references)}\n{Log()}");
+        Assert.True(references!.References.Count == 2, $"references: {System.Text.Json.JsonSerializer.Serialize(references)}\n{DaemonLog()}");
         Assert.Equal(["ts:src/app/user-card.component.ts#UserCardComponent.display", "ts:src/app/user.service.spec.ts#UserService > formats names"],
             references.References.Select(r => r.EnclosingMemberId).Order(StringComparer.Ordinal));
 
         var rename = await live.CallAsync<CodeGraph.Core.Live.LiveRename>("rename_preview", new { symbol = FormatName, newName = "displayName" }, TestContext.Current.CancellationToken);
-        Assert.True(rename!.Files.Count == 3, $"rename: {System.Text.Json.JsonSerializer.Serialize(rename)}\n{Log()}");
+        Assert.True(rename!.Files.Count == 3, $"rename: {System.Text.Json.JsonSerializer.Serialize(rename)}\n{DaemonLog()}");
         Assert.Contains(rename.Files.SelectMany(f => f.Lines), l => l.After.Contains("this.service.displayName(this.user)"));
 
         var service = Path.Combine(workspace, "src", "app", "user.service.ts");
         var text = File.ReadAllText(service).Replace("formatName(user: User): string", "formatName(user: User, upper: boolean): string");
         var check = await live.CallAsync<CodeGraph.Core.Live.LiveCheck>("check_change", new { file = service, text }, TestContext.Current.CancellationToken);
-        Assert.True(check!.NewErrors.Count == 2, $"check: {System.Text.Json.JsonSerializer.Serialize(check)}\n{Log()}");
+        Assert.True(check!.NewErrors.Count == 2, $"check: {System.Text.Json.JsonSerializer.Serialize(check)}\n{DaemonLog()}");
         Assert.All(check.NewErrors, e => Assert.Contains("Expected 2 arguments", e.Message));
         Assert.Contains(check.NewErrors, e => e.File!.EndsWith("user-card.component.ts", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The daemon's log so far. The daemon still has it open for writing, and Windows refuses File.ReadAllText
+    /// (which shares for reading only) while it does, so open it sharing read and write.
+    /// </summary>
+    private string DaemonLog()
+    {
+        var path = Path.Combine(_root, "daemon.log");
+        if (!File.Exists(path))
+        {
+            return "no daemon log";
+        }
+
+        using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
+        return reader.ReadToEnd();
     }
 }
