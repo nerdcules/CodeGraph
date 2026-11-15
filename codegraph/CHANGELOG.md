@@ -73,6 +73,10 @@ The executables report their version with `--version`; the MCP server shows it t
     mismatch hid every diagnostic from `check_change` and `diagnostics` on Windows and made the language server's
     start-up wait run out (66.6 s); diagnostics are now stored under the same URI form they are looked up by.
     The live TypeScript test then passed in Windows CI (run 43702208790).
+  A third run there, at `af1eab5`, passed the suite (440, 1 skipped) and the battery (12 of 12), and found two more:
+  - `install.ps1` read an unknown option, such as the retired `-ObsidianVault`, as a repo, and installed into the
+    default folder. It now stops with "unknown option" before it downloads or writes anything.
+  - The daemon's `--log` file held its progress spinner (322 of 513 lines). `--log` now turns the spinner off.
   - `uninstall.ps1` and `uninstall.sh` name each file and folder they remove, not just "entry removed".
 - The server accepts the id under the names models guess for it (`symbolId`, `nodeId`, `memberId`, and their
   snake-case forms, or `id` for the tools that take `symbol`). A Cursor agent passed `symbolId` to every tool, got

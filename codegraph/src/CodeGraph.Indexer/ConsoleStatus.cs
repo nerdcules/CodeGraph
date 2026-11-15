@@ -14,7 +14,20 @@ internal static class ConsoleStatus
     private const string Frames = @"-\|/";
     private static readonly Lock Sync = new();
     private static readonly Stopwatch PhaseClock = new();
-    private static readonly bool Enabled = !Console.IsErrorRedirected;
+    private static bool Enabled = !Console.IsErrorRedirected;
+
+    /// <summary>
+    /// Stops drawing. <c>--log</c> points stderr at a file from inside the process, which IsErrorRedirected does
+    /// not see, so without this every spinner frame went into the log (322 of 513 lines in one Windows run).
+    /// </summary>
+    public static void Disable()
+    {
+        lock (Sync)
+        {
+            Erase();
+            Enabled = false;
+        }
+    }
     private static Timer? _timer;
     private static string _phase = "";
     private static string _detail = "";

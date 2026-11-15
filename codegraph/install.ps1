@@ -62,6 +62,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# $Repo takes the arguments no parameter matched, so a mistyped or removed option (-ObsidianVault) would land there
+# and the install would go ahead. Stop before downloading or writing anything, as install.sh does.
+$unknown = @($Repo | Where-Object { $_ -like '-*' })
+if ($unknown.Count -gt 0) {
+    throw "unknown option: $($unknown -join ', '). See Get-Help $PSCommandPath -Detailed"
+}
 $repoSlug = 'nerdcules/CodeGraph'
 # $PSScriptRoot is empty when the script runs from a downloaded string.
 $root = if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot 'CodeGraph.slnx'))) { $PSScriptRoot } else { $null }

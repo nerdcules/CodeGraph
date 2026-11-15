@@ -877,6 +877,36 @@ It found two more things, now changed:
 `--root` with a folder that holds no graph still falls back to the graph of the folder the server runs in (R8
 passes); this is unchanged since the first run.
 
+**The third run on Windows**, the same machine on 2026-11-15 at `af1eab5`, with Node v24.20.0. Its report is
+`windows-report-3.md` on the same branch.
+
+| check | result |
+|---|---|
+| test suite | 441: 440 passed, 0 failed, 1 skipped (the shell-script SCIP test); the live TypeScript test and all 5 `LspPathTests` ran and passed |
+| install from source, pwsh 7 and 5.1 | exit 0 in both, no `note:` line |
+| restored clone, `--full` | 3,244 nodes, 19,843 edges; 11.2 s by the indexer, 14.6 s wall; 23,605,248 bytes |
+| C# live daemon, 5 saves adding a method to `Worktree.cs` | the first `find_symbol` after each save found the method 4,433, 2,239, 2,107, 1,915 and 1,485 ms after the write (10 files walked each time, 1.4–4.4 s) |
+| the daemon's memory (`live_status`) | 140 MB working set before the saves, 369 MB after them, 393 MB after the restore |
+| `uninstall.ps1` in Windows PowerShell 5.1 | exit 0; one line naming each file and folder; all 6 files kept the other server and key, with 2-space indents |
+| resilience battery, no shim | 12 of 12; R4: 438,207 calls, 0 errors, p99 6.0 ms, max 528 ms |
+
+It found two more things, now changed:
+
+- **`install.ps1` took an unknown option for a repo.** `$Repo` collects the arguments no parameter matches, so
+  `.\install.ps1 -ObsidianVault x` (the parameter retired in this branch) downloaded release 1.1.0 into the
+  default `C:\tools\codegraph`, then failed to set up "repos" `-ObsidianVault` and `x`. The test plan asked for
+  that command and expected an error. `C:\tools` did not exist before the run, and the user deleted it after.
+  `install.ps1` now stops with "unknown option" before it downloads or writes anything, as `install.sh` already
+  did; checked here in pwsh with `-ObsidianVault x` and `-Bogus`, and the install folder was not created.
+- **The daemon's log held its progress spinner.** 322 of the 513 lines of the daemon's `--log` file were spinner
+  frames. The status line turns itself off when stderr is redirected, but `--log` points stderr at a file from
+  inside the process, which that check does not see. `--log` now turns it off. Checked here by indexing this repo
+  with `--log` under a terminal: without the change, all 8 log lines carried spinner redraws (carriage returns);
+  with it, none did.
+
+The first `find_symbol` after each save returned the new method, so each figure in the live-daemon row is the
+time of one call that waited for the daemon's pass, not of a polling loop.
+
 **The battery on Linux with the changed script**, this build. R3 now passes: 8 kills, 5 during full indexes and 3
 during incremental ones, the graph whole (3,170 nodes) after each. 11 of 12 passed. R4 had 8 errors in 891,861 calls; each answer began with the "⚠ STALE
 INDEX" banner, and the script kept only its first 80 characters, so the error itself was lost. Run alone three

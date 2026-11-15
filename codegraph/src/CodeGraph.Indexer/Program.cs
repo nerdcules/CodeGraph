@@ -158,6 +158,7 @@ if (logArg is not null)
     // A daemon spawned by the MCP server has no terminal; its log goes to a file and nothing touches the inherited pipes.
     Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(logArg))!);
     Console.SetError(new StreamWriter(new FileStream(logArg, FileMode.Append, FileAccess.Write, FileShare.ReadWrite)) { AutoFlush = true });
+    ConsoleStatus.Disable();
 }
 
 var target = Path.GetFullPath(targetArg);
