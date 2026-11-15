@@ -153,7 +153,7 @@ install_from_release() {
     fi
     echo "  codegraph $(cat "$install_dir/VERSION")"
     if ! command -v node >/dev/null; then
-        echo '  note: node is not on PATH; C# and the SCIP languages work, TypeScript and Angular need Node.js 22.22 or later'
+        echo '  note: node is not on PATH; C# and the SCIP languages work, TypeScript and Angular need Node.js 22.22.3+ or 24.15+'
     fi
 }
 
@@ -168,7 +168,7 @@ install_from_source() {
         step "Installing the TypeScript extractor's packages (Node $(node --version))"
         (cd "$extractor" && npm ci --omit=dev --no-audit --no-fund --loglevel=error)
     else
-        echo 'note: node and npm are not on PATH; TypeScript and Angular indexing is skipped (install Node.js 22.22 or later to add it)'
+        echo 'note: node and npm are not on PATH; TypeScript and Angular indexing is skipped (install Node.js 22.22.3+ or 24.15+ to add it)'
     fi
 
     step 'Building (warnings are errors)'

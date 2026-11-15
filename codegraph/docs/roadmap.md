@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · **What is missing** · [Contributing](contributing.md)
 
 ---
 
@@ -20,7 +20,7 @@ means here, and where it stands.
 |---|---|---|
 | "The core only runs on Linux." | The daemon uses .NET's file watcher and named pipes, which are cross-platform; the author uses Linux and Windows. | **Partly closed.** Releases, builds and the suite run on macOS in CI. No daily use there yet. |
 | "No way to install it without building it." | Nothing but a .NET SDK, a checkout and a build. | **Closed.** Prebuilt archives on six platforms with their own runtime; one-line installers; a Claude Code plugin. |
-| "No proof anyone else can trust." | No CI, no badge, no changelog, numbers buried in BENCHMARKS.md. | **Closed.** CI badge on three platforms, a CHANGELOG, release notes and checksums; the token and corpus numbers in the first paragraph of the README. |
+| "No proof anyone else can trust." | No CI, no badge, no changelog, numbers buried in BENCHMARKS.md. | **Closed.** CI badge on three platforms, a CHANGELOG, release notes and checksums; the token and corpus numbers at the top of the README. |
 | "The first five minutes are not designed." | The README opened with architecture. | **Closed.** Install, one question, the real answer, and the usage line a week later, with a picture of the terminal. The repository's front page opens with a real Claude Code session, replayed from its transcript, and a video of the same question with CodeGraph on and off. The install itself is not recorded yet. |
 | "The value is invisible once installed." | Every call went silently into `telemetry.jsonl`. | **Closed.** `codegraph-index usage`, the same line after each index run, and at the top of `usage_stats`. |
 | "One sentence of positioning." | "A compiler-built code graph with an MCP server" was accurate and abstract. | **Closed.** "CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I change it, which tests guard it." Everywhere. It named only Claude Code until `init --client` set up the other assistants too. |
@@ -51,8 +51,9 @@ means here, and where it stands.
 4. **Nothing for teams.** The graph is per machine and `.mcp.json` is the only shared piece. A graph built
    in CI and downloaded by teammates, or a check that fails a pull request on `language_version_errors`,
    would be small work on top of `codegraph-index export` and `index_status`.
-5. **TypeScript and the SCIP languages re-index the whole workspace on each save.** C# re-walks one file.
-   A few seconds for 1,000 files.
+5. **TypeScript and the SCIP languages re-index the whole workspace on each save.** C# re-walks the
+   changed files and their dependents (10 files for a save to `Worktree.cs`, BENCHMARKS round 12). A full
+   index of NestJS's 1,180 files takes 7.7 to 7.8 seconds (round 12).
 6. **One daemon per language.** In a repo with C# and Angular, `--watch` on the solution refreshes C# only;
    the front end needs a second daemon or a re-run of `init`.
 7. **`data_flow` answers for C# only.** Java goes through scip-java, which tells calls and reads apart

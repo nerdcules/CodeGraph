@@ -15,7 +15,7 @@ members you are going to change.
 2. `impact_of`, `callers_of`, `references_to` or `tests_for` with that id.
 3. `snippet` on the two or three declarations that matter.
 
-Ids in `[brackets]` are opaque; pass them back verbatim. An answer that starts with `⚠ STALE INDEX` comes
+Ids in `[brackets]` are opaque; pass them back verbatim, without the brackets. An answer that starts with `⚠ STALE INDEX` comes
 from a graph older than the working tree; rows ending in `STALE` come from edited files. Call `impact_of`
 before changing anything shared, and `tests_for` or `covered_by` to find the tests that guard it.
 

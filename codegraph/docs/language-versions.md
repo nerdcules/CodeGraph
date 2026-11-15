@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · **Language versions** · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · **Language versions** · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -57,6 +57,8 @@ A C# project must be restored.
 The indexer does not run `dotnet restore`.
 If the target framework's reference pack is not on the machine, every declaration has an error, and the graph has no calls into the framework.
 The indexer then names the project as unrestored in its log and in `index_status`.
+If the framework resolves but the NuGet packages were not restored, every call into a package is missing from the graph.
+When such a project has missing-type errors and no `obj/project.assets.json`, the indexer gives a second note: its NuGet packages were not restored, so run `dotnet restore` and index again.
 
 ## How a newer repository is read
 

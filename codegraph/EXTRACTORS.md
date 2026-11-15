@@ -27,7 +27,7 @@ with an Angular `ClientApp/` gets both, in one graph.
 | framework entry points | framework-triggered methods | lifecycle hooks, decorated methods, templates | Spring annotations, `main` |
 | dependency injection | | constructor parameters and `inject()` (`Injects`) | |
 | templates | | Angular templates: `Renders` and template calls | |
-| incremental | per file | whole workspace, a few seconds | whole project |
+| incremental | per file | whole workspace: 7.7–7.8 s for NestJS's 1,180 files ([round 12](BENCHMARKS.md#round-12-the-docs-re-measured)) | whole project |
 | `data_flow` | yes | no | no |
 
 Indexers differ in what they put in the index, and the importer evens that out:
@@ -111,7 +111,8 @@ The facts go in `meta` records (or, for C#, straight into the graph) under these
 The run logs the same as one `compiler:` line plus warnings, and `index_status` prints a line per language.
 An extractor that records nothing here still works; the status line then says so.
 
-The counts are of what was walked: an incremental C# run reports the files it re-read. Body-level errors are
+The counts are of what was walked: an incremental C# run reports the files it re-read, and a pass that walks no
+file keeps the last walk's counts and notes. Body-level errors are
 not counted on any route, because finding them is a full compile and they cost at most an edge; the
 declaration-level ones are what lose nodes, and those are counted.
 

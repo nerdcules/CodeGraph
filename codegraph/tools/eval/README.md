@@ -24,8 +24,10 @@ The key does not come from CodeGraph, so the test is not circular.
   - [runtime-tests.txt](answer-key/runtime-tests.txt) lists them.
 - **What the graph said.** `impact_of` named 37 guarding tests with the 1.1.0 indexer
   ([list](answer-key/codegraph-1.1.0-style-37.txt)), all among the 44. After the change that counts a test
-  class's constructor and setup methods, it names 42 ([list](answer-key/codegraph-with-setup-42.txt)). The 2 it
-  cannot see start `codegraph-index` as a child process.
+  class's constructor and setup methods, it names 42 on the evaluated snapshot
+  ([list](answer-key/codegraph-with-setup-42.txt)). The 2 it cannot see start `codegraph-index` as a child
+  process. Two tests added to `BulkWriteTests` after the snapshot also reach `Replace` in the graph; the run-time
+  check has not been repeated on them.
 - **Production callers.** The stacks show two: `GraphImport.WriteAsync` and the indexer's `Program` (its
   `IndexAsync` local function).
 
@@ -67,7 +69,7 @@ local paths.
 
 | File | What it does |
 |---|---|
-| [run.py](run.py) | One run: `run.py <claude\|codex\|copilot\|cursor> <on\|off> <n>`. Needs `CODEGRAPH_MCP`, the server to test. |
+| [run.py](run.py) | One run: `run.py <claude\|codex\|copilot\|cursor> <on\|off> <n>`. Needs `CODEGRAPH_MCP`, the server to test. The 24 runs used an earlier copy of this script that read the server from config files (`cfg/*.json`) naming the Debug build of `codegraph-mcp`; the commands were otherwise the same. |
 | [batch.sh](batch.sh) | The 24 runs, in the order above. |
 | [analyze.py](analyze.py) | A table of the runs, and medians for each assistant and condition. `--answers` prints every answer. |
 | [answer-key/](answer-key/) | The 44 tests from the run-time check, and the graph's 37 and 42. |
@@ -78,8 +80,9 @@ local paths.
 - One question, one repository, three runs for each assistant and condition. The ranges are wide; read the
   medians as a direction, not a precise figure.
 - The models differ between assistants, so the assistants cannot be compared with each other.
-- One Cursor run with CodeGraph lost every tool call after `find_symbol`: the model passed `symbolId` where the
-  tools take `id`, and the server answered only "An error occurred". The server now accepts those names. The run
+- In one Cursor run with CodeGraph, the 7 calls that take a node id all failed: the model passed `symbolId` where
+  the tools take `id`, and the server answered only "An error occurred". Its `find_symbol`, `search_code` and
+  `index_status` calls worked. The server now accepts those names. The run
   is counted as it happened.
 
 ---

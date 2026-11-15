@@ -10,22 +10,23 @@ change it, which tests guard it.**
 It is an MCP server, so it works with any assistant that speaks MCP. `codegraph-index init` writes the
 config for Claude Code, GitHub Copilot (CLI, VS Code, Visual Studio, JetBrains), Codex, Cursor, the Gemini
 CLI, and the Roo Code, Kilo Code and Continue extensions. [Tested with](docs/installation.md#tested-with)
-Claude Code, GitHub Copilot, Codex and Cursor, with real tool calls.
+Claude Code, the Copilot CLI, Copilot in VS Code, Codex and Cursor, with real tool calls.
 
 [![CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml/badge.svg)](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/nerdcules/CodeGraph?label=release)](https://github.com/nerdcules/CodeGraph/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
 It reads a codebase with its compiler, stores what it finds as a graph, and serves that graph to your
-assistant as tools. Every edge is a resolved symbol, never a text match. On this repository, the answers
-to "what breaks if I change `GraphStore.Replace`?" are about 5,500 tokens, where the 25 files that match
-`.Replace(` are about 123,000. Four assistants got that question three times with CodeGraph and three times
-without: with it, 7 of 12 answers said how many tests run the method; without it, none did. Claude Code was also
-faster and cheaper with it; Codex, the Copilot CLI and Cursor were not
+assistant as tools. Every edge is a resolved symbol, never a text match. On this repository at release
+1.1.0's code (`72822e6`, BENCHMARKS round 12), the answers to "what breaks if I change `GraphStore.Replace`?"
+are about 5,500 tokens, where the 25 files that match `.Replace(` are about 123,000. Four assistants got that
+question three times with CodeGraph and three times without: with it, 7 of 12 answers said how many tests run
+the method; without it, none did. Claude Code was also faster and cheaper with it; Codex and the Copilot CLI
+were not, and Cursor's runs varied too much to call
 ([measured](docs/why-it-saves-tokens.md#four-assistants-with-and-without)).
 
 - Precision and recall of 100% on generated codebases in eight languages, on current toolchains and on 2023-era ones, bar one old rust-analyzer at 87% call recall ([benchmarks](BENCHMARKS.md))
-- 436 tests, run on Linux, macOS and Windows for every push to main and every pull request
+- 436 tests, all passing in a local Linux run at `d3bfc1b`. CI runs them for every push to main and every pull request. In PR #4's CI run at `d3bfc1b`, 434 passed and 2 skipped on Linux and macOS, and 433 passed and 3 skipped on Windows: the 2 TypeScript tests skipped on all three, because that CI installed their npm packages after the .NET tests, and on Windows a SCIP test skipped because its stand-in indexer is a shell script
 - Prebuilt for six platforms, nothing to compile ([releases](https://github.com/nerdcules/CodeGraph/releases/latest))
 
 Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the TypeScript compiler; Java,
@@ -50,16 +51,19 @@ curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\YourApp -AddToPath
 ```
 
-C# repositories also need the .NET SDK the project builds with, because the graph comes from a real
-compile. TypeScript needs Node.js 22. Java, Go, Rust and Python need their SCIP indexer on PATH
-([installation](docs/installation.md) has the table). Indexing this repository (3,119 nodes) takes about 16 seconds.
+C# repositories also need the .NET SDK the project builds with, no newer than 10, because the graph comes
+from a real compile. TypeScript needs Node.js 22.22.3 or later on 22, or 24.15 or later (what the extractor's
+packages declare; round 10 also indexed at 100% on Node 20). Java, Go, Rust and Python need their SCIP indexer
+on PATH ([installation](docs/installation.md) has the table). A full index of this repository (3,170 nodes)
+took 16.7 to 17.6 seconds in BENCHMARKS round 13.
 
 **2. Ask.** Start your assistant in the repository, approve the `codegraph` server when it asks, and ask
 a question you would normally answer with grep and a lot of scrolling:
 
 > What breaks if I change `GraphStore.Replace`, and which tests cover it?
 
-The assistant calls `find_symbol`, then `impact_of`, and gets this back in about 3 milliseconds, trimmed here:
+The assistant calls `find_symbol`, then `impact_of`, and gets this back in about 2 milliseconds (1.8 ms, the
+median in BENCHMARKS round 12). This is the answer on release 1.1.0's code (`72822e6`), trimmed here:
 
 ```
 impact of CodeGraph.Core.GraphStore.Replace(...): 12 dependents, 37 guarding tests
@@ -109,7 +113,7 @@ The indexer prints the same line after each run, and the `usage_stats` tool open
 Every answer is checked against the working tree first. If indexed files changed since the graph was
 built, the answer starts with a `⚠ STALE INDEX` line and marks the affected rows, so the model never
 reasons silently from an old graph. `codegraph-index --watch` keeps the compiled solution in memory,
-applies each save in about a second, and answers the live tools from the real compiler.
+applies a save in about 1 to 1.5 seconds (BENCHMARKS rounds 12 and 13), and answers the live tools from the real compiler.
 
 ## Where to go next
 
@@ -126,12 +130,18 @@ applies each save in about a second, and answers the live tools from the real co
 
 ## Trust and privacy
 
-- **Local and read-only.** No source leaves the machine. The server only reads the graph file, and
-  nothing is written during a query. Telemetry is one JSON line per call in
-  `.codegraph/telemetry.jsonl` beside the graph (`CODEGRAPH_TELEMETRY=off` keeps it in memory).
+- **Local.** No source leaves the machine, unless you set `CODEGRAPH_EMBEDDINGS_URL` to a remote endpoint
+  for semantic search: that endpoint then receives declaration text (names, signatures, doc comments and
+  the start of each body) and the search queries. Semantic search is off unless the variable is set.
+- **Read-only on the graph.** The server only reads the graph file. What it writes itself is telemetry:
+  one JSON line per call in `.codegraph/telemetry.jsonl` beside the graph (`CODEGRAPH_TELEMETRY=off`
+  keeps it in memory). A live daemon it starts when asked (`live_status start=true`, or
+  `CODEGRAPH_DAEMON=auto`) is the indexer, which writes the graph and `daemon.log`.
 - **Honest about staleness.** Every answer compares the graph with the working tree first.
-- **The repo's MCP config is repo content.** Claude Code, Cursor, VS Code and the Copilot CLI ask before
-  starting a project's servers.
+- **The repo's MCP config is repo content.** Claude Code asks before starting a project's
+  servers, Cursor lists a new one as Disabled until you enable it,
+  VS Code starts them only in a folder you trust, and the Copilot CLI reads `.mcp.json` only in a
+  trusted folder ([client tests](docs/client-tests/README.md)).
   The Obsidian plugin does the same: it starts the server only after you approve that exact command.
 - **Checked builds.** Every release is built by the [release workflow](../.github/workflows/release.yml)
   from a tag, with a `SHA256SUMS` file the installers verify. The executables are not code-signed yet.
@@ -141,19 +151,27 @@ applies each save in about a second, and answers the live tools from the real co
 In order of what would matter most, from a frank look at the gap between the engineering and the
 product. [docs/roadmap.md](docs/roadmap.md) has the detail.
 
-1. **macOS is tested by CI, not by daily use.** The author works on Linux and Windows. The release builds
-   and the test suite run on macOS on every push, but no one has lived with it there yet.
+1. **macOS is tested by CI, not by daily use.** The author works on Linux and Windows. CI builds the
+   Release configuration and runs the test suite on macOS for every push to main and every pull request,
+   and the release workflow builds the macOS archives on each version tag, but no one has lived with it
+   there yet.
 2. **No package managers.** There is a release archive and an installer, but no Homebrew tap, winget
    package or `dotnet tool`. The Claude Code plugin in [plugin/](plugin/) removes the install step on
    macOS and Linux; on Windows it needs the installer first.
-3. **The first answer still needs a graph.** `init` builds it, but a repository with no SDK for its
-   language indexes nothing, and says so only in the log.
+3. **The first answer still needs a graph.** `init` builds it. Without the .NET SDK or the SCIP indexer a
+   repository needs, the indexer exits with an error that names what to install, but the assistant's
+   tools then answer only "no code graph".
 4. **Nothing for teams.** The graph is per machine. A team shares only `.mcp.json`. Building the graph in
    CI and shipping it to teammates is possible and not done.
 5. **TypeScript and the SCIP languages re-index the whole workspace on each save**, where C# re-walks
-   one file. A few seconds for 1,000 files.
-6. **`data_flow` answers for C# only**, and Java goes through scip-java, which tells calls and reads
+   the changed files and their dependents (10 files for a save to `Worktree.cs`, BENCHMARKS round 12).
+   A full index of NestJS's 1,180 files takes 7.7 to 7.8 seconds (round 12).
+6. **One daemon per language.** In a repository with C# and Angular, `--watch` on the solution keeps
+   only the C# part current.
+7. **`data_flow` answers for C# only**, and Java goes through scip-java, which tells calls and reads
    apart by the target's kind only.
+8. **No recording of the install.** The install and the usage line a week later are still a picture of
+   a terminal.
 
 ## License
 

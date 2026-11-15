@@ -23,7 +23,7 @@ After scoring, each run also tests the Obsidian side.
     a note;
   - callers agree with the answer key;
   - a source edit turns the answers stale, a re-index makes them fresh again, and the export afterwards rewrites
-    nothing but the index;
+    nothing but the index and the reports, and deletes nothing;
   - a server that can't start fails with its reason.
 
   Callers precision is below 100 on purpose: `callers_of` counts a call to an interface or base member as a call to
@@ -32,7 +32,7 @@ After scoring, each run also tests the Obsidian side.
 Real Obsidian is tested separately, in [tools/obsidian-e2e](../obsidian-e2e/README.md).
 
 ```bash
-python3 tools/corpus/run.py --base <local image with the .NET 10 SDK, Node 22.22+ and Python 3> --jobs 4 --seeds 1,2
+python3 tools/corpus/run.py --base <local image with the .NET 10 SDK, Node.js 22.22.3+ or 24.15+ and Python 3> --jobs 4 --seeds 1,2
 python3 tools/corpus/run.py --langs java --profiles large      # one slice
 python3 tools/corpus/gen.py --lang csharp --profile collisions --out /tmp/c && \
   python3 tools/corpus/check.py --corpus /tmp/c --indexer "dotnet $PWD/src/CodeGraph.Indexer/bin/Release/net10.0/codegraph-index.dll" --out /tmp/c.json

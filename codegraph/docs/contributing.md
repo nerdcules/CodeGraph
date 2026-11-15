@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · **Contributing**
 
 ---
 
@@ -21,20 +21,27 @@ Users do not need it: [Installation](installation.md) installs a prebuilt releas
 
 ## Build and test
 
-You need the .NET 10 SDK and git. Node.js 22 adds the TypeScript extractor and the Obsidian plugin.
+You need the .NET 10 SDK and git. Node.js adds the TypeScript extractor and the Obsidian plugin: 22.22.3 or later,
+or 24.15 or later, which is what the extractor's packages declare (round 10 in BENCHMARKS.md also indexed on Node 20).
 
 ```bash
 cd codegraph
+(cd extractors/typescript && npm ci)
 dotnet build -warnaserror
 dotnet test
-(cd extractors/typescript && npm ci && npm test)
+(cd extractors/typescript && npm test)
 (cd obsidian-plugin && node build.mjs --check && npm test)
 ```
 
 The build treats warnings and NuGet audit findings as errors, and `nuget.config` pins nuget.org as the
-only source. The .NET suite needs no SDK discovery and no network: the store tests use a throwaway DuckDB
-file and the indexer tests drive the real Roslyn extractor over an `AdhocWorkspace`.
-[CI](../../.github/workflows/ci.yml) runs the same commands on Linux, macOS and Windows for every push.
+only source. Most of the .NET suite needs no SDK discovery and no network: the store tests use a throwaway DuckDB
+file and most indexer tests drive the real Roslyn extractor over an `AdhocWorkspace`. `FirstIndexTests` run
+`codegraph-index` on a C# project as a process, which loads MSBuild, so they need the .NET 10 SDK: on Windows with
+only the .NET 11 SDK, its 3 tests failed (`windows-report.md` on the `windows-test-results` branch). The
+TypeScript index and live tests need Node.js and the extractor's packages, so `npm ci` comes before `dotnet test`;
+without them, those tests skip.
+[CI](../../.github/workflows/ci.yml) runs the same commands on Linux, macOS and Windows, on each push to `main` and
+on each pull request.
 
 ## Run from a checkout
 
@@ -61,6 +68,7 @@ plugin                  Claude Code plugin: the server, a skill, and a launcher 
 tests/CodeGraph.Tests   store, search, telemetry, extraction, incremental and watch-mode sync, live daemon, exports
 tools/CodeGraph.Bench   codegraph-bench: the numbers in BENCHMARKS.md
 tools/corpus            generated codebases in eight languages, run in Docker, with answer keys
+tools/eval              runs of four assistants with and without CodeGraph, scored against a run-time answer key
 tools/obsidian-e2e      the plugin end to end in real Obsidian, headless, per Obsidian version
 tools/release           package.sh builds the release archives; notes.sh writes the release notes
 install.* / setup.*     install a release (or --from-source) and set up repos / run from a checkout
@@ -109,7 +117,7 @@ answer key covers it.
    ```
 
 The [release workflow](../../.github/workflows/release.yml) builds and tests on Linux, packages the six
-platforms on their own runners with `tools/release/package.sh`, writes `SHA256SUMS`, and publishes a
+platforms on three runners (Linux, macOS and Windows, two architectures each) with `tools/release/package.sh`, writes `SHA256SUMS`, and publishes a
 GitHub Release whose notes are the CHANGELOG section plus the install one-liners. The installers download
 `releases/latest`, so a published release is live at once. To try the packaging locally:
 
@@ -131,4 +139,4 @@ the machine, because MSBuild loads the projects.
 
 ---
 
-← Previous: [What is missing](roadmap.md) · Next: [Architecture](architecture.md) →
+← Previous: [What is missing](roadmap.md) · [Home](README.md)

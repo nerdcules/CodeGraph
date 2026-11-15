@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · **Installation** · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · **Installation** · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -35,7 +35,7 @@ You must have these items for the languages that you index:
 |---|---|---|
 | git | any | All languages. The indexer finds the worktree root with git. |
 | .NET SDK | the one that your projects build with, 10 or older | C#. MSBuild loads the projects, so the SDK must be there, as for `dotnet build`. The indexer runs on .NET 10 and cannot load a newer SDK: with only the .NET 11 SDK installed, it stops and says to install the .NET 10 SDK beside it. |
-| Node.js | 22.22 or later | TypeScript, JavaScript and Angular. |
+| Node.js | 22.22.3 or later, or 24.15 or later | TypeScript, JavaScript and Angular. These are the versions that the extractor's packages declare. The corpus also indexed in full on Node 20 ([BENCHMARKS.md](../BENCHMARKS.md) round 10). |
 | A language indexer | see below | Java, Kotlin, Scala, Go, Rust and Python. |
 
 The repositories that you index can be on older versions.
@@ -97,7 +97,7 @@ PowerShell 7 can also run `install.ps1` on macOS and Linux.
 | `--client NAMES` | `-Client NAMES` | Set up the repositories for these assistants. See [Use another assistant](#use-another-assistant). |
 | `--obsidian-vault DIR` | `-ObsidianVault DIR` | Also install the Obsidian plugin into this vault. See [Obsidian](obsidian.md). |
 | `--from-source` | `-FromSource` | Build a checkout instead of downloading. See [Build from source](#build-from-source). |
-| `--force` | `-Force` | Stop running `codegraph-mcp` processes before the copy. |
+| `--force` | `-Force` | Stop running `codegraph-mcp` and `codegraph-index` processes before the copy. |
 
 ## Install the language tools
 
@@ -158,8 +158,8 @@ codegraph-index init App.slnx
 
 `init` does these steps:
 
-1. It adds the `codegraph` server to `.mcp.json` at the worktree root, or to the configuration of each assistant that you give with `--client`. It keeps the other servers.
-2. It starts the server as the client does, to make sure that it can.
+1. It runs `codegraph-mcp --version` without `DOTNET_ROOT`, as a client starts it, to make sure that the server starts. If the server needs `DOTNET_ROOT`, the entry sets it.
+2. It adds the `codegraph` server to `.mcp.json` at the worktree root, or to the configuration of each assistant that you give with `--client`. It keeps the other servers.
 3. It adds `.codegraph/` to `.gitignore`.
 4. It builds the first graph.
 
@@ -232,7 +232,6 @@ You can also give one at a time.
 - **JetBrains IDEs** start the server in the folder of the IDE and replace no variables.
   Thus the entry gives the absolute path of the repository.
   If you commit `.github/mcp.json`, each developer must run `init --client jetbrains` again.
-  The Copilot CLI also reads `.github/mcp.json`. Both entries point to the same graph.
 - **Eclipse and Xcode** have no project file. Add the server in the MCP settings of Copilot,
   with the absolute path of the repository: `"args": ["--root", "/home/you/dev/App"]`.
 - **The Copilot coding agent on GitHub** runs in GitHub Actions, not on your computer.
@@ -353,8 +352,11 @@ It adds the server to every session, and a skill that tells Claude when to use t
 2. Open a repository and ask a question. On the first call, the plugin downloads the release into `~/.codegraph/bin`.
 3. When a tool answers "no code graph", let Claude run `codegraph-index init`, or run it yourself.
 
-On Windows, install with `install.ps1` first.
-The plugin then uses that install.
+On Windows, install with `install.ps1` first, and let `codegraph-index init` write the `.mcp.json` of the repository.
+That entry starts the server.
+The launcher of the plugin is a shell script, and it looks only in `~/.codegraph/bin` (or `CODEGRAPH_HOME`).
+`install.ps1` installs in `C:\tools\codegraph`.
+The skill of the plugin still helps.
 [plugin/README.md](../plugin/README.md) gives the details.
 
 ## Install by hand
@@ -428,7 +430,7 @@ Give `--yes` or `-Yes` to remove without questions.
 | The indexer reports hundreds of errors on a C# project. | The SDK that the project builds with is not installed, or the project is not restored. | Install that SDK, run `dotnet restore`, and index again. `index_status` shows the first error. |
 | The indexer says "its NuGet packages were not restored". | The repository was never restored, for example a fresh clone, so every call into a package is missing from the graph. | Run `dotnet restore` (or build once), then index again with `--full`. |
 | The indexer says it "cannot load the solution: it runs on .NET 10 and needs a .NET SDK no newer than 10". | Only a newer SDK, such as .NET 11, is installed. | Install the .NET 10 SDK beside it. A build from source can also run with `DOTNET_ROLL_FORWARD=LatestMajor`. |
-| The install script stops with "in use". | `codegraph-mcp` runs. | Close the sessions, or give `--force`. |
+| The install script stops with "codegraph is running from ...". | `codegraph-mcp` or `codegraph-index` runs from the install folder. | Close the sessions, or give `--force`. |
 | macOS says the program is damaged or cannot be opened. | The archive came from a browser and is quarantined. | Run `xattr -dr com.apple.quarantine` on the install folder, or install with the script. |
 | The server does not start in the client after a source build. | The client cannot find .NET. | Run `codegraph-index init` again. It adds `DOTNET_ROOT` when necessary. A release build does not need .NET. |
 | An IDE says "no code graph at /.codegraph/graph.db" or a path in your home folder. | The IDE starts the server outside the project, and the entry has no `--root`. | Run `codegraph-index init --client` with the name of that IDE again. For Cline or Windsurf, add `--root` by hand. |

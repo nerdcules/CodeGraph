@@ -23,12 +23,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Before the .NET tests: the TypeScript index and live tests skip themselves when these packages are missing.
+      - working-directory: codegraph/extractors/typescript
+        run: npm ci --no-audit --no-fund
       - run: dotnet build CodeGraph.slnx -c Release -warnaserror --nologo
       - run: dotnet test CodeGraph.slnx -c Release --no-build
       - working-directory: codegraph/extractors/typescript
-        run: |
-          npm ci --no-audit --no-fund
-          npm test
+        run: npm test
       - working-directory: codegraph/obsidian-plugin
         run: |
           node build.mjs --check

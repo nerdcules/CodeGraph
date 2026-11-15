@@ -24,7 +24,9 @@ The executables report their version with `--version`; the MCP server shows it t
 - Checked with real tool calls from the Cursor IDE 3.29 (`${workspaceFolder}` expanded), Copilot in VS Code 1.146 (agent mode, `${workspaceFolder}` expanded), the Codex
   VS Code extension 26.1111 (it starts servers in the workspace, so the global entry needs no root), the Codex CLI
   and the GitHub Copilot CLI, and the Cursor CLI (headless runs need `Mcp(codegraph:*)` allowed in
-  `.cursor/cli.json`; the docs say how).
+  `.cursor/cli.json`; the docs say how). Where each client starts its servers and which variables it expands was
+  read from the Roo Code, Kilo Code and Continue sources, and the Visual Studio and Copilot for JetBrains docs and
+  issue tracker.
 - Tests guard what their framework runs around them. In C#, a test now calls its class's constructors (instance
   and static), `Dispose`/`DisposeAsync`, `IAsyncLifetime.InitializeAsync`, and methods marked `[SetUp]`,
   `[TearDown]`, `[OneTimeSetUp]`, `[OneTimeTearDown]` (NUnit), `[TestInitialize]`, `[TestCleanup]`,
@@ -38,9 +40,11 @@ The executables report their version with `--version`; the MCP server shows it t
 - A tool call that fails says why. A missing or mistyped argument gets the problem and the tool's parameters
   ("impact_of takes: id (string, required), depth (integer, default 5)"); a damaged graph file gets the command
   that rebuilds it. Before, every one was "An error occurred invoking 'x'".
-- BENCHMARKS.md round 13: no speed lost on this repo or Jellyfin, parity clean, and a resilience battery
+- BENCHMARKS.md round 13: a full index of this repo took 16.7–17.6 s against round 12's 16.2–16.3 s, which the
+  round puts down to the graph's growth; Jellyfin's took 44.9–45.0 s by the indexer's own figure (round 12's 44.3–45.3 s did not record which figure); parity clean; and a resilience battery
   (`tools/CodeGraph.Bench/resilience.py`, 12 of 12 after the two fixes above). It found the graph file creeping
-  under the live daemon, about 3 MB over the last 50 of 100 saves; fixed below.
+  under the live daemon, about 3 MB over the last 50 of 100 saves; fixed below. A later Linux run of the battery
+  (round 15) passed 11 of 12: R4 had 8 errors, and their cause is open. The Windows re-test passed 12 of 12.
 - An incremental pass writes only the rows that changed. Before, it deleted and re-inserted every row of each
   re-walked file and project file, and all the stamps and meta. DuckDB rewrites every row group and index those
   touch, so under `--watch` the file grew with each pass and kept creeping. Over 150 saves on this repo: 1.1.0
@@ -48,7 +52,8 @@ The executables report their version with `--version`; the MCP server shows it t
   now adds 2 MB instead of 47. After the passes, the graph equals a fresh full index in every table, on both
   repos. BENCHMARKS.md round 14 has the figures; `tools/CodeGraph.Bench/file-growth.sh` repeats them.
 - Windows 11, checked by a Claude Code session there (BENCHMARKS.md round 15): 425 tests passed, 3 skipped; graph
-  swaps under a reading server, install and uninstall in PowerShell 7 and 5.1, and the live daemon all worked.
+  swaps under a reading server, a from-source install and the uninstall in PowerShell 7 and 5.1, and the live
+  daemon all worked.
   It found four things, now fixed:
   - With only a newer SDK installed (.NET 11), the indexer died with an unhandled MSBuildLocator exception. It now
     says to install the .NET 10 SDK, or to set `DOTNET_ROLL_FORWARD=LatestMajor` for a build from source.
@@ -61,7 +66,8 @@ The executables report their version with `--version`; the MCP server shows it t
   A second run there, at `d3350b3`, confirmed the restore note, the kept compile errors, the 5.1 layout and the
   battery (12 of 12 with no shim). It found two more:
   - The live TypeScript test failed on Windows: it read the daemon's log while the daemon held it open for
-    writing. It now opens the log sharing read and write.
+    writing. It now opens the log sharing read and write. That fix has not run on Windows yet: the Windows CI
+    run of pull request #4 skipped the test.
   - `uninstall.ps1` and `uninstall.sh` name each file and folder they remove, not just "entry removed".
 - The server accepts the id under the names models guess for it (`symbolId`, `nodeId`, `memberId`, and their
   snake-case forms, or `id` for the tools that take `symbol`). A Cursor agent passed `symbolId` to every tool, got
@@ -69,15 +75,14 @@ The executables report their version with `--version`; the MCP server shows it t
 - [tools/eval](tools/eval/README.md): four assistants (Claude Code, Codex CLI, Copilot CLI, Cursor CLI), three runs
   each with and without CodeGraph, on a copy of this repo without its docs, scored against a run-time answer key.
   With CodeGraph 7 of 12 answers gave a test total (each 42, the graph's count; 44 tests execute the method);
-  without it none did. Claude Code was faster and cheaper with it; the other three were not. Summary in
+  without it none did. Claude Code was faster and cheaper with it; Codex and the Copilot CLI were not, and
+  Cursor's runs varied too much to call. Summary in
   [Why it saves tokens](docs/why-it-saves-tokens.md#four-assistants-with-and-without).
 - The server accepts an id with the brackets its answers print around ids (`[M:App.Run]`): a Cursor agent
-  copied them and got "no node with id". The instructions now say to drop them.
+  copied them and got "no node with id". The server's instructions now say to drop them.
 - `find_symbol` with `nameMatch: Exact` also takes a qualified tail of the full name without its parameter list:
   `GraphStore.Replace` finds `CodeGraph.Core.GraphStore.Replace(bool, …)`. A Cursor agent tried exactly that,
   found nothing, and fell back to two broader searches. The in-memory and SQL paths agree (parity tests).
-  Where each client starts its servers and which variables it expands was read from the Roo Code, Kilo Code and
-  Continue sources, and the Visual Studio and Copilot for JetBrains docs and issue tracker.
 - The uninstall scripts remove the entry from every config `init` can write, and from Codex.
 - The README and docs say "your AI coding assistant" rather than Claude Code alone; the usage page lists each
   assistant's instructions file. [Tested with](docs/installation.md#tested-with) lists the assistants that
@@ -112,8 +117,8 @@ The executables report their version with `--version`; the MCP server shows it t
 ### Docs
 
 - Every figure re-measured on 14 November 2026 ([BENCHMARKS.md](BENCHMARKS.md), round 12): this repo is now
-  3,119 nodes and 405 tests, the README's question answers 12 dependents and 37 tests in about 3 ms, with
-  about 5,500 tokens of answers against about 123,000 for the files that match. A save reaches a fresh answer in about a second on this repo, not
+  3,119 nodes and 405 tests, the README's question answers 12 dependents and 37 tests (`impact_of` 1.8 ms; with `find_symbol` first, 3.3 ms), with
+  about 5,500 tokens of answers against about 123,000 for the files that match. A save reaches a fresh answer in 0.9 to 1.3 seconds on this repo, not
   "well under a second" as the docs said: the graph doubled since that was measured.
 - New Obsidian screenshots; redrawn live-daemon and index-time charts; an install diagram that shows the release
   download rather than the build from source; a corpus chart that no longer cuts off the Rust line. Jellyfin,
@@ -163,7 +168,8 @@ The first packaged release. Everything below was built between August and Novemb
 
 ### Tested
 
-- 390 .NET tests, 11 extractor tests and the Obsidian plugin's tests run on every push on Linux, macOS and Windows.
+- 390 .NET tests, 11 extractor tests and the Obsidian plugin's tests run on Linux, macOS and Windows on each push
+  to `main` and on each pull request.
 - A generated corpus in eight languages, with an answer key, scores precision and recall at 100% on current
   toolchains in a modern and a classic dialect, and on older SDK images in Docker (.NET 8, Node 20, JDK 17,
   Go 1.21, Rust 1.70, Python 3.8). [BENCHMARKS.md](BENCHMARKS.md) has every number.

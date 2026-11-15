@@ -84,7 +84,7 @@ var telemetry = new Telemetry(telemetryOff ? null : Path.Combine(Path.GetDirecto
 var live = new LiveClient(dbPath);
 var flushWait = TimeSpan.FromSeconds(8);
 
-// Keeps the DuckDB instance loaded between calls (a 1 ms open instead of 11 ms), letting go when idle or
+// Keeps the DuckDB instance loaded between calls (an open of 0.025 ms instead of 9.9 ms, BENCHMARKS round 2), letting go when idle or
 // when the daemon is about to write.
 var anchor = new GraphAnchor(dbPath);
 
@@ -119,7 +119,7 @@ void AddGraph(IServiceCollection services)
                 Title = "CodeGraph",
                 Version = ServerVersion(),
                 Description = "Compiler-built code graph for C#, TypeScript, Angular and other codebases: who calls this, what breaks if it changes, "
-                            + "which tests guard it, where is the code that does X. Read-only, local, no network.",
+                            + "which tests guard it, where is the code that does X. Read-only on the graph and local; only CODEGRAPH_EMBEDDINGS_URL sends search text to an endpoint.",
                 WebsiteUrl = "https://github.com/nerdcules/CodeGraph",
                 Icons = [new Icon { Source = LogoDataUri(), MimeType = "image/svg+xml", Sizes = ["any"] }],
             };
@@ -128,7 +128,7 @@ void AddGraph(IServiceCollection services)
                 codegraph answers structural questions about the indexed codebase from a compiler-built graph, so prefer
                 it to grepping or opening files. Typical turn: find_symbol (or search_code when you only know what the
                 code does) → impact_of / callers_of / references_to → snippet on the two or three declarations that matter.
-                Ids in [brackets] are opaque (Roslyn doc-comment ids for C#, ts:/java:/scip: prefixes otherwise); pass them back verbatim, without the brackets. An answer that starts with
+                Ids in [brackets] are opaque (Roslyn doc-comment ids for C#, ts:/scip: prefixes otherwise); pass them back verbatim, without the brackets. An answer that starts with
                 "⚠ STALE INDEX" is from a graph older than the working tree; rows ending in STALE come from edited files.
                 Call impact_of before changing anything shared, and tests_for / covered_by to find the tests that guard it.
                 When codegraph-index --watch is running (live_status), four tools answer from the live compiler (Roslyn, the TypeScript language service, or a language server):

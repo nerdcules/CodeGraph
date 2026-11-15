@@ -20,7 +20,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     // server (typescript-language-server, jdtls, pyright, gopls, rust-analyzer) for the other languages ─────────
 
     [McpServerTool(Name = "live_status", ReadOnly = true, Idempotent = true)]
-    [Description("Whether a live daemon (codegraph-index --watch) holds this solution in memory. When it does, symbol_at, live_references, diagnostics and check_change work, and the graph is refreshed within a second of every save. Pass start=true to launch one.")]
+    [Description("Whether a live daemon (codegraph-index --watch) holds this solution in memory. When it does, symbol_at, live_references, diagnostics and check_change work, and the graph is refreshed after every save (0.9 to 1.3 s on this repository, BENCHMARKS round 12). Pass start=true to launch one.")]
     public async Task<string> LiveStatus(
         [Description("Start the daemon if none is running, default false")] bool start = false,
         CancellationToken cancellationToken = default)

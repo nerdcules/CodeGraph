@@ -74,7 +74,7 @@ through the call graph, not line coverage, so treat a hit as "some test calls th
 
 ### 6. Finding dead code safely
 
-> Find private and internal methods that look unused in `GymX.Core`, and explain why each one is a candidate.
+> Find private and internal methods that look unused, and explain why each one is a candidate.
 
 **Tools:** `dead_code_report` → `explain_reachability` on anything surprising.
 
@@ -104,8 +104,9 @@ the class for a few hundred tokens. It then reads only the spans it needs.
 `search_code` is a ranked full-text search over every type and member: names split on case
 boundaries, doc and leading comments, signatures, string literals and the identifiers in bodies.
 "retry failed upload" finds `UploadQueue.RetryFailed` and the `// retried once on 5xx` comment
-inside `BlobSender.Send` without a grep, and each hit shows how many of the query's words it
-matched. Once a name is known, switch to `find_symbol` and the graph tools.
+inside `BlobSender.Send` without a grep. Without embeddings, each hit shows how many of the query's
+words it matched; with them, its rank by words and by meaning. Once a name is known, switch to
+`find_symbol` and the graph tools.
 
 ---
 
@@ -139,8 +140,9 @@ and the full list of changed files.
   `search_code`; to find one exact string, plain grep is still the right tool.
 - **Name the symbol as precisely as you can.** `WorkoutService.SaveAsync` resolves in one call,
   while `Save` may return twenty matches.
-- **Callers outside the solution are invisible.** The graph only knows the indexed solution.
-  Reflection, DI registration by convention and calls from other repos won't show up.
+- **Callers outside the indexed code are invisible.** The graph holds the indexed code, plus
+  `External` nodes for the framework and package members it calls. Reflection, DI registration by
+  convention and calls from other repos won't show up.
 
 ---
 

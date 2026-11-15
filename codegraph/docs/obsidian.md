@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · **Obsidian** · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · **Obsidian** · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -62,10 +62,10 @@ You need these items only for the plugin:
 |---|---|---|
 | Obsidian desktop | 1.5 or later | The plugin. It does not work in Obsidian mobile. |
 | CodeGraph | this release | The indexer and the server. See [Installation](installation.md). |
-| Node.js | 22.22 or later | Only to install the plugin from a source checkout. |
+| Node.js | 20 or later | Only to install the plugin from a source checkout. |
 | A graph | any | `codegraph-index init` in the repository. |
 
-The plugin was tested with Obsidian 1.5.12, 1.8.9 and 1.14.4.
+The end-to-end harness passed on Obsidian 1.5.12 and 1.8.9 on 2026-11-12. The plugin changed after that run (2026-11-13), and no later harness run is recorded; the screenshots, taken on 2026-11-14, come from 1.8.9.
 
 ## Install the plugin
 
@@ -86,7 +86,7 @@ The plugin writes into `_code/`.
    ```
 
    By hand: download `codegraph-obsidian.zip` from the [latest release](https://github.com/nerdcules/CodeGraph/releases/latest) and unpack it into `<vault>/.obsidian/plugins/codegraph/`.
-   From a source checkout: `node obsidian-plugin/install-plugin.mjs ~/Notes/MyProject`.
+   From the `codegraph/` folder of a source checkout: `node obsidian-plugin/install-plugin.mjs ~/Notes/MyProject`.
 
 4. In Obsidian, open **Settings → Community plugins**.
 5. If Obsidian shows **Restricted mode**, select **Turn on community plugins**.
@@ -136,7 +136,7 @@ For a type note, the panel has these tabs:
 |---|---|
 | References | The code that uses the type. |
 | Impact | The code that can break if the type changes. |
-| Tests | The tests that reach the type. |
+| Tests | The tests that use the type directly. |
 | Members | The members of the type. |
 
 ![The GraphStore type note with the live panel on the References tab](images/obsidian-type-references.png)
@@ -153,7 +153,7 @@ For a member, the panel has these tabs:
 | Callers | The methods that call the member. |
 | Callees | The methods that the member calls. |
 | Impact | The dependents and the tests that guard them. |
-| Tests | The tests that reach the member. |
+| Tests | The tests that call the member directly, also through an interface or base member that it implements or overrides. |
 
 ![The live panel shows the callers of GraphStore.Replace](images/obsidian-member-callers.png)
 
@@ -169,7 +169,7 @@ For a member, the panel has these tabs:
 2. Type a part of a name.
 3. Select a result. Obsidian opens the note of that type or member.
 
-![Find symbol: a search for Freshness lists types, methods and fields with their files and lines](images/obsidian-find-symbol.png)
+![Find symbol: a search for Freshness lists methods and fields with their files and lines](images/obsidian-find-symbol.png)
 
 ## Link your notes to the code
 
@@ -195,7 +195,7 @@ The `Reports/` folder has five notes:
 |---|---|
 | Project map | A Mermaid diagram of the project references. |
 | Test coverage | Each type with the tests that call it directly. |
-| Untested public surface | Public types and members that no test calls directly. |
+| Untested public surface | Public methods that no test calls directly, by type. |
 | Entry points | The members that the framework or the runtime calls. |
 | Most called | The members with the most callers. |
 
@@ -205,14 +205,14 @@ The `Reports/` folder has five notes:
 
 NOTE: Test coverage counts direct calls from tests (`TestedBy` edges).
 It is not a coverage run.
-For tests that reach a type through other code, use the Tests tab of the live panel.
+For tests that reach a type through other code, use the Impact tab of the live panel.
 
 ## Use the graph view
 
 The code notes link to each other, so the Obsidian graph view shows the structure of the code.
 Open it with **Open graph view** in the ribbon.
 
-![The Obsidian graph view of the code notes, with a colour for each project and for the reports](images/obsidian-graph-view.png)
+![The Obsidian graph view of the code notes, with colours for the reports, the project notes, the CodeGraph.Core types, the CodeGraph.Tests types and the other types](images/obsidian-graph-view.png)
 
 To give each project a colour, open the graph settings and add one group for each project.
 Use a query such as `path:_code/Types/CodeGraph.Core`.
@@ -245,8 +245,10 @@ Each type note has these properties in its frontmatter:
 | `kind`, `type_kind`, `accessibility` | For example `Type`, `Class`, `Public`. |
 | `project`, `language` | The project and the language of the type. |
 | `file`, `line` | The source location. |
-| `is_test`, `tested_by`, `test_count` | The test types that call the type, and their number. |
-| `inbound_refs` | The number of members outside the type that use it. |
+| `is_test` | Whether the type holds tests. |
+| `tested_by` | The test types whose tests call the type or its members directly. |
+| `test_count` | The number of tests that call the type or its members directly. |
+| `inbound_refs` | The number of uses from outside the type. Each pair of a user and the type or member that it uses counts once. |
 
 With the [Dataview](https://github.com/blacksmithgu/obsidian-dataview) plugin, you can query them as a table.
 This query lists the most used public types that no test calls directly:
@@ -303,7 +305,8 @@ The export obeys these rules:
 
 - It writes only the notes whose text changed.
 - It removes only the notes that it wrote before. It lists them in `_code/.codegraph-export.json`.
-- It does not touch a file in the folder that has no `codegraph: generated` property.
+- It does not delete a file that has no `codegraph: generated` property.
+- It overwrites a file at the path of a generated note, also when the file has no `codegraph: generated` property.
 - It does not write into a folder that has files but no export list.
 
 ## Troubleshooting
@@ -325,7 +328,7 @@ The screenshots on this page come from real Obsidian, headless in Docker, with t
 To make them again after a change to the plugin or the export:
 
 1. Build the e2e image once. See [tools/obsidian-e2e](../tools/obsidian-e2e/README.md).
-2. Install CodeGraph and index this repository with `./install.sh`.
+2. Build CodeGraph from this checkout and index this repository with `./install.sh --from-source .`.
 3. Run the screenshot script:
 
    ```bash

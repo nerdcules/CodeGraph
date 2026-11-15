@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · **Why it saves tokens** · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -23,12 +23,13 @@ going to change.
 
 ![A typical turn: find_symbol, impact_of, then snippet](images/typical-turn.svg)
 
-Measured on this repository, for "what breaks if I change `GraphStore.Replace`?":
+Measured on this repository at release 1.1.0's code (`72822e6`, [BENCHMARKS round 12](../BENCHMARKS.md#round-12-the-docs-re-measured)),
+for "what breaks if I change `GraphStore.Replace`?":
 
 | How the assistant finds out | What enters its context | Size, at about 4 characters a token |
 |---|---|---|
 | CodeGraph: `find_symbol`, `impact_of`, `snippet` | The method, its 12 dependents, the 37 tests that guard them, and the method's own source | 21,910 characters, about 5,500 tokens |
-| Opening the files that answer names, if the model somehow knew which they were | 15 files | 258,628 characters, about 65,000 tokens |
+| Opening the files the answers name, if the model somehow knew which they were | 15 files | 258,628 characters, about 65,000 tokens |
 | Opening every file that matches `.Replace(` | 25 files, and the dependents' own callers are still to find | 491,682 characters, about 123,000 tokens |
 
 So the answers are between a twelfth and a twenty-second of the size of the files that hold the same
@@ -58,7 +59,9 @@ Neither count is the whole truth. A run-time check ran each test of release 1.1.
 on, by itself, and recorded every call of `GraphStore.Replace`: 44 of the 300 tests execute it. All 37 that the
 graph named are among them. The graph missed 5 tests whose class constructor calls `Replace`, and 2 tests that
 run the indexer as a separate process, which no static analysis can follow. CodeGraph now counts what a test
-framework runs around each test, such as the class constructor, so the graph names 42 of the 44.
+framework runs around each test, such as the class constructor, so on the snapshot the eval below ran on, the
+graph names 42 of the 44. Two tests added to `BulkWriteTests` since then also reach `Replace` in the graph; the
+run-time check has not been repeated on them.
 
 ## Four assistants, with and without
 
@@ -92,8 +95,8 @@ What the runs show:
   gave the count. One assistant, Cursor, named a few tests that do not run `Replace`, in both conditions.
 - **Time and cost depend on the assistant.** Claude Code was faster and cheaper with CodeGraph in each of the three rounds. Codex
   took as long and used more tokens. The Copilot CLI took longer and used more AI units. Cursor's runs varied too
-  much to call; one of its runs with CodeGraph lost every tool call to a wrong argument name, which the server now
-  accepts.
+  much to call; in one of its runs with CodeGraph, the 7 calls that take a node id all failed on a wrong argument
+  name, which the server now accepts.
 
 These are three runs of one question on one repository. Read them as a direction.
 
@@ -109,7 +112,7 @@ The savings come from a few design choices:
 - **No wasted turns.** The stale warning stops the model from reasoning from an old graph and
   redoing the work. With the live daemon, `check_change` compiles a proposed edit and lists what
   it breaks, so the model doesn't need a build-and-read-the-errors loop to find out.
-- **People don't need the assistant at all.** The Obsidian notes and reports below hold the
+- **People don't need the assistant at all.** The notes and reports of the [Obsidian](obsidian.md) export hold the
   same answers, worked out in advance. A tester who reads "which tests reach this type" in a
   note, or a product manager who browses the project map, spends no tokens.
 
@@ -125,15 +128,16 @@ note holds everything about a type.
 ![Index: read, make records, write, swap. Query: tool call, check freshness, walk in memory, answer](images/pipeline.svg)
 
 - **Incremental.** Each file's hash is stored. A re-run re-walks only changed files and their
-  dependents (callers, subclasses, referencers, tests), then merges the result into the graph in
-  about a second. `--full` rebuilds from scratch.
+  dependents (callers, subclasses, referencers, tests), then merges the result into the graph. A
+  re-run that finds nothing changed takes 2.6 to 2.9 seconds on this repository (BENCHMARKS rounds 12
+  and 13). `--full` rebuilds from scratch.
 - **Watch mode.** `codegraph-index <solution> --watch` pays the solution load once and applies
-  each save to the compiled solution in memory, so a one-file edit re-indexes in about a second
-  on this repository. The server notices each swap through the file's mtime.
+  each save to the compiled solution in memory, so a one-file edit re-indexes in 0.9 to 1.3 seconds on this repository (BENCHMARKS
+  round 12; median 1.4 seconds on a busy machine in round 13). The server notices each swap through the file's mtime.
 - **Live daemon.** The same watch process answers over a local pipe. `check_change` compiles a
   proposed file in memory and reports what it would break; `rename_preview` runs Roslyn's rename on
   a fork; `diagnostics` reports compiler errors for the working tree. The graph stays the system of
-  record for transitive and aggregate questions, where it is orders of magnitude faster.
+  record for transitive and aggregate questions.
 - **Safe while sessions run.** A full rebuild writes a fresh file and swaps it in with one
   rename; the server only ever reads.
 
@@ -147,4 +151,4 @@ prints the same line after each run, and the `usage_stats` tool opens with it an
 
 ---
 
-← Previous: [Home](README.md) · Next: [How it works](how-it-works.md) →
+← Previous: [Architecture](architecture.md) · Next: [The story](story.md) →

@@ -584,7 +584,7 @@ internal static class ObsidianExport
         Frontmatter(sb, [("kind", Yaml("Report"))]);
         sb.AppendLine("# Test coverage").AppendLine();
         Banner(sb);
-        sb.AppendLine("Tests that call each type or its members directly (TestedBy edges), not a coverage run. A type marked **Check** has no direct test; ask the live panel's Tests tab or `tests_for` for tests that reach it through other code.").AppendLine();
+        sb.AppendLine("Tests that call each type or its members directly (TestedBy edges), not a coverage run. A type marked **Check** has no direct test; ask an assistant for `covered_by` to find tests that reach it through other code.").AppendLine();
         sb.AppendLine("| Type | Project | Tests that reach it | Status |").AppendLine("| --- | --- | --- | --- |");
         foreach (var c in containers.Where(c => c.Node.Kind == NodeKind.Type && c.Members.Count > 0 && !c.Members.Any(m => m.IsTest))
                      .OrderBy(c => c.Project ?? "", StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Node.FullName, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Node.Id, StringComparer.Ordinal))

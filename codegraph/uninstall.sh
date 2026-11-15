@@ -112,8 +112,13 @@ servers = config.get(key) or {}
 if "codegraph" not in servers:
     print(f"no codegraph entry in {path}")
     sys.exit(0)
-if not yes and input(f"Remove the codegraph server entry from {path}? [y/N] ").strip().lower() not in ("y", "yes"):
-    sys.exit(0)
+if not yes:
+    # stdin is this script (a heredoc), so ask on the terminal, as confirm() does.
+    with open("/dev/tty", "w") as out, open("/dev/tty") as tty:
+        out.write(f"Remove the codegraph server entry from {path}? [y/N] ")
+        out.flush()
+        if tty.readline().strip().lower() not in ("y", "yes"):
+            sys.exit(0)
 del servers["codegraph"]
 with open(path, "w", encoding="utf-8") as f:
     json.dump(config, f, indent=2)

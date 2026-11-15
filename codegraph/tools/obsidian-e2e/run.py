@@ -2,8 +2,8 @@
 """
 Run the CodeGraph plugin end to end inside real Obsidian, one container per Obsidian version and corpus language.
 
-    python3 tools/obsidian-e2e/run.py --base foundry-field-test:none
-    python3 tools/obsidian-e2e/run.py --base foundry-field-test:none --versions 1.8.9 --langs csharp,typescript
+    python3 tools/obsidian-e2e/run.py --base <image>
+    python3 tools/obsidian-e2e/run.py --base <image> --versions 1.8.9 --langs csharp,typescript
 
 Publishes codegraph-index and codegraph-mcp from this checkout, builds one image per Obsidian version (downloading
 that version once, at build time), and runs each container with --network none. Results, logs and screenshots
@@ -22,7 +22,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 IMAGE = "codegraph-obsidian"
-# The oldest version the plugin's manifest accepts (minAppVersion), and a recent one.
+# A 1.5 release (the manifest's minAppVersion is 1.5.0), and a recent one.
 DEFAULT_VERSIONS = "1.5.12,1.8.9"
 
 
@@ -96,7 +96,7 @@ def summarise(results: list[dict], out: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--base", required=True, help="local image with the .NET 10 SDK, Node 22+ and Python 3")
+    ap.add_argument("--base", required=True, help="local image with the .NET 10 SDK, Node.js 22.22.3+ or 24.15+, and Python 3")
     ap.add_argument("--versions", default=DEFAULT_VERSIONS)
     ap.add_argument("--langs", default="csharp,typescript")
     ap.add_argument("--profile", default="classic")

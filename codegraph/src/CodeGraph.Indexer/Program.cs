@@ -122,7 +122,8 @@ if (usage || targetArg is null)
     Console.Error.WriteLine("usage: codegraph-index <target> [--db <path>] [--full] [--watch] [--log <file>]");
     Console.Error.WriteLine("       target: a .sln, .slnx or .csproj (Roslyn); a tsconfig.json, angular.json, nx.json or package.json");
     Console.Error.WriteLine("               (TypeScript and Angular, needs Node.js); a pom.xml, build.gradle, pyproject.toml, go.mod or");
-    Console.Error.WriteLine("               Cargo.toml (through that language's SCIP indexer); or a folder holding one of them");
+    Console.Error.WriteLine("               Cargo.toml (through that language's SCIP indexer); or a folder holding a SCIP build file,");
+    Console.Error.WriteLine("               a tsconfig.json, angular.json or nx.json (init also finds a C# solution in a folder)");
     Console.Error.WriteLine("       codegraph-index import <records.ndjson | index.scip | -> [--db <path>]");
     Console.Error.WriteLine("       codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]");
     Console.Error.WriteLine("       codegraph-index export obsidian --out <vault>/<folder> [--db <path>] [--language <name>] [--link-root <path>]");

@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Docs](../README.md) · [Installation](../installation.md#tested-with) · [Client tests](README.md) · [Claude Code](claude-code.md) · [GitHub Copilot in VS Code](copilot-vscode.md) · [GitHub Copilot CLI](copilot-cli.md) · [Codex VS Code extension](codex-vscode.md) · [Codex CLI](codex-cli.md) · [Cursor IDE](cursor-ide.md) · **Cursor CLI**
+[Home](../README.md) · [Installation](../installation.md#tested-with) · [Client tests](README.md) · [Claude Code](claude-code.md) · [GitHub Copilot in VS Code](copilot-vscode.md) · [GitHub Copilot CLI](copilot-cli.md) · [Codex VS Code extension](codex-vscode.md) · [Codex CLI](codex-cli.md) · [Cursor IDE](cursor-ide.md) · **Cursor CLI**
 
 | | |
 |---|---|
@@ -64,4 +64,4 @@ The CLI does not replace `${workspaceFolder}`. It starts the server in the proje
 
 ---
 
-← Previous: [Cursor IDE](cursor-ide.md) · Next: [Usage](../usage.md) →
+← Previous: [Cursor IDE](cursor-ide.md) · Up: [Client tests](README.md)

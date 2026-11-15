@@ -131,7 +131,7 @@ internal static class TypeScriptExtractor
         }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException)
         {
-            log($"typescript: cannot run node ({e.Message}); install Node.js 20 or later");
+            log($"typescript: cannot run node ({e.Message}); install Node.js 22.22.3+ or 24.15+");
             return 1;
         }
 

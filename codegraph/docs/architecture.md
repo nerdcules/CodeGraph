@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · **Architecture**
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · **Architecture** · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -51,7 +51,8 @@
 | `tools/corpus` | The generated codebases and the Docker test matrix. |
 | `tools/obsidian-e2e` | The plugin tests in real Obsidian, headless in Docker, and the screenshot script. |
 
-Only `src/CodeGraph.Indexer` knows about compilers.
+Only `src/CodeGraph.Indexer` and `extractors/typescript` know about compilers.
+The indexer drives Roslyn, the SCIP indexers and the language servers. The extractor drives the TypeScript compiler and `@angular/compiler`.
 The store and the server do not depend on a language.
 
 ## Processes
@@ -94,7 +95,9 @@ There are three routes from code to graph:
 | SCIP | Java, Kotlin, Scala, Go, Rust, Python | The indexer starts the SCIP indexer, then reads the index file. |
 
 All three routes give the same nodes and edges to the same writer.
-Thus all tools work for all languages.
+Thus the graph tools work for all languages.
+The live tools need the live daemon, and for languages other than C# a language server.
+`data_flow` works for C# only.
 
 ## The record contract
 
@@ -169,7 +172,8 @@ This check does not connect, so it takes microseconds when no live daemon runs.
 
 1. **Select the route.**
    If a SCIP indexer exists, add an entry to `ScipIndexers.All` in `src/CodeGraph.Indexer/ScipIndexers.cs`.
-   Give the build file names, the command, the install command and the file extensions.
+   Give the language, the build file names, the tool, a function that makes its arguments, the install command,
+   the file extensions and the version that you tested with (`Tested`).
 2. **Or write an extractor.**
    Write a program that writes the records in [The record contract](#the-record-contract).
    Use `extractors/typescript` as an example.
@@ -192,4 +196,4 @@ This check does not connect, so it takes microseconds when no live daemon runs.
 
 ---
 
-← Previous: [Performance](performance.md) · [Home](README.md)
+← Previous: [Performance](performance.md) · Next: [Why it saves tokens](why-it-saves-tokens.md) →

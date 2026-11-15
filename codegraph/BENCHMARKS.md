@@ -3,8 +3,11 @@
 [CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
 
 Numbers from `codegraph-bench` (tools/CodeGraph.Bench) against this repository's own graph, Release build,
-Linux x64, .NET 10. Query figures are the median of 7 runs after a warm-up. Index figures are one run of the
-published `codegraph-index`, so they include the MSBuild solution load.
+Linux x64, .NET 10. Query figures are the median of 7 runs after a warm-up. The bench takes 3 for the snapshot
+load, the cold freshness check (no warm-up), the live `check_change` and whole-solution diagnostics, and, with
+`--server`, 5 for calls 2 s apart. Index figures are one run of the `codegraph-index` given to `--indexer` (in the
+command below, the Release build output), so they include the MSBuild solution load. File sizes are in KB of 1,024
+bytes (`codegraph-bench`) and MB of 1,048,576 bytes (`file-growth.sh`).
 
 ```bash
 dotnet build -c Release
@@ -86,7 +89,8 @@ Graph queries are unchanged within noise, as intended: the daemon adds capabilit
 changing how the graph is queried. The index-time differences are run-to-run variance of the MSBuild load.
 The storage fix is the real change in this table: a full rebuild now writes a fresh file and swaps it in, so
 repeated rebuilds no longer double the file, and `CHECKPOINT` after every incremental write lets DuckDB reuse
-freed blocks, so a long `--watch` session plateaus instead of growing without bound.
+freed blocks, so a long `--watch` session plateaus instead of growing without bound. (Round 13 found it still
+crept under the live daemon; fixed in round 14.)
 
 ### Live daemon (`codegraph-index --watch`, measured with `--live`)
 
@@ -150,7 +154,7 @@ connecting, uses a 150 ms timeout for a socket left by a killed daemon, and reme
 **The anchor.** One read-only connection held between calls keeps DuckDB's instance loaded, so each call's
 own open drops from about 10 ms to 25 µs. It is released after 1.5 s idle, after 10 s of continuous use, and
 whenever the daemon reports pending saves, so the indexer's write lock waits at most a couple of seconds.
-Net against the original server: a cheap call is about 10× faster and `impact_of` about 2× faster.
+Net against the original server: `graph_stats` is 6 to 9× faster, `find_symbol` 3 to 4× and `impact_of` about 2×.
 
 ## Round 3: framework calls as External nodes
 
@@ -171,11 +175,12 @@ ordinary `Calls` edges for framework targets, and the final design with a separa
 | uncovered | 13 ms | 14 ms | 11 ms |
 | dead_code_report | 12 ms | 12 ms | 11 ms |
 
-The first attempt added 58% more `Calls` edges, and every recursive walk scans the edges of its kinds, so the
-solution-only walks slowed by up to 50% in an earlier run. Giving framework calls their own edge kind leaves those
-scans exactly as large as before; a walk that starts at an external member seeds its callers through the `to_id`
-index instead. Indexing costs nothing measurable because the targets were already bound for the call edges.
-The graph gains 516 framework members for this repo; `Path.Combine(string, string)` is the most called, with 37
+The first attempt added 58% more `Calls` edges (commit `eadb3e7`; the table does not count them), and every recursive walk scans the edges of its kinds, so the
+solution-only walks slowed by up to 25% in this table (`path_between`, 12 to 15 ms). The commit message
+(`eadb3e7`) says up to 50% in an earlier run, whose figures were not kept. Giving framework calls their own edge
+kind leaves those scans exactly as large as before; a walk that starts at an external member seeds its callers
+through the `to_id` index instead. Indexing costs nothing measurable because the targets were already bound for
+the call edges. The graph gains 516 framework members for this repo; `Path.Combine(string, string)` is the most called, with 37
 callers.
 
 ## Round 4: multi-target projects compiled once
@@ -255,9 +260,10 @@ layers, 10% of calls going to 20 hub methods per layer, and tests calling into r
 | path_between depth 10 | 2,368 ms | 1,553 ms | 1,061 ms |
 
 **DuckDB `USING KEY` recursion** (keeps one row per node instead of one per node and depth) was the planned
-fix for the walks. On the 150k graph it was slower, 426 ms against 251 ms for the same walk, because the
-duplicate rows it removes are only 3.3 per node; most of the walk's cost is the 105,000 nodes a hub genuinely
-reaches. It is not adopted.
+fix for the walks. On the largest graph (165k nodes) it was slower, 426 ms against 251 ms for the same walk (figures from commit
+`63fc7f0`, which does not name the walk),
+because the duplicate rows it removes are only 3.3 per node; most of the walk's cost is the 105,000 nodes a hub
+genuinely reaches. It is not adopted.
 
 **What was slow instead** was `path_between`, which enumerated every simple path up to the depth limit before
 keeping three. It is now a breadth-first search, one indexed query per level and each node visited once, then
@@ -306,8 +312,9 @@ Same machine, this repo's graph; index times are three runs each.
 | warm `find_symbol` | 6.0 ms | 5.9 ms |
 | server publish folder | 318 MB (DuckDB for every OS) | 75 MB (this platform only) |
 
-Most of the index time is JIT compilation of Roslyn and MSBuild code paths, which ReadyToRun removes; every
-one-shot index and every daemon start pays it. Warm calls are unchanged.
+About a quarter of the index time (27% of the index work, 24% of the wall time) was JIT compilation of Roslyn and
+MSBuild code paths, which ReadyToRun removes; every one-shot index and every daemon start paid it. Warm calls are
+unchanged.
 
 ## Round 9: other languages
 
@@ -399,7 +406,8 @@ namespaces, `import = require`) found that `import X = require()` produced no `I
 
 **The same answer key on old syntax and old SDKs.** The corpus writes each codebase in two dialects (`classic`:
 C# 7.3 on a `.sln`, ES5 CommonJS, Java 8, Go 1.18, Rust 2018, Python 3.8) and runs them on six Docker images
-with an older SDK and the .NET 10 runtime beside it. Four profiles, both dialects, seed 1:
+with an older SDK and the .NET 10 runtime beside it. Four profiles (three for Python, which has no multi-project
+profile), both dialects, seed 1:
 
 | toolchain | language | dialect | runs | methods found | Calls P/R (worst run) | read with |
 |---|---|---|---|---|---|---|
@@ -455,9 +463,11 @@ a pinned version changes without a redraw):
 
 Measured 2026-11-13 on three graphs: this repo (2,885 nodes, 16,955 edges), Jellyfin 10.11.11 (40 projects,
 21,174 nodes, 108,946 edges, a 47 s full index), and the round 7 synthetic shape at 165,000 methods (181,500
-nodes, 805,523 edges). "Before" is a build of `aa01b14`; "snapshot off" is this round's build with
-`CODEGRAPH_SNAPSHOT=off`. Tool calls are timed with `codegraph-bench --server`, which drives each
-`codegraph-mcp` over stdio as a client does.
+nodes, 805,523 edges). That is 10% more nodes and edges than round 7's largest graph (165k nodes, 732k edges), at
+the same 4.4 edges per node. The generator was not kept, so neither graph can be rebuilt, and how round 7's nodes
+split into methods and other kinds is not recorded. "Before" is a build of `aa01b14`; "snapshot off" is this
+round's build with `CODEGRAPH_SNAPSHOT=off`. Tool calls are timed with `codegraph-bench --server`, which drives
+each `codegraph-mcp` over stdio as a client does.
 
 **Why.** The telemetry of real sessions on this repo showed `find_symbol` at 77 to 84 ms and `impact_of` at about
 40 ms, against 4 to 15 ms in this file's tables. There were two causes. First, every walk was a recursive CTE that
@@ -547,7 +557,7 @@ matches "before" within noise, so the gain is the snapshot itself. The other cha
 from `.git` instead of starting `git rev-parse` for the freshness check, is a couple of milliseconds on Linux and
 does not show here; it matters more on Windows, where starting a process is slow. The calls 2 s apart still cost
 a few milliseconds more than back to back: the freshness check's 3 s cache has expired, so it stats every indexed
-file again (1,960 on Jellyfin). On the 165k graph a hub's walk reaches about 100,000 nodes, and most of its 30 to
+file again (1,960 on Jellyfin). On the 165k graph a hub's walk reaches about 100,000 nodes, and most of its 24 to
 40 ms is sorting and returning those rows; the tools print the nearest 200.
 
 Not done, from the plan: a binary snapshot file written by the indexer. It was meant to cut the reload after each
@@ -607,13 +617,15 @@ from memory stay under 0.8 ms (`subgraph` depth 2 is the largest); through DuckD
 
 - Jellyfin through the server, calls 2 s apart (round 11's chart): `graph_stats` 4.0 ms, `find_symbol` 7.4 ms,
   `callers_of` 2.5 ms, `impact_of` depth 5 8.5 ms, depth 20 10 ms, `covered_by` 6.1 ms. Round 11 had 1.4, 8.8, 2.2,
-  7.8, 9.7 and 5.1 ms: within run-to-run noise, so its chart stands. A full index: 44.3 and 45.3 s (was 47 s).
+  7.8, 9.7 and 5.1 ms: the walks within 20% either way and `graph_stats` 2.6 ms slower (round 13 measured 1.1 ms),
+  so its chart stands. A full index: 44.3 and 45.3 s (was 47 s); neither round recorded whether these are wall clock
+  or the indexer's own figure.
 - NestJS at `4410584` (2026-11-13), no npm install: 1,180 files, 11,228 nodes, 30,062 edges in 7.7–7.8 s, 43 MB.
   Store queries 2.7–174 ms through DuckDB, under 1.3 ms from memory (`find_symbol` and `most_called` the largest).
 - RealWorld Angular at `d426ec8`, npm packages installed: 670 nodes, 2,503 edges in 2.8–2.9 s, as in round 9. Live,
   through `--watch` (typescript-language-server ready in 4.9 s), two runs: ping 0.46 ms, symbol_at 16–17 ms, references
   129–131 ms, diagnostics one file 0.16–0.18 ms, whole workspace 14–16 ms, `check_change` on a clean edit 2.5–2.8 s.
-  Through the server, an edit that adds an error to `auth.component.ts` (one dependent): 3.5–4.8 s.
+  `check_change` through the server, on an edit that adds an error to `auth.component.ts` (one dependent): 3.5–4.8 s.
 - The corpus's large profile, seeds 1 and 2, modern dialect, 2 CPUs per container, 2 at a time: every language in
   full. Index seconds for the larger seed: JavaScript 4.24, TypeScript 6.14, Angular 8.44, Rust 12.32, C# 12.59,
   Python 13.35, Java 16.51, Go 18.16 (`docs/images/perf-index.svg`, redrawn). Go needed a fix to `run.py`: under mise,
@@ -653,7 +665,9 @@ were 0.37–1.7 ms back to back and 1.2–3.5 ms 2 s apart.
 **Live daemon**, `--live`, five calls each, the second run (the first found the solution still loading): ping
 0.21 ms; flush when idle 0.21 ms; symbol_at 0.37 ms; references to a source symbol 6.3 ms, to System.IO.File 17 ms;
 diagnostics for one file 0.45 ms, for the solution 138 ms; data_flow 0.54 ms; check_change on an unchanged file
-744 ms, on an edited one 1,184 ms. All are inside or near round 12's ranges.
+744 ms, on an edited one 1,184 ms. Six are inside round 12's ranges or within 5% of them. Four are above:
+symbol_at (0.28–0.29 ms in round 12), System.IO.File references (8.4–15 ms), one-file diagnostics (0.25–0.39 ms)
+and whole-solution diagnostics (50–104 ms). The machine was not idle, so this run cannot say whether they got slower.
 
 **Save to a fresh answer.** A new method saved into `Worktree.cs`, then `find_symbol` for it at once through
 the server (the server flushes the daemon, skipping its 500 ms wait): 10 of 10 found, median 1.43 s, range
@@ -674,7 +688,7 @@ setup reaches now count as tested.
 
 | measurement | round 13 | round 12 |
 |---|---|---|
-| full index, the indexer's own figure (wall clock), 2 runs | 44.9–45.0 s (59.7–60.1 s) | 44.3–45.3 s |
+| full index, the indexer's own figure (wall clock), 2 runs | 44.9–45.0 s (59.7–60.1 s) | 44.3–45.3 s (which of the two was not recorded) |
 | no-op incremental index | 0.9 s (15.8 s wall, most of it the solution load) | |
 | graph file | 126,732 KB | |
 | snapshot load, managed memory | 287 ms, 17 MB | |
@@ -695,7 +709,7 @@ the second run passed all 12.
 | Malformed requests: not JSON, an unknown tool, a missing or mistyped argument, depth −5 and 10⁹, a 1 MB query, control characters, an unknown id, a SQL-looking query, an id in brackets or named `symbolId` | Pass. Each got an answer, the server kept serving, and the graph was intact after. Before the fix, the missing and mistyped arguments got only "An error occurred"; now they name the problem and list the tool's parameters. |
 | The live daemon killed under a server that started it | Pass. live_status says no daemon and how to start one, graph tools keep answering, a live tool says it needs the daemon, and `live_status start=true` starts a new one. |
 | stdin closed | Pass. The server exits 0 at once. |
-| `--root` a missing folder, a file, an unexpanded `${workspaceFolder}`, or empty | Pass. Each falls back to the working directory and says "no code graph at …". |
+| `--root` a missing folder, a file, an unexpanded `${workspaceFolder}`, or empty | Pass. Each falls back to the working directory; the battery's held no graph, so each said "no code graph at …". Run from a folder with a graph, the server answers from that graph (round 15). |
 | A file edited with no daemon | Pass. The answer starts with "⚠ STALE INDEX". |
 | `init` against a `.mcp.json` that is not an object, a `.vscode/mcp.json` with comments and trailing commas, and a read-only `.cursor/mcp.json` | Pass. The first and third exit 1 with "cannot update …" and leave the file alone; the second merges and keeps the other server (and drops the comments). |
 
@@ -740,7 +754,7 @@ saves. "Before" is the 1.1.0 build, whose `Replace` is the code before this chan
 | fresh full index | 23.3 MB | 23.0 MB | 23.3 MB |
 | once the daemon is up | 32.3 MB | 25.0 MB | 25.3 MB |
 | saves 10 to 150 | 43.8 → 51.0 MB, rising | 30.3–38.0 MB, 37.0 at save 150 | 37.8–38.3 MB |
-| passes, the indexer's own time | 150, median 1.4 s (0.3–6.9 s) | | 149, median 1.0 s (0.2–7.8 s) |
+| passes, the indexer's own time, including the start-up pass | 150, median 1.4 s (0.3–6.9 s) | | 149, median 1.0 s (0.2–7.8 s) |
 
 Round 13 measured 32.5 → 49.9 MB over 100 saves with the build before this change. The remaining room above the
 fresh 23 MB is where DuckDB writes a pass's touched row groups before it frees the old ones. The file reuses it
@@ -786,10 +800,10 @@ that machine.
 | test suite | 425 passed, 0 failed, 3 skipped: two need the TypeScript extractor's npm packages, which were not installed yet, and one uses a shell-script stand-in for a SCIP indexer |
 | full index of this repo, 2 runs | 3,207 nodes, 19,577 edges, 13.8–14.7 s (17.0–18.2 s wall), 20.3–20.5 MB |
 | no-op index | 0.2 s (3.3 s wall), file 22.3 MB |
-| 3 full indexes while a server answered `codegraph-bench --server` | all 3 finished (13.5–13.8 s each); no "access denied", "in use" or IOException text anywhere; the bench answered every call, 0.53–2.8 ms after its first, the same as with no index running (0.56–2.4 ms) |
+| 3 full indexes while a server answered `codegraph-bench --server` | all 3 finished (13.5–13.8 s each); a search of the indexer and bench output for "denied", "another process", "IOException", "exception" and "error" found only "0 compile error(s)"; the bench answered every call, after its first in 0.55–2.7 ms during the indexes, 0.53–2.8 ms after them and 0.56–2.4 ms with no index running |
 | `install.ps1 -FromSource -Client copilot,cursor,roo`, in pwsh 7 and in 5.1 | exit 0 in both; the 6 config files were byte-identical after each; VS Code and Cursor got `--root ${workspaceFolder}`, Visual Studio (`.vs\mcp.json` beside the solution) and JetBrains (`.github\mcp.json`) got the absolute root |
 | one stdio call from the set-up repo | initialize 426 ms, `graph_stats` 58 ms |
-| live daemon, one method added to `Worktree.cs` | 10 files walked in 4.1 s; the new graph was ready 4.6 s after the save; `find_symbol` 105 ms for the first call, 4 ms for the second |
+| live daemon, one method added to `Worktree.cs`, on the unrestored clone (2,951 nodes; the pass reported 26 compile errors) | 10 files walked in 4.1 s; the new graph was ready 4.6 s after the save; `find_symbol` 105 ms for the first call, 4 ms for the second |
 | `uninstall.ps1`, in pwsh 7 and in 5.1 | all 6 entries removed; another server and another key added to each file were kept |
 | resilience battery | 11 of 12 after a stand-in for `SIGKILL` (below); R4: 424,812 calls from 8 servers during 6 writes, 0 errors, p99 6.9 ms |
 
@@ -852,22 +866,23 @@ passes); this is unchanged since the first run.
 **The battery on Linux with the changed script**, this build. R3 now passes: 8 kills, 5 during full indexes and 3
 during incremental ones, the graph whole (3,170 nodes) after each. 11 of 12 passed. R4 had 8 errors in 891,861 calls; each answer began with the "⚠ STALE
 INDEX" banner, and the script kept only its first 80 characters, so the error itself was lost. Run alone three
-more times, R4 passed each time with 0 errors in 853,764–904,146 calls. The slowest call took 8.6–14.1 s, against
+more times (R4 cut out of the script into a scratch copy that printed each error in full; that copy is not
+committed), R4 passed each time with 0 errors in 853,764–904,146 calls. The slowest call took 8.6–14.1 s, against
 673 ms in round 13. Other sessions held the load average at 20–31 on 8 cores during those runs, against 1.3–4 in
 round 13, so these runs cannot say whether anything got slower. The cause of the 8 errors is open. The script now
-keeps each error's whole text.
+keeps each error's whole text and prints the first 400 characters of the first 3.
 
 ## Where it ended up
 
 This repo's own graph, first baseline against the build before round 11 and the build after it, same machine and
 method. The graph grew 5 times over the work: the repo grew, and framework calls became External nodes.
 
-| measurement | first baseline | before round 11 | with the graph in memory |
+| measurement | first baseline | before round 11 (`96c5701`) | with the graph in memory (round 11) |
 |---|---|---|---|
 | graph | 595 nodes, 3,558 edges | 1,583 nodes, 8,784 edges | 2,885 nodes, 16,955 edges |
 | full index | 11.5 s | 10.5 s | 16.2 s (3,119 nodes, 18,685 edges, round 12) |
-| no-op incremental index | 3.5 s | 2.5 s | 2.6 s |
-| graph file after 3 more full rebuilds | 15,884 KB (and growing) | 12,556 KB (flat) | 20,748 KB (flat) |
+| no-op incremental index | 3.5 s | 2.5 s | 2.6 s (round 12) |
+| graph file after 3 more full rebuilds | 15,884 KB (and growing) | 12,556 KB (flat) | 20,748 KB (flat, round 12) |
 | open per tool call | 11 ms | 0.024 ms while the anchor holds the graph | none for graph reads |
 | impact_of depth 20 (store) | 7.9 ms | 8.6 ms | 0.067 ms |
 | path_between depth 10 (store) | 11 ms | 3.9 ms | 0.006 ms |
@@ -878,11 +893,18 @@ method. The graph grew 5 times over the work: the repo grew, and framework calls
 | `graph_stats` through the server | 12.1 ms | 1.3 ms | 0.34 ms |
 | `impact_of` depth 5 through the server, calls 2 s apart | | 29 ms (`aa01b14`) | 1.1 ms |
 
+The "before round 11" figures were measured when this section was first written (`96c5701`, 2026-11-09) and are in
+no round's table. The store figures and the back-to-back server figures in the last column come from round 11's
+bench runs on this repo; round 11's table for this repo prints only the first call and the calls 2 s apart.
+Round 12 measured the same server calls back to back: `find_symbol` 1.1 ms, `impact_of` depth 5 1.1 ms,
+`graph_stats` 0.37 ms.
+
 Store queries held steady while the graph grew, until round 11 took them out of the database: they now cost
 microseconds here and stay under 2 ms on Jellyfin. Tool calls through the server went from 12 to 28 ms at the
 start to about a millisecond; on large solutions `path_between` is 15 to 60 times faster than it was, traversal
-answers are about 150 times smaller, and walks are 10 to 5,000 times faster than the SQL they replaced (the low
-end on a hub that reaches 100,000 nodes, where the time is in returning the rows).
+answers are about 100 to 150 times smaller, and walks are about 10 to 17,000 times faster than the SQL they replaced
+(round 11: the low end is `impact_of` depth 5 on its 165,000-method graph, 378 to 40 ms, on a hub that reaches about 100,000
+nodes, where the time is in returning the rows; the high end is `path_between` on Jellyfin, 50 to 0.003 ms).
 
 ---
 

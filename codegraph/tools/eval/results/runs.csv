@@ -21,5 +21,5 @@ cursor,"Cursor CLI 2026.11.13, composer-2.5",without,1,52.8,44,0,504074,input to
 cursor,"Cursor CLI 2026.11.13, composer-2.5",without,2,26.4,29,0,514536,input tokens incl. cache,,,2,0,yes,
 cursor,"Cursor CLI 2026.11.13, composer-2.5",without,3,24.7,20,0,205343,input tokens incl. cache,,,24,1,yes,
 cursor,"Cursor CLI 2026.11.13, composer-2.5",with,1,41.0,42,8,336940,input tokens incl. cache,,,26,1,yes,
-cursor,"Cursor CLI 2026.11.13, composer-2.5",with,2,30.2,32,10,167254,input tokens incl. cache,,,12,2,yes,every codegraph call after find_symbol failed: the model passed symbolId instead of id
+cursor,"Cursor CLI 2026.11.13, composer-2.5",with,2,30.2,32,10,167254,input tokens incl. cache,,,12,2,yes,the 7 codegraph calls that take a node id failed: the model passed symbolId instead of id (find_symbol, search_code and index_status worked)
 cursor,"Cursor CLI 2026.11.13, composer-2.5",with,3,16.7,7,7,63659,input tokens incl. cache,,42,14,1,yes,

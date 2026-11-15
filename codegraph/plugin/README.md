@@ -16,7 +16,8 @@ From a shell: `claude plugin marketplace add nerdcules/CodeGraph && claude plugi
 Then open a repository and ask a question. When a tool answers "no code graph", let Claude run
 `~/.codegraph/bin/codegraph-index init`, or run it yourself; that writes the repo's `.mcp.json`, ignores
 `.codegraph/` and builds the graph. C# repositories need the .NET SDK they build with; TypeScript needs
-Node.js 22; Java, Go, Rust and Python need their SCIP indexer on PATH
+Node.js 22.22.3+ or 24.15+ (what the extractor's packages declare; [BENCHMARKS](../BENCHMARKS.md#round-10-language-versions-and-older-toolchains)
+round 10 also indexed on Node 20); Java, Go, Rust and Python need their SCIP indexer on PATH
 ([installation](../docs/installation.md#install-the-language-tools)).
 
 ## What is in it

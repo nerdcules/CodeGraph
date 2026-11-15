@@ -1,11 +1,14 @@
 # CodeGraph
 
+**Overview** · [CodeGraph](codegraph/README.md) · [Docs](codegraph/docs/README.md) · [MCP server](codegraph/MCP-SERVER.md) · [Extractors](codegraph/EXTRACTORS.md) · [Benchmarks](codegraph/BENCHMARKS.md) · [Prompts](codegraph/PROMPTS.md) · [Changelog](codegraph/CHANGELOG.md) · [Claude Code plugin](codegraph/plugin/README.md) · [Obsidian plugin](codegraph/obsidian-plugin/README.md)
+
 **CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I
 change it, which tests guard it.**
 
 It works with any MCP client, and sets itself up for Claude Code, GitHub Copilot (CLI, VS Code, Visual
 Studio, JetBrains), Codex, Cursor, the Gemini CLI, and the Roo Code, Kilo Code and Continue extensions.
-[Tested with](codegraph/docs/installation.md#tested-with) Claude Code, GitHub Copilot, Codex and Cursor.
+[Tested with](codegraph/docs/installation.md#tested-with) Claude Code, the Copilot CLI, Copilot in VS Code, Codex and
+Cursor.
 
 [![CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml/badge.svg)](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/nerdcules/CodeGraph?label=release)](https://github.com/nerdcules/CodeGraph/releases/latest)
@@ -40,3 +43,7 @@ minutes, the questions you can ask, and where to go next depending on who you ar
 how a developer and an AI assistant built this.
 
 ![Architecture: extractors write graph.db, the MCP server reads it, the live daemon keeps it current](codegraph/docs/images/architecture.svg)
+
+---
+
+**Overview** · [CodeGraph](codegraph/README.md) · [Docs](codegraph/docs/README.md) · [MCP server](codegraph/MCP-SERVER.md) · [Extractors](codegraph/EXTRACTORS.md) · [Benchmarks](codegraph/BENCHMARKS.md) · [Prompts](codegraph/PROMPTS.md) · [Changelog](codegraph/CHANGELOG.md) · [Claude Code plugin](codegraph/plugin/README.md) · [Obsidian plugin](codegraph/obsidian-plugin/README.md)

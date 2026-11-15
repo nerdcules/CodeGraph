@@ -133,7 +133,7 @@ try {
             try { npm ci --omit=dev --no-audit --no-fund --loglevel=error } finally { Pop-Location }
             if ($LASTEXITCODE -ne 0) { throw 'npm ci failed for the TypeScript extractor' }
         } else {
-            Write-Host 'note: node and npm are not on PATH; TypeScript and Angular indexing is skipped (install Node.js 22.22 or later to add it)'
+            Write-Host 'note: node and npm are not on PATH; TypeScript and Angular indexing is skipped (install Node.js 22.22.3+ or 24.15+ to add it)'
         }
 
         Step 'Building (warnings are errors)'
@@ -200,7 +200,7 @@ try {
         }
         Write-Host "  codegraph $(Get-Content (Join-Path $InstallDir 'VERSION'))"
         if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-            Write-Host '  note: node is not on PATH; C# and the SCIP languages work, TypeScript and Angular need Node.js 22.22 or later'
+            Write-Host '  note: node is not on PATH; C# and the SCIP languages work, TypeScript and Angular need Node.js 22.22.3+ or 24.15+'
         }
     }
 

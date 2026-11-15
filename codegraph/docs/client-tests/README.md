@@ -2,14 +2,16 @@
 
 *Author: Alan Seunarayan*
 
-[Docs](../README.md) · [Installation](../installation.md#tested-with) · **Client tests** · [Claude Code](claude-code.md) · [GitHub Copilot in VS Code](copilot-vscode.md) · [GitHub Copilot CLI](copilot-cli.md) · [Codex VS Code extension](codex-vscode.md) · [Codex CLI](codex-cli.md) · [Cursor IDE](cursor-ide.md) · [Cursor CLI](cursor-cli.md)
+[Home](../README.md) · [Installation](../installation.md#tested-with) · **Client tests** · [Claude Code](claude-code.md) · [GitHub Copilot in VS Code](copilot-vscode.md) · [GitHub Copilot CLI](copilot-cli.md) · [Codex VS Code extension](codex-vscode.md) · [Codex CLI](codex-cli.md) · [Cursor IDE](cursor-ide.md) · [Cursor CLI](cursor-cli.md)
 
 The evidence behind [Tested with](../installation.md#tested-with): one page for each AI coding assistant
 that answered from the graph with real tool calls, on 14 November 2026.
 
 Each one ran on a clone of this repository (3,119 nodes), with the configuration that `codegraph-index init --client`
-writes. The server and `init` were a build of the any-mcp-client branch from 14 November 2026, on top of release
-1.1.0: release 1.1.0 itself has neither `--root` nor `init --client`, which the VS Code and Cursor configurations need. Each one got the same question:
+writes. The server and `init` were built from uncommitted work on the any-mcp-client branch on 14 November 2026,
+on top of release 1.1.0 (`2e1799b`), so no commit matches that build exactly; the work was first committed as
+`2d13546`, with later changes. Release 1.1.0 itself has neither `--root` nor `init --client`, which the VS Code and
+Cursor configurations need. Each one got the same question:
 
 > What breaks if I change `GraphStore.Replace`, and which tests cover it?
 
@@ -36,8 +38,8 @@ without CodeGraph in four of these assistants, see
 | [Cursor CLI](cursor-cli.md) | cursor-agent 2026.11.13; model Auto | 22 s |
 
 Each page shows the configuration, any trust or approval step, the tool calls the assistant made, and a short
-excerpt of its answer. The excerpts come from each assistant's own session log. Paths, session ids and account
-names are left out.
+excerpt of its answer. The excerpts come from each assistant's own session log. Those logs are not kept in this
+repository, because they hold local paths, session ids and account names; the pages leave those out.
 
 ## The configuration files
 
@@ -62,4 +64,4 @@ answered through them yet.
 
 ---
 
-← Previous: [Installation](../installation.md#tested-with) · Next: [Claude Code](claude-code.md) →
+Up: [Installation](../installation.md#tested-with) · Next: [Claude Code](claude-code.md) →
