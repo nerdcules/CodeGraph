@@ -44,7 +44,9 @@ The executables report their version with `--version`; the MCP server shows it t
   round puts down to the graph's growth; Jellyfin's took 44.9–45.0 s by the indexer's own figure (round 12's 44.3–45.3 s did not record which figure); parity clean; and a resilience battery
   (`tools/CodeGraph.Bench/resilience.py`, 12 of 12 after the two fixes above). It found the graph file creeping
   under the live daemon, about 3 MB over the last 50 of 100 saves; fixed below. A later Linux run of the battery
-  (round 15) passed 11 of 12: R4 had 8 errors, and their cause is open. The Windows re-test passed 12 of 12.
+  (round 15) passed 11 of 12: R4 had 8 errors, and their cause is open. The Windows re-test passed 12 of 12, and so
+  did the first macOS run (round 16). R4 run on its own 26 more times, on Linux, Windows and macOS, idle and under CPU
+  load, had no error (round 16).
 - An incremental pass writes only the rows that changed. Before, it deleted and re-inserted every row of each
   re-walked file and project file, and all the stamps and meta. DuckDB rewrites every row group and index those
   touch, so under `--watch` the file grew with each pass and kept creeping. Over 150 saves on this repo: 1.1.0
@@ -120,8 +122,10 @@ The executables report their version with `--version`; the MCP server shows it t
   resolved, and on macOS `/tmp` is a symlink to `/private/tmp`. MSBuild tasks resolve a relative item against that
   directory, so `dotnet build /tmp/.../CodeGraph.slnx` restored and built `CodeGraph.Core` and `CodeGraph.Indexer`
   twice, once per spelling, and `install.sh --from-source` failed at random (CS0006, CS0103). The same build put
-  the test fixtures in the output root instead of `Fixtures/` (three SCIP tests failed) and embedded the web UI as
-  `CodeGraph.Mcp.index.html`. `Directory.Build.targets` now makes each project reference, embedded resource and
+  the test fixtures in the output root instead of `Fixtures/` and embedded the web UI as `CodeGraph.Mcp.index.html`
+  instead of `CodeGraph.Mcp.wwwroot.index.html`. Found by the first macOS run (BENCHMARKS round 16), and shown on
+  Linux too: through a symlink, the suite at `a3150ec` ran 421 of 441 tests and 331 failed; with the fix, 439 passed
+  and 2 skipped. `Directory.Build.targets` now makes each project reference, embedded resource and
   copied None or Content item absolute, with the spelling of the solution; `install.sh` and
   `tools/release/package.sh` resolve their root with `pwd -P`; and `tests/install-through-symlink.sh` runs restore,
   a Release build and the install through a symlink, in the macOS CI job.

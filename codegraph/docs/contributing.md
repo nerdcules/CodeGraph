@@ -40,7 +40,8 @@ only the .NET 11 SDK, its 3 tests failed (`windows-report.md` on the `windows-te
 TypeScript index and live tests need Node.js and the extractor's packages, so `npm ci` comes before `dotnet test`;
 without them, those tests skip.
 [CI](../../.github/workflows/ci.yml) runs the same commands on Linux, macOS and Windows, on each push to `main` and
-on each pull request.
+on each pull request. On macOS it also runs `tests/install-through-symlink.sh`, which restores, builds and installs
+from a clone reached through a symlink: on macOS `/tmp` is one, and a checkout there once built its projects twice.
 
 ## Run from a checkout
 

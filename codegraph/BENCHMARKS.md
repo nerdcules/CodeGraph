@@ -922,9 +922,85 @@ during incremental ones, the graph whole (3,170 nodes) after each. 11 of 12 pass
 INDEX" banner, and the script kept only its first 80 characters, so the error itself was lost. Run alone three
 more times (R4 cut out of the script into a scratch copy that printed each error in full; that copy is not
 committed), R4 passed each time with 0 errors in 853,764–904,146 calls. The slowest call took 8.6–14.1 s, against
-673 ms in round 13. Other sessions held the load average at 20–31 on 8 cores during those runs, against 1.3–4 in
-round 13, so these runs cannot say whether anything got slower. The cause of the 8 errors is open. The script now
-keeps each error's whole text and prints the first 400 characters of the first 3.
+673 ms in round 13. The load average was 20–31 on 8 cores during those runs, against 1.3–4 in round 13. This
+section first said other sessions held it there; that was not measured, and round 16 shows R4 raises the load that
+far by itself. So these runs cannot say whether anything got slower. The cause of the 8 errors is open (round 16
+ran R4 26 more times on three systems, with no error). The script now keeps each error's whole text and prints the
+first 400 characters of the first 3.
+
+## Round 16: macOS, and R4 on its own on three systems
+
+**macOS.** On 2026-11-15 a Claude Code session on an Intel Mac (macOS 15.7.9, x86_64, 8 logical CPUs, 16 GB) ran
+the branch at `a3150ec`, with the .NET 10.0.302 SDK, Node v24.19.0 (from nvm) and Python 3.9.6. Its report is
+`mac-report-1.md` on the `mac-test-results` branch, with the R4 records `idle.jsonl` and `loaded.jsonl`. The Mac
+rebooted at 15:58, between the uninstall and the resilience battery; no panic report was found, so the cause is not
+known. macOS clears `/tmp` at boot, and the test folder was under `/tmp`, so the logs of the steps before the reboot
+were lost: those rows come from the console output the session kept. The battery and R4 ran on a folder rebuilt
+at the same commit.
+
+| check | result |
+|---|---|
+| test suite | 441: 439 passed, 0 failed, 2 skipped (the Windows drive-letter tests) |
+| Release build, `-warnaserror` | exit 0, 0 warnings, 0 errors |
+| `install.sh --from-source`, run from `/tmp/cg-mac1/src/codegraph` | failed 2 times in 2: first CS0006 (a Debug reference assembly not found), then CS0103 (`DuckDB` not found) in the publish step; below |
+| the same, run from `/private/tmp/cg-mac1/src/codegraph` | exit 0 |
+| `install.sh`, release 1.1.0 | downloaded `codegraph-osx-x64.tar.gz`, checksum ok, exit 0; `--version` printed 1.1.0; no Gatekeeper message, no quarantine attribute |
+| `install.sh --bogus` | "unknown option: --bogus", exit 1, no install folder |
+| restored clone, `--full` | 3,245 nodes, 19,848 edges; 16.2 s by the indexer, 21.11 s wall |
+| C# live daemon, 5 saves each adding a method to `Worktree.cs` | `find_symbol`, polled every 0.2 s, found the method 5.49, 2.80, 2.90, 2.81 and 2.33 s after the save; the daemon's passes took 5.2, 2.4, 2.6, 2.6 and 2.5 s |
+| the daemon's memory (`live_status`) | 162 MB working set before the saves, 356 MB after them |
+| the daemon's `--log` file | 66 lines, no bare carriage return |
+| `init --client claude,copilot,cursor,roo`, then `uninstall.sh --yes` | one line naming each file and folder; all 6 config files kept another server and another key |
+| resilience battery, after the reboot | 12 of 12; R4: 1,094,370 calls, 0 errors, p99 4.3 ms, max 582 ms |
+
+`uninstall.sh` without `--yes` asks on the terminal; a Claude Code session has none, so that prompt was not tested
+on the Mac.
+
+**What it found, and what changed:**
+
+- **A checkout reached through a symlink built twice.** On macOS `/tmp` is a symlink to `/private/tmp`. The OS
+  reports a process's working directory with symlinks resolved, and MSBuild tasks resolve a relative item against
+  that directory. A solution opened as `/tmp/...` therefore had CodeGraph.Core and CodeGraph.Indexer under two
+  spellings: `dotnet restore` restored them twice (8 "Restored" lines for 6 projects; once it failed with
+  "nuget.g.props already exists"), the Release build also built them in Debug, and the from-source install failed at
+  random. Commit `f007cdd` adds `Directory.Build.targets`, which makes each project reference, embedded resource and
+  copied None or Content item absolute in the spelling of the solution; `install.sh` and `tools/release/package.sh`
+  resolve their own folder with `pwd -P`; and `tests/install-through-symlink.sh` clones the repo, reaches the clone
+  through a symlink, and restores, builds and installs from source through it. The macOS CI job runs that script.
+  Linux resolves the working directory the same way, so the script shows the bug there too. On Linux on 2026-11-15,
+  with the .NET 11.0.100 SDK (`global.json` rolls forward to the latest major):
+
+  | commit | `install-through-symlink.sh` | test suite through the symlink |
+  |---|---|---|
+  | `a3150ec`, before | exit 1: "restored more than once: CodeGraph.Core.csproj CodeGraph.Indexer.csproj" | the first build failed in restore ("project.assets.json already exists"); the second passed but also built CodeGraph.Core and CodeGraph.Indexer in Debug, and the suite then ran 421 of 441 tests: 88 passed, 331 failed ("Could not load file or assembly 'CodeGraph.Core'"), 2 skipped. The test output had no `Fixtures/` folder, and the web UI was embedded as `CodeGraph.Mcp.index.html` |
+  | `f007cdd`, after | exit 0: each of 6 projects restored once, Release output only, the install's executables start (`--version` 1.1.0) | 441: 439 passed, 0 failed, 2 skipped (the Windows drive-letter tests); the Release build printed no Debug output; the fixtures were in `Fixtures/`, and the web UI was embedded as `CodeGraph.Mcp.wwwroot.index.html` |
+
+  The fix had not run on the Mac when this was written.
+
+**R4 on its own.** Round 15's 8 errors were never seen in full, so R4 was cut out of the battery into a script that
+repeats it, keeps every error's whole text, and can start CPU burners (processes that spin in a loop) for the whole
+run. Each run copies an indexed clone, starts 8 servers with a reader thread each, and runs 3 full and 3
+incremental indexes under them. All runs were at `a3150ec`, on 2026-11-15. Load is the 1-minute load average at
+the end of each run.
+
+| system | runs | burners | calls per run | errors | p99 | slowest call | load |
+|---|---|---|---|---|---|---|---|
+| Linux, 8 cores | 3 | 0 | 879,968–964,092 | 0 | 6.2–52.2 ms | 495–678 ms | 24.6–30.5 |
+| Linux, 8 cores | 5 | 24 | 862,275–950,361 | 0 | not kept (59.2 and 66.5 ms in the 2 runs whose lines remain) | 468–1,354 ms | 21.4–33.2 |
+| Windows 11, 12 logical CPUs | 3 | 0 | 443,802–452,862 | 0 | 6.0–6.2 ms | 547–921 ms | none on Windows |
+| Windows 11, 12 logical CPUs | 6 | 36 | 212,754–368,403 | 0 | 123.8–229.7 ms | 6,280–10,343 ms | CPU 100% in 12 of 12 samples, queue 99–168 |
+| macOS, 8 logical CPUs | 3 | 0 | 1,043,673–1,089,801 | 0 | 4.2–4.4 ms | 418–475 ms | 56.5–63.4 |
+| macOS, 8 logical CPUs | 6 | 24 | 699,690–795,456 | 0 | 12.7–12.8 ms | 1,459–1,607 ms | 105.6–115.3 |
+
+The Windows records are in `windows-5/` on the `windows-test-results` branch (`windows-report-5.md`), the Mac's on
+`mac-test-results`. The Linux records were kept in a scratch folder that was later cleaned; the ranges above were
+read from them before that, and 2 of the 5 loaded runs' printed lines survive in the session log. Every writer in
+all 26 runs exited 0.
+
+No run had an error. The slowest call, 10,343 ms on Windows with 36 burners, was the only one over 10 s, and it
+stayed under the 15 s a reader waits for the graph's lock. With no burners the load average was 24.6–30.5 on
+Linux and 56.5–63.4 on the Mac, so R4's own 8 servers, 8 readers and indexer make most of that load. The cause of
+round 15's 8 errors is still open: these runs neither reproduce them nor show what they were.
 
 ## Where it ended up
 

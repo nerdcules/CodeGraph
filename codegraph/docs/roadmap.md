@@ -18,7 +18,7 @@ means here, and where it stands.
 
 | Finding, from sankofa | For CodeGraph | Status |
 |---|---|---|
-| "The core only runs on Linux." | The daemon uses .NET's file watcher and named pipes, which are cross-platform; the author uses Linux and Windows. | **Partly closed.** Releases, builds and the suite run on macOS in CI. No daily use there yet. |
+| "The core only runs on Linux." | The daemon uses .NET's file watcher and named pipes, which are cross-platform; the author uses Linux and Windows. | **Partly closed.** Releases, builds and the suite run on macOS in CI, and one run on an Intel Mac covered the installers, the live daemon and the resilience battery and found a symlink build bug, since fixed (BENCHMARKS round 16). No daily use there yet. |
 | "No way to install it without building it." | Nothing but a .NET SDK, a checkout and a build. | **Closed.** Prebuilt archives on six platforms with their own runtime; one-line installers; a Claude Code plugin. |
 | "No proof anyone else can trust." | No CI, no badge, no changelog, numbers buried in BENCHMARKS.md. | **Closed.** CI badge on three platforms, a CHANGELOG, release notes and checksums; the token and corpus numbers at the top of the README. |
 | "The first five minutes are not designed." | The README opened with architecture. | **Closed.** Install, one question, the real answer, and the usage line a week later, with a picture of the terminal. The repository's front page opens with a real Claude Code session, replayed from its transcript, and a video of the same question with CodeGraph on and off. The install itself is not recorded yet. |
@@ -38,8 +38,11 @@ means here, and where it stands.
 
 ## Open
 
-1. **macOS is tested by CI only.** The daemon uses .NET's file watcher and named pipes, which are
-   cross-platform, and the suite passes on the macOS runner. Nobody has used it there day to day. The
+1. **macOS is tested by CI and one run on a Mac.** The daemon uses .NET's file watcher and named pipes, which
+   are cross-platform, and the suite passes on the macOS runner. One run on an Intel Mac (macOS 15) covered the
+   installers, the live daemon and the resilience battery, and found a build bug in checkouts reached through a
+   symlink; the fix is checked on Linux, not yet on a Mac (BENCHMARKS round 16). Nobody has used it there day
+   to day. The
    executables are not signed or notarised, so an archive unpacked from a browser download needs
    `xattr -dr com.apple.quarantine`. The installer avoids this by downloading with curl.
 2. **No package managers.** A Homebrew tap, a winget manifest and a `dotnet tool` package would each be
