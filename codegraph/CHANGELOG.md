@@ -69,7 +69,9 @@ The executables report their version with `--version`; the MCP server shows it t
     writing. It now opens the log sharing read and write. The next Windows CI run got past the log and failed on
     the references: each had no enclosing member. The language server sends `file:///d%3A/…` (drive letter
     lower-case, colon encoded), which .NET read as `D:\d:\…`, and the graph's paths are `D:\…`. On Windows the
-    live tools now drop the slash before the drive, upper-case it, and compare paths without case.
+    live tools now drop the slash before the drive, upper-case it, and compare paths without case. The same
+    mismatch hid every diagnostic from `check_change` and `diagnostics` on Windows and made the language server's
+    start-up wait run out (66.6 s); diagnostics are now stored under the same URI form they are looked up by.
   - `uninstall.ps1` and `uninstall.sh` name each file and folder they remove, not just "entry removed".
 - The server accepts the id under the names models guess for it (`symbolId`, `nodeId`, `memberId`, and their
   snake-case forms, or `id` for the tools that take `symbol`). A Cursor agent passed `symbolId` to every tool, got

@@ -19,6 +19,23 @@ public sealed class LspPathTests
     }
 
     [Fact]
+    public void A_servers_windows_uri_is_keyed_as_ours()
+    {
+        // Diagnostics arrive under the server's URI and are looked up under UriOf: the two must agree.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters exist only on Windows");
+        Assert.Equal(LspClient.UriOf(@"C:\Users\a\shop\src\app\user.service.ts"),
+            LspClient.CanonicalUri("file:///c%3A/Users/a/shop/src/app/user.service.ts"));
+    }
+
+    [Fact]
+    public void A_canonical_uri_is_unchanged_by_canonicalising_it_again()
+    {
+        var uri = LspClient.UriOf(Path.Combine(Path.GetTempPath(), "codegraph-lsp", "user.service.ts"));
+        Assert.Equal(uri, LspClient.CanonicalUri(uri));
+        Assert.Equal("untitled:Untitled-1", LspClient.CanonicalUri("untitled:Untitled-1"));
+    }
+
+    [Fact]
     public void A_file_uri_round_trips_to_its_full_path()
     {
         var path = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "codegraph-lsp", "user.service.ts"));

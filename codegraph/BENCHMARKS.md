@@ -862,7 +862,11 @@ It found two more things, now changed:
   its colon (`file:///d%3A/…`); .NET reads that as the rooted path `/d:/…`, which became `D:\d:\…` (the next CI
   run showed this in a unit test), while the graph holds the path as the extractor resolved it (`D:\…`), and the lookup from a
   position to its member compared paths exactly. On Windows it now drops that leading slash, upper-cases the
-  drive letter, and compares paths without case. That is read from the code and the bundle, not yet seen on
+  drive letter, and compares paths without case. With that, references and rename passed on Windows (run
+  43701724025), and `check_change` failed instead: no new errors where 2 were expected. Diagnostics were stored
+  under the server's URI (`file:///c%3A/…`) and looked up under .NET's (`file:///C:/…`), so none was ever found;
+  the same mismatch made the start-up wait for a first file's diagnostics run out its 60 s (the daemon logged
+  "typescript-language-server ready in 66.6s"). Published diagnostics are now stored under .NET's form. That is read from the code and the bundle, not yet seen on
   Windows. Linux and macOS ran all 436 tests in that run, with none skipped.
 - **The uninstall did not name what it removed.** It printed "entry removed" once per file and "deleted" for each
   folder. `uninstall.ps1` and `uninstall.sh` now print the path of each file and folder. Both were run here against
