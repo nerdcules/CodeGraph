@@ -52,10 +52,11 @@ done
 
 step() { printf '\n\033[36m==> %s\033[0m\n' "$1"; }
 
-# The checkout this script lives in, when it is run from one rather than piped from curl.
+# The checkout this script lives in, when it is run from one rather than piped from curl. The physical path
+# (pwd -P): through a symlink, such as /tmp on macOS, dotnet would see each project under two spellings.
 root=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
-    root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
     [ -f "$root/CodeGraph.slnx" ] || root=""
 fi
 

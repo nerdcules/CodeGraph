@@ -46,6 +46,11 @@ jobs:
         working-directory: codegraph/extractors/typescript
         run: npm test
 
+      # The OS reports a process's working directory with symlinks resolved; a checkout under macOS /tmp once built twice.
+      - name: Install from a checkout reached through a symlink
+        if: runner.os == 'macOS'
+        run: tests/install-through-symlink.sh
+
       - name: Packaging script runs
         if: runner.os == 'Linux'
         env:

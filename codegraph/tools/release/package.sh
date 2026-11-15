@@ -11,7 +11,7 @@
 # install scripts rely on the names above.
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 version="${CODEGRAPH_VERSION:-}"
 version="${version#v}"
 [ $# -gt 0 ] || { echo "usage: $0 <rid>..." >&2; exit 1; }

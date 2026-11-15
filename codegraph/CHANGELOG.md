@@ -114,6 +114,18 @@ The executables report their version with `--version`; the MCP server shows it t
   the repo: `codegraph-index export obsidian` still runs, its .NET tests still run with the suite, the corpus still
   checks the export, and its pages are kept, marked retired.
 
+### Build from a path through a symlink
+
+- A checkout reached through a symlink builds once. The OS reports the working directory of a process with symlinks
+  resolved, and on macOS `/tmp` is a symlink to `/private/tmp`. MSBuild tasks resolve a relative item against that
+  directory, so `dotnet build /tmp/.../CodeGraph.slnx` restored and built `CodeGraph.Core` and `CodeGraph.Indexer`
+  twice, once per spelling, and `install.sh --from-source` failed at random (CS0006, CS0103). The same build put
+  the test fixtures in the output root instead of `Fixtures/` (three SCIP tests failed) and embedded the web UI as
+  `CodeGraph.Mcp.index.html`. `Directory.Build.targets` now makes each project reference, embedded resource and
+  copied None or Content item absolute, with the spelling of the solution; `install.sh` and
+  `tools/release/package.sh` resolve their root with `pwd -P`; and `tests/install-through-symlink.sh` runs restore,
+  a Release build and the install through a symlink, in the macOS CI job.
+
 ## 1.1.0
 
 ### Faster reads

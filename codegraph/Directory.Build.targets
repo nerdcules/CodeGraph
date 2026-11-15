@@ -1,0 +1,42 @@
+<Project>
+  <!--
+    Make the paths of project references, embedded resources, and the None and Content items that are
+    copied to the output absolute. MSBuild tasks resolve a relative item against the working directory of
+    the process, not against the project directory. The OS reports that directory with symlinks resolved
+    (on macOS, /tmp is /private/tmp). A solution opened through the other spelling then goes wrong in three
+    places:
+    - restore (ConvertToAbsolutePath) adds each referenced project a second time, as /private/tmp/..., and
+      the two restores write the same obj folder;
+    - AssignProjectConfiguration does not find /private/tmp/... in the solution, removes the Configuration
+      and builds the reference in Debug next to the Release build, so the build fails at random (CS0006,
+      CS0103);
+    - AssignTargetPath sees the item outside the project folder and keeps only the file name: the test
+      fixtures lose their folder and an embedded resource loses its namespace.
+    The FullPath metadata is resolved against the project directory at evaluation and keeps the spelling
+    of the solution. The transform keeps custom metadata but not RecursiveDir: a glob that reaches outside
+    the project folder must set Link itself. None and Content items that are not copied stay relative, also
+    when a copied item has the same path: the Web SDK matches its static web assets against the relative
+    pattern wwwroot/**.
+  -->
+  <ItemGroup>
+    <_AsWritten Include="@(ProjectReference)" />
+    <ProjectReference Remove="@(_AsWritten)" />
+    <ProjectReference Include="@(_AsWritten->'%(FullPath)')" />
+    <_AsWritten Remove="@(_AsWritten)" />
+
+    <_AsWritten Include="@(EmbeddedResource)" />
+    <EmbeddedResource Remove="@(_AsWritten)" />
+    <EmbeddedResource Include="@(_AsWritten->'%(FullPath)')" />
+    <_AsWritten Remove="@(_AsWritten)" />
+
+    <_AsWritten Include="@(None->HasMetadata('CopyToOutputDirectory'))" />
+    <None Remove="@(_AsWritten)" MatchOnMetadata="CopyToOutputDirectory" />
+    <None Include="@(_AsWritten->'%(FullPath)')" />
+    <_AsWritten Remove="@(_AsWritten)" />
+
+    <_AsWritten Include="@(Content->HasMetadata('CopyToOutputDirectory'))" />
+    <Content Remove="@(_AsWritten)" MatchOnMetadata="CopyToOutputDirectory" />
+    <Content Include="@(_AsWritten->'%(FullPath)')" />
+    <_AsWritten Remove="@(_AsWritten)" />
+  </ItemGroup>
+</Project>
