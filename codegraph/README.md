@@ -149,12 +149,12 @@ applies a save in about 1 to 1.5 seconds (BENCHMARKS rounds 12 and 13), and answ
 In order of what would matter most, from a frank look at the gap between the engineering and the
 product. [docs/roadmap.md](docs/roadmap.md) has the detail.
 
-1. **macOS is tested by CI and one run on a Mac, not by daily use.** The author works on Linux and Windows. CI
+1. **macOS is tested by CI and two runs on one Mac, not by daily use.** The author works on Linux and Windows. CI
    builds the Release configuration and runs the test suite on macOS for every push to main and every pull
    request, and the release workflow builds the macOS archives on each version tag. One run on an Intel Mac
    (macOS 15, 2026-11-15) covered the installers, the live daemon and the resilience battery, and found a build
-   bug in checkouts reached through a symlink. The fix is checked on Linux and in macOS CI, not yet on that Mac
-   ([BENCHMARKS.md](BENCHMARKS.md) round 16). No one has lived with it there yet.
+   bug in checkouts reached through a symlink. The fix is checked on Linux, in macOS CI and in a second run on that
+   Mac ([BENCHMARKS.md](BENCHMARKS.md) round 16). No one has lived with it there yet.
 2. **No package managers.** There is a release archive and an installer, but no Homebrew tap, winget
    package or `dotnet tool`. The Claude Code plugin in [plugin/](plugin/) removes the install step on
    macOS and Linux; on Windows it needs the installer first.

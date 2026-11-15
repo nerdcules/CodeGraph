@@ -954,7 +954,7 @@ at the same commit.
 | resilience battery, after the reboot | 12 of 12; R4: 1,094,370 calls, 0 errors, p99 4.3 ms, max 582 ms |
 
 `uninstall.sh` without `--yes` asks on the terminal; a Claude Code session has none, so that prompt was not tested
-on the Mac.
+in this run. The second Mac run, below, tested it.
 
 **What it found, and what changed:**
 
@@ -978,8 +978,22 @@ on the Mac.
 
   In CI run 43758540573 at `78a7307`, the macOS job (an Apple silicon runner; the install published osx-arm64)
   ran the script: each of 6 projects restored once, Release output only, and the install finished. The suite
-  passed there 439 of 441 with 2 skipped, as on Linux; Windows passed 440 with 1 skipped. The fix has not run on
-  the Intel Mac.
+  passed there 439 of 441 with 2 skipped, as on Linux; Windows passed 440 with 1 skipped.
+
+**The second Mac run**, the same Intel Mac on 2026-11-15 at `1a9ee1c`, checked the fix there and the uninstall
+prompt. Its report is `mac-report-2.md` on the `mac-test-results` branch; its step logs stayed on the Mac.
+
+| check | result |
+|---|---|
+| test suite | 441: 439 passed, 0 failed, 2 skipped (the Windows drive-letter tests) |
+| `install.sh --from-source --skip-tests` from `/tmp/cg-mac2/srcN/codegraph`, 3 fresh clones | exit 0 in 3 of 3 (2 of 2 failed in the first run); no `bin/Debug` line; each project restored once per dotnet command, every path spelled `/private/tmp`; `--version` 1.1.0 |
+| `tests/install-through-symlink.sh` | exit 0: each of 6 projects restored once, Release output only, the install finished |
+| `uninstall.sh` on a terminal (`script -q /dev/null`), every answer `n` | asked for the install folder and both config files; removed nothing |
+| the same, every answer `y` | asked the same 3 times; deleted the install folder and both codegraph entries, naming each path |
+
+Through `script`, the exit code of `uninstall.sh` itself cannot be seen, so it was not recorded. `init`, run as
+`/tmp/cg-mac2/bin3/codegraph-index`, wrote the server's path as `/private/tmp/cg-mac2/bin3/codegraph-mcp`; the
+uninstall found and removed those entries. After it, each config file held `{"mcpServers": {}}`.
 
 **R4 on its own.** Round 15's 8 errors were never seen in full, so R4 was cut out of the battery into a script that
 repeats it, keeps every error's whole text, and can start CPU burners (processes that spin in a loop) for the whole

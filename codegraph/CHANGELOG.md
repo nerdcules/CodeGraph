@@ -125,7 +125,8 @@ The executables report their version with `--version`; the MCP server shows it t
   the test fixtures in the output root instead of `Fixtures/` and embedded the web UI as `CodeGraph.Mcp.index.html`
   instead of `CodeGraph.Mcp.wwwroot.index.html`. Found by the first macOS run (BENCHMARKS round 16), and shown on
   Linux too: through a symlink, the suite at `a3150ec` ran 421 of 441 tests and 331 failed; with the fix, 439 passed
-  and 2 skipped. `Directory.Build.targets` now makes each project reference, embedded resource and
+  and 2 skipped. A second Mac run at `1a9ee1c` installed from source through `/tmp` 3 times in 3.
+  `Directory.Build.targets` now makes each project reference, embedded resource and
   copied None or Content item absolute, with the spelling of the solution; `install.sh` and
   `tools/release/package.sh` resolve their root with `pwd -P`; and `tests/install-through-symlink.sh` runs restore,
   a Release build and the install through a symlink, in the macOS and Linux CI jobs.

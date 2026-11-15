@@ -38,13 +38,12 @@ means here, and where it stands.
 
 ## Open
 
-1. **macOS is tested by CI and one run on a Mac.** The daemon uses .NET's file watcher and named pipes, which
+1. **macOS is tested by CI and two runs on one Mac.** The daemon uses .NET's file watcher and named pipes, which
    are cross-platform, and the suite passes on the macOS runner. One run on an Intel Mac (macOS 15) covered the
    installers, the live daemon and the resilience battery, and found a build bug in checkouts reached through a
-   symlink; the fix is checked on Linux and in macOS CI, not yet on that Mac (BENCHMARKS round 16). Nobody has used it there day
-   to day. The
-   executables are not signed or notarised, so an archive unpacked from a browser download needs
-   `xattr -dr com.apple.quarantine`. The installer avoids this by downloading with curl.
+   symlink; the fix is checked on Linux, in macOS CI and in a second run on that Mac (BENCHMARKS round 16).
+   Nobody has used it there day to day. The executables are not signed or notarised, so an archive unpacked from
+   a browser download needs `xattr -dr com.apple.quarantine`. The installer avoids this by downloading with curl.
 2. **No package managers.** A Homebrew tap, a winget manifest and a `dotnet tool` package would each be
    one more one-liner. The plugin covers Claude Code users on macOS and Linux; on Windows it still needs
    the installer first, because a plugin's MCP command is a shell script.
