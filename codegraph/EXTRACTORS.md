@@ -1,6 +1,6 @@
 # Languages and extractors
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
 
 CodeGraph's store and MCP tools know nothing about C#. What a language needs is an *extractor*: a program that
 reads the code with that language's own compiler and writes graph records. Three routes are built in.
@@ -23,11 +23,11 @@ with an Angular `ClientApp/` gets both, in one graph.
 | types, members, signatures, modifiers | yes | yes | names and kinds; modifiers read from the source line |
 | calls, property reads, overrides, implementations | yes | yes | from references and `is_implementation` |
 | calls into the framework and packages (External nodes) | yes | yes, `lib` and npm packages | yes, methods only |
-| tests and `TestedBy` | xUnit, NUnit, MSTest | Jasmine, Jest, Vitest `it` / `test` blocks | `@Test` (JUnit, TestNG), `test_*` (Python), `TestXxx` (Go) |
+| tests and `TestedBy` | xUnit, NUnit, MSTest; a test also calls its class's constructors, `Dispose` and setup methods | Jasmine, Jest, Vitest `it` / `test` blocks | `@Test` (JUnit, TestNG), `test_*` (Python), `TestXxx` (Go) |
 | framework entry points | framework-triggered methods | lifecycle hooks, decorated methods, templates | Spring annotations, `main` |
 | dependency injection | | constructor parameters and `inject()` (`Injects`) | |
 | templates | | Angular templates: `Renders` and template calls | |
-| incremental | per file | whole workspace, a few seconds | whole project |
+| incremental | per file | whole workspace: 7.7–7.8 s for NestJS's 1,180 files ([round 12](BENCHMARKS.md#round-12-the-docs-re-measured)) | whole project |
 | `data_flow` | yes | no | no |
 
 Indexers differ in what they put in the index, and the importer evens that out:
@@ -111,7 +111,8 @@ The facts go in `meta` records (or, for C#, straight into the graph) under these
 The run logs the same as one `compiler:` line plus warnings, and `index_status` prints a line per language.
 An extractor that records nothing here still works; the status line then says so.
 
-The counts are of what was walked: an incremental C# run reports the files it re-read. Body-level errors are
+The counts are of what was walked: an incremental C# run reports the files it re-read, and a pass that walks no
+file keeps the last walk's counts and notes. Body-level errors are
 not counted on any route, because finding them is a full compile and they cost at most an edge; the
 declaration-level ones are what lose nodes, and those are counted.
 
@@ -149,4 +150,4 @@ error to a file with one dependent answers in 3.5 to 4.8 s, and a clean edit in 
 
 ---
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · **Extractors** · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)

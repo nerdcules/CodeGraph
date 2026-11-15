@@ -205,6 +205,20 @@ public sealed class GraphSnapshot
         return found;
     }
 
+    /// <summary>
+    /// Whether <paramref name="query"/> is the full name without its parameter list, or a tail of it that starts
+    /// after a dot: <c>GraphStore.Replace</c> for <c>CodeGraph.Core.GraphStore.Replace(bool, …)</c>.
+    /// </summary>
+    private static bool QualifiedTail(string fullName, string query)
+    {
+        var paren = fullName.IndexOf('(', StringComparison.Ordinal);
+        var bare = paren < 0 ? fullName : fullName[..paren];
+        return bare.Equals(query, StringComparison.OrdinalIgnoreCase)
+               || (bare.Length > query.Length
+                   && bare.EndsWith(query, StringComparison.OrdinalIgnoreCase)
+                   && bare[bare.Length - query.Length - 1] == '.');
+    }
+
     /// <inheritdoc cref="GraphStore.FindSymbol"/>
     public IReadOnlyList<GraphNode> FindSymbol(
         string query,
@@ -229,12 +243,13 @@ public sealed class GraphSnapshot
             "exact" => text => text.Equals(query, StringComparison.OrdinalIgnoreCase),
             _ => text => text.Contains(query, StringComparison.OrdinalIgnoreCase),
         };
+        var qualified = nameMatch.Equals("exact", StringComparison.OrdinalIgnoreCase);
 
         var hits = new List<GraphNode>();
         for (var i = 0; i < _nodeRows; i++)
         {
             var n = _nodes[i]!;
-            if ((matches(n.Name) || matches(n.FullName))
+            if ((matches(n.Name) || matches(n.FullName) || (qualified && QualifiedTail(n.FullName, query)))
                 && (kind is null || n.Kind == kind)
                 && (typeKind is null || n.TypeKind == typeKind)
                 && (accessibility is null || n.Accessibility == accessibility)
@@ -261,13 +276,16 @@ public sealed class GraphSnapshot
     }
 
     /// <inheritdoc cref="GraphStore.NodeAt"/>
+    /// <summary>File paths compare without case on Windows, where the file system ignores it.</summary>
+    private static readonly StringComparison PathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
     public GraphNode? NodeAt(string file, int line)
     {
         GraphNode? best = null;
         for (var i = 0; i < _nodeRows; i++)
         {
             var n = _nodes[i]!;
-            if (n.FilePath == file && n.StartLine <= line && n.EndLine >= line && n.Kind is not (NodeKind.File or NodeKind.Project or NodeKind.External)
+            if (string.Equals(n.FilePath, file, PathComparison) && n.StartLine <= line && n.EndLine >= line && n.Kind is not (NodeKind.File or NodeKind.Project or NodeKind.External)
                 && (best is null
                     || n.EndLine - n.StartLine < best.EndLine - best.StartLine
                     || (n.EndLine - n.StartLine == best.EndLine - best.StartLine && (n.StartLine > best.StartLine

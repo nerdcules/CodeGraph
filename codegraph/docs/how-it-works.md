@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · **How it works** · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · **How it works** · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -14,6 +14,7 @@
 - [Write the graph](#write-the-graph)
 - [Incremental indexing](#incremental-indexing)
 - [Answer a tool call](#answer-a-tool-call)
+- [The graph in memory](#the-graph-in-memory)
 - [Freshness](#freshness)
 - [The live daemon](#the-live-daemon)
 - [What each language records](#what-each-language-records)
@@ -59,7 +60,7 @@ The graph has nodes and edges.
 | `File` | One source file. |
 | `Type` | A class, interface, struct, enum, record, trait or type alias. |
 | `Method` | A method, constructor, function or Angular template. |
-| `Property`, `Field` | A property, field or event. |
+| `Property`, `Field`, `Event` | A property, a field or an event. |
 | `External` | A framework or package method that the code calls. |
 
 | Edge kind | From | To |
@@ -204,7 +205,8 @@ It measures precision and recall for each edge kind.
 It also makes sure that the dead-code report finds the dead methods and does not show live ones.
 
 The test runs in parallel Docker containers with no network.
-The last run had 144 codebases and 383,000 edges, with no differences.
+The full run in [BENCHMARKS round 10](../BENCHMARKS.md#round-10-language-versions-and-older-toolchains) had 144 runs and 383,212 expected edges.
+It found one difference, in the classic C# dialect. After the fix, those runs matched the answer key too.
 [tools/corpus/README.md](../tools/corpus/README.md) tells how to run it.
 
 The generator also writes each codebase in two dialects, with the same answer key.

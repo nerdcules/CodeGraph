@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "codegraph": {
+      "type": "stdio",
+      "command": "/home/you/.codegraph/bin/codegraph-mcp",
+      "args": ["--root", "${workspaceFolder}"]
+    }
+  }
+}

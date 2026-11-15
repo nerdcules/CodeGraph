@@ -1,4 +1,4 @@
-# Build and test on every push and pull request, on the three platforms the release ships for.
+# Build and test on each push to main and each pull request, on the three platforms the release ships for.
 name: CI
 
 on:
@@ -31,6 +31,11 @@ jobs:
         with:
           node-version: 22
 
+      # Before the .NET tests: the TypeScript index and live tests skip themselves when these packages are missing.
+      - name: TypeScript extractor packages
+        working-directory: codegraph/extractors/typescript
+        run: npm ci --no-audit --no-fund
+
       - name: Build (warnings are errors)
         run: dotnet build CodeGraph.slnx -c Release -warnaserror --nologo
 
@@ -39,15 +44,13 @@ jobs:
 
       - name: TypeScript extractor tests
         working-directory: codegraph/extractors/typescript
-        run: |
-          npm ci --no-audit --no-fund
-          npm test
+        run: npm test
 
-      - name: Obsidian plugin tests
-        working-directory: codegraph/obsidian-plugin
-        run: |
-          node build.mjs --check
-          npm test
+      # The OS reports a process's working directory with symlinks resolved; a checkout under macOS /tmp once built twice.
+      # Linux resolves it the same way and showed the same bug, so the check runs on both.
+      - name: Install from a checkout reached through a symlink
+        if: runner.os == 'macOS' || runner.os == 'Linux'
+        run: tests/install-through-symlink.sh
 
       - name: Packaging script runs
         if: runner.os == 'Linux'

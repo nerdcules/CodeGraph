@@ -4,14 +4,15 @@
 
 .DESCRIPTION
     Deletes the install folder, takes it out of the user PATH if install.ps1 -AddToPath put it there, and
-    optionally removes the `codegraph` server entry from a repo's .mcp.json and that repo's .codegraph/ graph.
+    optionally removes the `codegraph` server entry from a repo's MCP configs and that repo's .codegraph/ graph.
     Running codegraph processes keep the executables locked; the script refuses unless -Force stops them.
 
 .PARAMETER InstallDir
     The folder install.ps1 published into. Default: C:\tools\codegraph on Windows, ~/.codegraph/bin elsewhere.
 
 .PARAMETER Repo
-    A repo whose .mcp.json loses its `codegraph` entry and whose .codegraph/ folder is deleted. Repeatable.
+    A repo whose MCP configs (.mcp.json and those of the other assistants init sets up) lose their `codegraph`
+    entry and whose .codegraph/ folder is deleted. Repeatable.
 
 .PARAMETER Force
     Stop running codegraph-mcp / codegraph-index processes first.
@@ -41,6 +42,52 @@ $InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
 
 function Step([string] $message) { Write-Host "`n==> $message" -ForegroundColor Cyan }
 
+# ConvertTo-Json in Windows PowerShell 5.1 pads every level to the column of its key and writes `":  "`, and it
+# escapes < > & ' as < and so on, so removing one entry showed as a change to every line. This lays the JSON
+# out as init writes it, 2 spaces a level, in both PowerShell versions; the content does not change.
+function Format-Json([string] $json) {
+    $literal = @{ '0026' = '&'; '0027' = "'"; '003c' = '<'; '003e' = '>' }
+    $out = New-Object System.Text.StringBuilder
+    $depth = 0
+    $inString = $false
+    for ($i = 0; $i -lt $json.Length; $i++) {
+        $c = $json[$i]
+        if ($inString) {
+            if ($c -eq '\') {
+                $hex = if ($i + 5 -lt $json.Length -and $json[$i + 1] -eq 'u') { $json.Substring($i + 2, 4).ToLowerInvariant() } else { '' }
+                if ($literal.ContainsKey($hex)) { [void]$out.Append($literal[$hex]); $i += 5 }
+                else { [void]$out.Append($c).Append($json[$i + 1]); $i++ }
+            } else {
+                [void]$out.Append($c)
+                if ($c -eq '"') { $inString = $false }
+            }
+        } elseif ($c -eq '"') {
+            $inString = $true
+            [void]$out.Append($c)
+        } elseif ($c -eq '{' -or $c -eq '[') {
+            $next = $i + 1
+            while ($next -lt $json.Length -and [char]::IsWhiteSpace($json[$next])) { $next++ }
+            if ($next -lt $json.Length -and ($json[$next] -eq '}' -or $json[$next] -eq ']')) {
+                [void]$out.Append($c).Append($json[$next])   # {} and [] stay on one line
+                $i = $next
+            } else {
+                $depth++
+                [void]$out.Append($c).Append("`n").Append('  ' * $depth)
+            }
+        } elseif ($c -eq '}' -or $c -eq ']') {
+            $depth--
+            [void]$out.Append("`n").Append('  ' * $depth).Append($c)
+        } elseif ($c -eq ',') {
+            [void]$out.Append(",`n").Append('  ' * $depth)
+        } elseif ($c -eq ':') {
+            [void]$out.Append(': ')
+        } elseif (-not [char]::IsWhiteSpace($c)) {
+            [void]$out.Append($c)
+        }
+    }
+    $out.ToString()
+}
+
 function Confirm-Step([string] $question) {
     if ($Yes) { return $true }
     $answer = Read-Host "$question [y/N]"
@@ -69,7 +116,7 @@ if (Test-Path $InstallDir) {
     Step "Install folder: $InstallDir"
     if (Confirm-Step "Delete $InstallDir and everything in it?") {
         Remove-Item -Recurse -Force $InstallDir
-        Write-Host 'deleted'
+        Write-Host "deleted $InstallDir"
     }
 } else {
     Write-Host "no install folder at $InstallDir"
@@ -108,17 +155,38 @@ foreach ($dir in $Repo) {
     $dir = [System.IO.Path]::GetFullPath($dir)
     Step "Repo: $dir"
 
-    $configPath = Join-Path $dir '.mcp.json'
-    if (Test-Path $configPath) {
-        # Objects, not -AsHashtable: Windows PowerShell 5.1 does not have that parameter.
-        $config = Get-Content $configPath -Raw | ConvertFrom-Json
-        $servers = if ($config) { $config.PSObject.Properties['mcpServers'] } else { $null }
+    # Each assistant's project config that init can write, with the key its servers sit under; Visual Studio's
+    # .vs/mcp.json sits beside the solution, so look a few folders down for it.
+    $configs = @(
+        @{ File = '.mcp.json'; Key = 'mcpServers' },
+        @{ File = '.cursor/mcp.json'; Key = 'mcpServers' },
+        @{ File = '.vscode/mcp.json'; Key = 'servers' },
+        @{ File = '.github/mcp.json'; Key = 'servers' },
+        @{ File = '.gemini/settings.json'; Key = 'mcpServers' },
+        @{ File = '.roo/mcp.json'; Key = 'mcpServers' },
+        @{ File = '.kilo/kilo.json'; Key = 'mcp' },
+        @{ File = '.continue/mcpServers/codegraph.json'; Key = 'mcpServers' }
+    )
+    $configs += @(Get-ChildItem -Path $dir -Filter mcp.json -Recurse -Depth 3 -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Directory.Name -eq '.vs' } |
+        ForEach-Object { @{ File = $_.FullName.Substring($dir.Length).TrimStart('\', '/'); Key = 'servers' } })  # no GetRelativePath in Windows PowerShell 5.1
+    foreach ($entry in $configs) {
+        $configPath = Join-Path $dir $entry.File
+        if (-not (Test-Path $configPath)) { continue }
+        try {
+            # Objects, not -AsHashtable: Windows PowerShell 5.1 does not have that parameter.
+            $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        } catch {
+            Write-Warning "could not read $configPath; remove the `"codegraph`" entry by hand"
+            continue
+        }
+        $servers = if ($config) { $config.PSObject.Properties[$entry.Key] } else { $null }
         if ($servers -and $servers.Value.PSObject.Properties['codegraph']) {
             if (Confirm-Step "Remove the codegraph server entry from $configPath?") {
                 $servers.Value.PSObject.Properties.Remove('codegraph')
-                $json = $config | ConvertTo-Json -Depth 10
+                $json = Format-Json ($config | ConvertTo-Json -Depth 10)
                 [System.IO.File]::WriteAllText($configPath, $json + "`n", [System.Text.UTF8Encoding]::new($false))
-                Write-Host 'entry removed'
+                Write-Host "removed the codegraph entry from $configPath"
             }
         } else {
             Write-Host "no codegraph entry in $configPath"
@@ -129,7 +197,19 @@ foreach ($dir in $Repo) {
     if (Test-Path $graphDir) {
         if (Confirm-Step "Delete the graph and telemetry in $graphDir?") {
             Remove-Item -Recurse -Force $graphDir
-            Write-Host 'deleted'
+            Write-Host "deleted $graphDir"
+        }
+    }
+}
+
+# ---- Codex ------------------------------------------------------------------------------------------------
+# init --client codex puts one entry in Codex's global config rather than in a repo.
+if (Get-Command codex -ErrorAction SilentlyContinue) {
+    & codex mcp get codegraph *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Step 'Codex'
+        if (Confirm-Step "Remove the codegraph server from Codex's global config?") {
+            & codex mcp remove codegraph
         }
     }
 }

@@ -1,4 +1,4 @@
-# Node 20, the oldest the extractor supports, with the .NET 10 runtime for codegraph-index.
+# Node 20, the oldest the extractor's engines field accepts (some pinned packages declare 22.22.3+ or 24.15+), with the .NET 10 runtime for codegraph-index.
 FROM node:20-bookworm
 COPY --from=mcr.microsoft.com/dotnet/aspnet:10.0 /usr/share/dotnet /usr/share/dotnet
 RUN ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet \

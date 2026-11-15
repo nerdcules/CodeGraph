@@ -1,6 +1,6 @@
 # CodeGraph plugin for Claude Code
 
-[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · **Claude Code plugin** · [Obsidian plugin](../obsidian-plugin/README.md)
+[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · **Claude Code plugin**
 
 One install, every repository: the plugin adds the `codegraph` MCP server to Claude Code and a skill
 that tells Claude when to use it. On the first call it installs the latest CodeGraph release into
@@ -16,7 +16,8 @@ From a shell: `claude plugin marketplace add nerdcules/CodeGraph && claude plugi
 Then open a repository and ask a question. When a tool answers "no code graph", let Claude run
 `~/.codegraph/bin/codegraph-index init`, or run it yourself; that writes the repo's `.mcp.json`, ignores
 `.codegraph/` and builds the graph. C# repositories need the .NET SDK they build with; TypeScript needs
-Node.js 22; Java, Go, Rust and Python need their SCIP indexer on PATH
+Node.js 22.22.3+ or 24.15+ (what the extractor's packages declare; [BENCHMARKS](../BENCHMARKS.md#round-10-language-versions-and-older-toolchains)
+round 10 also indexed on Node 20); Java, Go, Rust and Python need their SCIP indexer on PATH
 ([installation](../docs/installation.md#install-the-language-tools)).
 
 ## What is in it
@@ -49,4 +50,4 @@ claude plugin validate codegraph/plugin
 
 ---
 
-[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · **Claude Code plugin** · [Obsidian plugin](../obsidian-plugin/README.md)
+[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · **Claude Code plugin**

@@ -27,6 +27,19 @@ public sealed partial class RoslynIndexer
         "TestMethod", "TestMethodAttribute",
     };
 
+    /// <summary>NUnit and MSTest attributes for methods the framework runs before or after the tests of a class.</summary>
+    private static readonly HashSet<string> TestLifecycleAttributeNames = new(StringComparer.Ordinal)
+    {
+        "SetUp", "SetUpAttribute",
+        "TearDown", "TearDownAttribute",
+        "OneTimeSetUp", "OneTimeSetUpAttribute",
+        "OneTimeTearDown", "OneTimeTearDownAttribute",
+        "TestInitialize", "TestInitializeAttribute",
+        "TestCleanup", "TestCleanupAttribute",
+        "ClassInitialize", "ClassInitializeAttribute",
+        "ClassCleanup", "ClassCleanupAttribute",
+    };
+
     private static readonly HashSet<string> FrameworkEntrypointAttributeNames = new(StringComparer.Ordinal)
     {
         "Function", "FunctionAttribute",
@@ -110,6 +123,8 @@ public sealed partial class RoslynIndexer
     /// counted: finding them is a full compile, and they cost at most an edge.
     /// </summary>
     public int CompileErrors { get; private set; }
+
+    private int _missingTypeErrors;
 
     /// <summary>Of <see cref="CompileErrors"/>, those that say a feature needs a newer C# than the project's version, or than this Roslyn has.</summary>
     public int LanguageVersionErrors { get; private set; }
@@ -331,7 +346,8 @@ public sealed partial class RoslynIndexer
             _languageVersions.Add(Display(parseOptions.LanguageVersion));
         }
 
-        if (compilation.GetSpecialType(SpecialType.System_Object).TypeKind == RoslynTypeKind.Error)
+        var objectResolved = compilation.GetSpecialType(SpecialType.System_Object).TypeKind != RoslynTypeKind.Error;
+        if (!objectResolved)
         {
             _notes.Add($"{project.Name}: System.Object did not resolve, so the project has no framework references; it was not restored (no obj/project.assets.json) or its target framework is not installed. Run dotnet restore and index again");
             _log($"\u26a0 {_notes[^1]}");
@@ -342,6 +358,8 @@ public sealed partial class RoslynIndexer
             (_sourceTypeNames, _sourceMemberNames) = await SourceNamesAsync(solution, cancellationToken);
         }
 
+        var errorsBefore = CompileErrors;
+        var missingTypesBefore = _missingTypeErrors;
         var walked = 0;
         foreach (var document in documents)
         {
@@ -364,7 +382,22 @@ public sealed partial class RoslynIndexer
             var root = await tree.GetRootAsync(cancellationToken);
             IndexDocument(root, model, fileId, path, frameworkRootId, cancellationToken);
         }
+
+        // The framework resolved but the project's packages may not have: a fresh clone that was never restored
+        // compiles with every package type missing, and its graph lacks every call into them, quietly.
+        if (objectResolved && _missingTypeErrors > missingTypesBefore && NotRestored(project.FilePath)
+            && _notes.All(n => !n.StartsWith($"{project.Name}: ", StringComparison.Ordinal)))
+        {
+            _notes.Add($"{project.Name}: {CompileErrors - errorsBefore} compile error(s) and no obj/project.assets.json, so its NuGet packages were not restored and calls into them are missing from the graph. Run dotnet restore and index again");
+            _log($"\u26a0 {_notes[^1]}");
+        }
     }
+
+    /// <summary>A project file with no <c>obj/project.assets.json</c> beside it: NuGet restore never ran for it.</summary>
+    internal static bool NotRestored(string? projectFile) =>
+        projectFile is not null
+        && File.Exists(projectFile)
+        && !File.Exists(Path.Combine(Path.GetDirectoryName(projectFile)!, "obj", "project.assets.json"));
 
     /// <summary>
     /// Syntax errors are free (the parse already happened) and declaration errors are nearly so (the walk binds
@@ -383,6 +416,11 @@ public sealed partial class RoslynIndexer
             }
 
             CompileErrors++;
+            if (diagnostic.Id is "CS0246" or "CS0234")
+            {
+                _missingTypeErrors++; // a type or namespace not found: what an unrestored package leaves
+            }
+
             FirstCompileError ??= $"{Path.GetFileName(path)}({diagnostic.Location.GetLineSpan().StartLinePosition.Line + 1}): {diagnostic.Id} {diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture)}";
             if (IsLanguageVersionError(diagnostic))
             {
@@ -615,6 +653,46 @@ public sealed partial class RoslynIndexer
             foreach (var scope in scopes)
             {
                 IndexBody(scope, model, memberId, isTest, origin, cancellationToken);
+            }
+
+            if (isTest && symbol is IMethodSymbol test)
+            {
+                IndexTestLifecycle(test, memberId, origin);
+            }
+        }
+    }
+
+    /// <summary>
+    /// What the test framework runs around each test, recorded as calls from the test: the test class's constructors
+    /// and <c>Dispose</c>/<c>DisposeAsync</c> (xUnit creates and disposes the class for every test),
+    /// <c>IAsyncLifetime.InitializeAsync</c>, and methods marked <c>[SetUp]</c>, <c>[TearDown]</c>,
+    /// <c>[OneTimeSetUp]</c> (NUnit) or <c>[TestInitialize]</c>, <c>[ClassInitialize]</c> (MSTest), on the class
+    /// and its base classes in source. Without them, a method that only a constructor reaches counts no test as
+    /// guarding it, though every test of the class runs it.
+    /// </summary>
+    private void IndexTestLifecycle(IMethodSymbol test, string testId, string origin)
+    {
+        var interfaces = test.ContainingType.AllInterfaces.Select(i => i.Name).ToHashSet(StringComparer.Ordinal);
+        for (var type = test.ContainingType; type is not null && IsInSource(type); type = type.BaseType)
+        {
+            foreach (var member in type.GetMembers().OfType<IMethodSymbol>())
+            {
+                var runs = member.MethodKind switch
+                {
+                    MethodKind.Constructor or MethodKind.StaticConstructor => !member.IsImplicitlyDeclared,
+                    MethodKind.Ordinary => member switch
+                    {
+                        { IsStatic: false, Parameters.Length: 0, Name: "Dispose" } => interfaces.Contains("IDisposable"),
+                        { IsStatic: false, Parameters.Length: 0, Name: "DisposeAsync" } => interfaces.Contains("IAsyncDisposable") || interfaces.Contains("IAsyncLifetime"),
+                        { IsStatic: false, Parameters.Length: 0, Name: "InitializeAsync" } => interfaces.Contains("IAsyncLifetime"),
+                        _ => member.GetAttributes().Any(a => a.AttributeClass is { } c && TestLifecycleAttributeNames.Contains(c.Name)),
+                    },
+                    _ => false,
+                };
+                if (runs)
+                {
+                    AddCall(testId, member, callerIsTest: true, origin);
+                }
             }
         }
     }

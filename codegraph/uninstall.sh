@@ -4,7 +4,8 @@
 #   ./uninstall.sh [--install-dir DIR] [--repo DIR]... [--force] [--yes]
 #
 #   --install-dir  the folder install.sh published into; default ~/.codegraph/bin
-#   --repo         a repo whose .mcp.json loses its codegraph entry and whose .codegraph/ is deleted (repeatable)
+#   --repo         a repo whose MCP configs (.mcp.json and those of the other assistants init sets up) lose their
+#                  codegraph entry and whose .codegraph/ is deleted (repeatable)
 #   --force        stop running codegraph-mcp / codegraph-index processes first
 #   --yes          do not ask before deleting
 #
@@ -22,7 +23,7 @@ while [ $# -gt 0 ]; do
         --repo)        repos+=("$2"); shift 2 ;;
         --force)       force=true; shift ;;
         --yes|-y)      yes=true; shift ;;
-        -h|--help)     sed -n '2,11p' "$0"; exit 0 ;;
+        -h|--help)     sed -n '2,12p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -62,7 +63,7 @@ if [ -d "$install_dir" ]; then
     step "Install folder: $install_dir"
     if confirm "Delete $install_dir and everything in it?"; then
         rm -rf "$install_dir"
-        echo deleted
+        echo "deleted $install_dir"
     fi
 else
     echo "no install folder at $install_dir"
@@ -92,35 +93,56 @@ for dir in "${repos[@]}"; do
     dir="$(cd "$dir" && pwd)"
     step "Repo: $dir"
 
-    config="$dir/.mcp.json"
-    if [ -f "$config" ]; then
+    # Each assistant's project config that init can write, with the key its servers sit under; Visual Studio's
+    # .vs/mcp.json sits beside the solution, so look a few folders down for it.
+    pairs=(".mcp.json:mcpServers" ".cursor/mcp.json:mcpServers" ".vscode/mcp.json:servers" ".github/mcp.json:servers"
+           ".gemini/settings.json:mcpServers" ".roo/mcp.json:mcpServers" ".kilo/kilo.json:mcp"
+           ".continue/mcpServers/codegraph.json:mcpServers")
+    while IFS= read -r vs; do pairs+=("${vs#"$dir"/}:servers"); done < <(find "$dir" -maxdepth 4 -path '*/.vs/mcp.json' -not -path '*/node_modules/*' 2>/dev/null)
+    for pair in "${pairs[@]}"; do
+        config="$dir/${pair%%:*}"
+        [ -f "$config" ] || continue
         if command -v python3 >/dev/null; then
-            python3 - "$config" "$yes" <<'PY'
+            python3 - "$config" "${pair##*:}" "$yes" <<'PY' || echo "could not read $config; remove the \"codegraph\" entry by hand" >&2
 import json, sys
-path, yes = sys.argv[1], sys.argv[2] == "true"
+path, key, yes = sys.argv[1], sys.argv[2], sys.argv[3] == "true"
 with open(path, encoding="utf-8") as f:
     config = json.load(f) or {}
-servers = config.get("mcpServers") or {}
+servers = config.get(key) or {}
 if "codegraph" not in servers:
     print(f"no codegraph entry in {path}")
     sys.exit(0)
-if not yes and input(f"Remove the codegraph server entry from {path}? [y/N] ").strip().lower() not in ("y", "yes"):
-    sys.exit(0)
+if not yes:
+    # stdin is this script (a heredoc), so ask on the terminal, as confirm() does.
+    with open("/dev/tty", "w") as out, open("/dev/tty") as tty:
+        out.write(f"Remove the codegraph server entry from {path}? [y/N] ")
+        out.flush()
+        if tty.readline().strip().lower() not in ("y", "yes"):
+            sys.exit(0)
 del servers["codegraph"]
 with open(path, "w", encoding="utf-8") as f:
     json.dump(config, f, indent=2)
     f.write("\n")
-print("entry removed")
+print(f"removed the codegraph entry from {path}")
 PY
         else
             echo "python3 is not available; remove the \"codegraph\" entry from $config by hand" >&2
         fi
-    fi
+    done
 
     if [ -d "$dir/.codegraph" ] && confirm "Delete the graph and telemetry in $dir/.codegraph?"; then
         rm -rf "$dir/.codegraph"
-        echo deleted
+        echo "deleted $dir/.codegraph"
     fi
 done
+
+# ---- Codex ------------------------------------------------------------------------------------------------
+# init --client codex puts one entry in Codex's global config rather than in a repo.
+if command -v codex >/dev/null && codex mcp get codegraph >/dev/null 2>&1; then
+    step "Codex"
+    if confirm "Remove the codegraph server from Codex's global config?"; then
+        codex mcp remove codegraph
+    fi
+fi
 
 printf '\nDone.\n'

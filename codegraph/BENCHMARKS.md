@@ -1,10 +1,13 @@
 # Benchmarks
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
 
 Numbers from `codegraph-bench` (tools/CodeGraph.Bench) against this repository's own graph, Release build,
-Linux x64, .NET 10. Query figures are the median of 7 runs after a warm-up. Index figures are one run of the
-published `codegraph-index`, so they include the MSBuild solution load.
+Linux x64, .NET 10. Query figures are the median of 7 runs after a warm-up. The bench takes 3 for the snapshot
+load, the cold freshness check (no warm-up), the live `check_change` and whole-solution diagnostics, and, with
+`--server`, 5 for calls 2 s apart. Index figures are one run of the `codegraph-index` given to `--indexer` (in the
+command below, the Release build output), so they include the MSBuild solution load. File sizes are in KB of 1,024
+bytes (`codegraph-bench`) and MB of 1,048,576 bytes (`file-growth.sh`).
 
 ```bash
 dotnet build -c Release
@@ -86,7 +89,8 @@ Graph queries are unchanged within noise, as intended: the daemon adds capabilit
 changing how the graph is queried. The index-time differences are run-to-run variance of the MSBuild load.
 The storage fix is the real change in this table: a full rebuild now writes a fresh file and swaps it in, so
 repeated rebuilds no longer double the file, and `CHECKPOINT` after every incremental write lets DuckDB reuse
-freed blocks, so a long `--watch` session plateaus instead of growing without bound.
+freed blocks, so a long `--watch` session plateaus instead of growing without bound. (Round 13 found it still
+crept under the live daemon; fixed in round 14.)
 
 ### Live daemon (`codegraph-index --watch`, measured with `--live`)
 
@@ -150,7 +154,7 @@ connecting, uses a 150 ms timeout for a socket left by a killed daemon, and reme
 **The anchor.** One read-only connection held between calls keeps DuckDB's instance loaded, so each call's
 own open drops from about 10 ms to 25 µs. It is released after 1.5 s idle, after 10 s of continuous use, and
 whenever the daemon reports pending saves, so the indexer's write lock waits at most a couple of seconds.
-Net against the original server: a cheap call is about 10× faster and `impact_of` about 2× faster.
+Net against the original server: `graph_stats` is 6 to 9× faster, `find_symbol` 3 to 4× and `impact_of` about 2×.
 
 ## Round 3: framework calls as External nodes
 
@@ -171,11 +175,12 @@ ordinary `Calls` edges for framework targets, and the final design with a separa
 | uncovered | 13 ms | 14 ms | 11 ms |
 | dead_code_report | 12 ms | 12 ms | 11 ms |
 
-The first attempt added 58% more `Calls` edges, and every recursive walk scans the edges of its kinds, so the
-solution-only walks slowed by up to 50% in an earlier run. Giving framework calls their own edge kind leaves those
-scans exactly as large as before; a walk that starts at an external member seeds its callers through the `to_id`
-index instead. Indexing costs nothing measurable because the targets were already bound for the call edges.
-The graph gains 516 framework members for this repo; `Path.Combine(string, string)` is the most called, with 37
+The first attempt added 58% more `Calls` edges (commit `eadb3e7`; the table does not count them), and every recursive walk scans the edges of its kinds, so the
+solution-only walks slowed by up to 25% in this table (`path_between`, 12 to 15 ms). The commit message
+(`eadb3e7`) says up to 50% in an earlier run, whose figures were not kept. Giving framework calls their own edge
+kind leaves those scans exactly as large as before; a walk that starts at an external member seeds its callers
+through the `to_id` index instead. Indexing costs nothing measurable because the targets were already bound for
+the call edges. The graph gains 516 framework members for this repo; `Path.Combine(string, string)` is the most called, with 37
 callers.
 
 ## Round 4: multi-target projects compiled once
@@ -255,9 +260,10 @@ layers, 10% of calls going to 20 hub methods per layer, and tests calling into r
 | path_between depth 10 | 2,368 ms | 1,553 ms | 1,061 ms |
 
 **DuckDB `USING KEY` recursion** (keeps one row per node instead of one per node and depth) was the planned
-fix for the walks. On the 150k graph it was slower, 426 ms against 251 ms for the same walk, because the
-duplicate rows it removes are only 3.3 per node; most of the walk's cost is the 105,000 nodes a hub genuinely
-reaches. It is not adopted.
+fix for the walks. On the largest graph (165k nodes) it was slower, 426 ms against 251 ms for the same walk (figures from commit
+`63fc7f0`, which does not name the walk),
+because the duplicate rows it removes are only 3.3 per node; most of the walk's cost is the 105,000 nodes a hub
+genuinely reaches. It is not adopted.
 
 **What was slow instead** was `path_between`, which enumerated every simple path up to the depth limit before
 keeping three. It is now a breadth-first search, one indexed query per level and each node visited once, then
@@ -306,8 +312,9 @@ Same machine, this repo's graph; index times are three runs each.
 | warm `find_symbol` | 6.0 ms | 5.9 ms |
 | server publish folder | 318 MB (DuckDB for every OS) | 75 MB (this platform only) |
 
-Most of the index time is JIT compilation of Roslyn and MSBuild code paths, which ReadyToRun removes; every
-one-shot index and every daemon start pays it. Warm calls are unchanged.
+About a quarter of the index time (27% of the index work, 24% of the wall time) was JIT compilation of Roslyn and
+MSBuild code paths, which ReadyToRun removes; every one-shot index and every daemon start paid it. Warm calls are
+unchanged.
 
 ## Round 9: other languages
 
@@ -399,7 +406,8 @@ namespaces, `import = require`) found that `import X = require()` produced no `I
 
 **The same answer key on old syntax and old SDKs.** The corpus writes each codebase in two dialects (`classic`:
 C# 7.3 on a `.sln`, ES5 CommonJS, Java 8, Go 1.18, Rust 2018, Python 3.8) and runs them on six Docker images
-with an older SDK and the .NET 10 runtime beside it. Four profiles, both dialects, seed 1:
+with an older SDK and the .NET 10 runtime beside it. Four profiles (three for Python, which has no multi-project
+profile), both dialects, seed 1:
 
 | toolchain | language | dialect | runs | methods found | Calls P/R (worst run) | read with |
 |---|---|---|---|---|---|---|
@@ -455,9 +463,11 @@ a pinned version changes without a redraw):
 
 Measured 2026-11-13 on three graphs: this repo (2,885 nodes, 16,955 edges), Jellyfin 10.11.11 (40 projects,
 21,174 nodes, 108,946 edges, a 47 s full index), and the round 7 synthetic shape at 165,000 methods (181,500
-nodes, 805,523 edges). "Before" is a build of `aa01b14`; "snapshot off" is this round's build with
-`CODEGRAPH_SNAPSHOT=off`. Tool calls are timed with `codegraph-bench --server`, which drives each
-`codegraph-mcp` over stdio as a client does.
+nodes, 805,523 edges). That is 10% more nodes and edges than round 7's largest graph (165k nodes, 732k edges), at
+the same 4.4 edges per node. The generator was not kept, so neither graph can be rebuilt, and how round 7's nodes
+split into methods and other kinds is not recorded. "Before" is a build of `aa01b14`; "snapshot off" is this
+round's build with `CODEGRAPH_SNAPSHOT=off`. Tool calls are timed with `codegraph-bench --server`, which drives
+each `codegraph-mcp` over stdio as a client does.
 
 **Why.** The telemetry of real sessions on this repo showed `find_symbol` at 77 to 84 ms and `impact_of` at about
 40 ms, against 4 to 15 ms in this file's tables. There were two causes. First, every walk was a recursive CTE that
@@ -547,7 +557,7 @@ matches "before" within noise, so the gain is the snapshot itself. The other cha
 from `.git` instead of starting `git rev-parse` for the freshness check, is a couple of milliseconds on Linux and
 does not show here; it matters more on Windows, where starting a process is slow. The calls 2 s apart still cost
 a few milliseconds more than back to back: the freshness check's 3 s cache has expired, so it stats every indexed
-file again (1,960 on Jellyfin). On the 165k graph a hub's walk reaches about 100,000 nodes, and most of its 30 to
+file again (1,960 on Jellyfin). On the 165k graph a hub's walk reaches about 100,000 nodes, and most of its 24 to
 40 ms is sorting and returning those rows; the tools print the nearest 200.
 
 Not done, from the plan: a binary snapshot file written by the indexer. It was meant to cut the reload after each
@@ -607,13 +617,15 @@ from memory stay under 0.8 ms (`subgraph` depth 2 is the largest); through DuckD
 
 - Jellyfin through the server, calls 2 s apart (round 11's chart): `graph_stats` 4.0 ms, `find_symbol` 7.4 ms,
   `callers_of` 2.5 ms, `impact_of` depth 5 8.5 ms, depth 20 10 ms, `covered_by` 6.1 ms. Round 11 had 1.4, 8.8, 2.2,
-  7.8, 9.7 and 5.1 ms: within run-to-run noise, so its chart stands. A full index: 44.3 and 45.3 s (was 47 s).
+  7.8, 9.7 and 5.1 ms: the walks within 20% either way and `graph_stats` 2.6 ms slower (round 13 measured 1.1 ms),
+  so its chart stands. A full index: 44.3 and 45.3 s (was 47 s); neither round recorded whether these are wall clock
+  or the indexer's own figure.
 - NestJS at `4410584` (2026-11-13), no npm install: 1,180 files, 11,228 nodes, 30,062 edges in 7.7–7.8 s, 43 MB.
   Store queries 2.7–174 ms through DuckDB, under 1.3 ms from memory (`find_symbol` and `most_called` the largest).
 - RealWorld Angular at `d426ec8`, npm packages installed: 670 nodes, 2,503 edges in 2.8–2.9 s, as in round 9. Live,
   through `--watch` (typescript-language-server ready in 4.9 s), two runs: ping 0.46 ms, symbol_at 16–17 ms, references
   129–131 ms, diagnostics one file 0.16–0.18 ms, whole workspace 14–16 ms, `check_change` on a clean edit 2.5–2.8 s.
-  Through the server, an edit that adds an error to `auth.component.ts` (one dependent): 3.5–4.8 s.
+  `check_change` through the server, on an edit that adds an error to `auth.component.ts` (one dependent): 3.5–4.8 s.
 - The corpus's large profile, seeds 1 and 2, modern dialect, 2 CPUs per container, 2 at a time: every language in
   full. Index seconds for the larger seed: JavaScript 4.24, TypeScript 6.14, Angular 8.44, Rust 12.32, C# 12.59,
   Python 13.35, Java 16.51, Go 18.16 (`docs/images/perf-index.svg`, redrawn). Go needed a fix to `run.py`: under mise,
@@ -623,17 +635,402 @@ The save-to-answer time was 0.64 s on 2026-11-09, with 687 nodes. It is about a 
 `aa01b14`, before the snapshot, takes the same 0.97–1.07 s on today's graph, so the change is the graph's size,
 not round 11. The docs said "well under a second"; they now say "about a second".
 
+## Round 13: performance and resilience after the client work
+
+Measured 2026-11-14 on the `any-mcp-client` branch, on top of `2e1799b` (Release, Linux x64, 8 cores, no
+container). The machine was not idle: other sessions held the load average between 1.3 and 4. The branch adds
+`init --client`, `--root`, argument repair and test-setup edges, so this round checks that none of it cost speed,
+and runs a resilience battery for the first time.
+
+**This repo**, a copy of its code at the branch (docs removed, code identical): 3,170 nodes, 19,297 edges.
+
+| measurement | round 13 | round 12 |
+|---|---|---|
+| full index, wall clock (the indexer's own figure), 3 runs | 16.7–17.6 s (14.3–15.0 s) | 16.2–16.3 s (13.6–14.4 s) |
+| no-op incremental index, 3 runs | 2.7–2.9 s | 2.6–2.7 s |
+| graph file after a full index, and after 3 more | 23,308–23,820 KB, flat | 20,236–20,748 KB, flat |
+| snapshot load, managed memory | 45 ms, 2 MB | 43 ms, 2 MB |
+| store queries from memory, all 14 | 0.001–0.76 ms | under 0.8 ms |
+| parity, SQL against memory | 7,776 checks over 547 nodes, 0 mismatches | |
+| live daemon resident memory, solution loaded | about 405 MB | about 380 MB |
+
+The graph has 1.6% more nodes and 3.3% more edges than in round 12, and 204 of the new edges are the test-setup
+edges. The index times moved by about as much.
+
+**Tool calls through the server**, `codegraph-bench --server`, back to back / 2 s apart: first call after start
+75 ms; `graph_stats` 0.36 / 1.1 ms; `find_symbol 'Dispose'` 1.2 / 1.5 ms; `callers_of` depth 1 0.73 / 2.8 ms;
+`impact_of` depth 5 1.2 / 2.0 ms; depth 20 0.83 / 1.1 ms; `covered_by` depth 30 0.69 / 1.2 ms. Round 12's figures
+were 0.37–1.7 ms back to back and 1.2–3.5 ms 2 s apart.
+
+**Live daemon**, `--live`, five calls each, the second run (the first found the solution still loading): ping
+0.21 ms; flush when idle 0.21 ms; symbol_at 0.37 ms; references to a source symbol 6.3 ms, to System.IO.File 17 ms;
+diagnostics for one file 0.45 ms, for the solution 138 ms; data_flow 0.54 ms; check_change on an unchanged file
+744 ms, on an edited one 1,184 ms. Six are inside round 12's ranges or within 5% of them. Four are above:
+symbol_at (0.28–0.29 ms in round 12), System.IO.File references (8.4–15 ms), one-file diagnostics (0.25–0.39 ms)
+and whole-solution diagnostics (50–104 ms). The machine was not idle, so this run cannot say whether they got slower.
+
+**Save to a fresh answer.** A new method saved into `Worktree.cs`, then `find_symbol` for it at once through
+the server (the server flushes the daemon, skipping its 500 ms wait): 10 of 10 found, median 1.43 s, range
+1.21–6.14 s; one save of the ten took 6.1 s. Round 12 measured 1.14–1.29 s for the same file.
+
+**The file under the live daemon.** A fresh full index writes 23.3 MB. The first pass after it, even one that walks
+no file, adds about 9 MB: an incremental pass re-emits every project node and its edges and rewrites the file
+stamps, and DuckDB writes the row groups it touches as new blocks. Over 100 saves the file went 32.5, 32.0, 44.3,
+45.1, 46.9, 47.1, 47.1, 46.9, 47.6, 48.4 and 49.9 MB (every 10 saves): it mostly reuses freed blocks, but it still
+creeps, by about 3 MB over the last 50 saves. A full index writes a fresh file and resets it. Fixed in
+[round 14](#round-14-the-graph-file-under-the-live-daemon).
+
+**Jellyfin** at `1fbd873`, re-indexed with this build: 21,174 nodes and 109,420 edges. Against the graph of the
+same commit from round 12, 474 edges are new and none is gone: 230 calls from a test to its class's constructor,
+7 to its `Dispose`, and the 237 TestedBy edges that go with them. Static coverage (`coverage_stats`) of its 6,689
+production methods went from 2,752 reachable from a test (41.1%) to 2,829 (42.3%): 77 methods that only test
+setup reaches now count as tested.
+
+| measurement | round 13 | round 12 |
+|---|---|---|
+| full index, the indexer's own figure (wall clock), 2 runs | 44.9–45.0 s (59.7–60.1 s) | 44.3–45.3 s (which of the two was not recorded) |
+| no-op incremental index | 0.9 s (15.8 s wall, most of it the solution load) | |
+| graph file | 126,732 KB | |
+| snapshot load, managed memory | 287 ms, 17 MB | |
+| parity | 4,626 checks over 322 nodes, 0 mismatches | |
+| through the server, 2 s apart: `graph_stats`, `find_symbol`, `callers_of`, `impact_of` depth 5 and 20, `covered_by` | 1.1, 6.8, 5.5, 8.3, 6.7, 5.6 ms | 4.0, 7.4, 2.5, 8.5, 10, 6.1 ms |
+
+**Resilience.** [`tools/CodeGraph.Bench/resilience.py`](tools/CodeGraph.Bench/resilience.py) runs each scenario on its
+own copy of this repo against the Release server and indexer. The first run found two bugs; both are fixed, and
+the second run passed all 12.
+
+| scenario | result |
+|---|---|
+| A server started before any graph exists, then the graph is built under it | Pass. Before: "no code graph at …"; after the build, the next call answers without a restart. |
+| A damaged graph file (64 random 4 KB blocks overwritten): the server | Pass. It stays up; calls that hit a damaged block now say the file is damaged and how to rebuild it. Before the fix they said only "An error occurred invoking 'find_symbol'". |
+| A damaged graph file: the indexer | Pass after a fix. Before it, both an incremental run and `--full` crashed (SIGABRT): `--full` still read the old file to keep other languages' rows. Now an incremental run rebuilds from source and `--full` skips the unreadable rows, both saying so. |
+| `kill -9` of the indexer at 5 moments of a full index and 3 of an incremental one | Pass. After every kill the graph opened and held its 3,170 nodes; the next index succeeded. |
+| 8 servers calling in a loop while the indexer ran 3 full and 3 incremental passes | Pass. 951,741 calls, 0 errors, p50 1.5 ms, p99 6.8 ms, max 673 ms (a reload after a swap); a method added between passes was found afterwards. |
+| Malformed requests: not JSON, an unknown tool, a missing or mistyped argument, depth −5 and 10⁹, a 1 MB query, control characters, an unknown id, a SQL-looking query, an id in brackets or named `symbolId` | Pass. Each got an answer, the server kept serving, and the graph was intact after. Before the fix, the missing and mistyped arguments got only "An error occurred"; now they name the problem and list the tool's parameters. |
+| The live daemon killed under a server that started it | Pass. live_status says no daemon and how to start one, graph tools keep answering, a live tool says it needs the daemon, and `live_status start=true` starts a new one. |
+| stdin closed | Pass. The server exits 0 at once. |
+| `--root` a missing folder, a file, an unexpanded `${workspaceFolder}`, or empty | Pass. Each falls back to the working directory; the battery's held no graph, so each said "no code graph at …". Run from a folder with a graph, the server answers from that graph (round 15). |
+| A file edited with no daemon | Pass. The answer starts with "⚠ STALE INDEX". |
+| `init` against a `.mcp.json` that is not an object, a `.vscode/mcp.json` with comments and trailing commas, and a read-only `.cursor/mcp.json` | Pass. The first and third exit 1 with "cannot update …" and leave the file alone; the second merges and keeps the other server (and drops the comments). |
+
+The first run also failed the stale-answer scenario, but the test was wrong: a daemon left by the scenario before
+it re-indexed the edit, so the answer was rightly fresh.
+
+## Round 14: the graph file under the live daemon
+
+Round 13 left one finding open: under `--watch` the graph file grew with every pass and kept creeping. Measured
+on 2026-11-14, Release builds, the same copy of this repo as round 13 (3,170 nodes, 19,297 edges).
+
+**The cause.** An incremental pass deleted every row of each file it re-walked, and of every project file, then
+inserted the new rows, nearly all of them the same as the ones it had deleted. It also rewrote all 107 file
+stamps and every meta key. At a checkpoint, DuckDB writes every row group and index part that a delete or insert
+touched as new blocks, then frees the old ones. Checked with DuckDB 1.5.2 on a freshly written copy of the graph
+(92 blocks of 256 KB):
+- Inserting one edge added 4 blocks. Deleting one added 7.
+- Deleting and re-inserting the 12 rows that hang off project files added 26 blocks.
+- The primary-key indexes take about 55 of the 92 blocks, the table data about 13.
+
+**The change.** An incremental pass now writes only what differs. It deletes the rows of a replaced file that the
+new rows do not have, inserts the new rows the graph does not hold, and updates a node only when a column
+changed. The same goes for search terms, vectors, file stamps and meta keys. The end state is the one the old
+delete-and-insert gave. `Replace` in `GraphStore.cs`; a full index is unchanged.
+
+**This repo, the command-line indexer.** [`file-growth.sh cli`](tools/CodeGraph.Bench/file-growth.sh): a full
+index, 8 no-op passes, then 30 passes that each change one method in `Worktree.cs` (10
+files walked). "Before" is this branch's build without the change.
+
+| graph file | before | after |
+|---|---|---|
+| fresh full index | 23.0 MB | 23.0 MB |
+| 8 no-op passes | 32.0–33.8 MB | 25.0–26.3 MB |
+| 30 edit passes | 33.0–44.5 MB, rising from 42.5 to 44.5 over the last 20 | 36.0–38.5 MB, no trend |
+
+**This repo, the live daemon.** [`file-growth.sh daemon`](tools/CodeGraph.Bench/file-growth.sh): a full index, then
+`--watch`, then 150 saves 3 s apart, each changing one method in `Worktree.cs`. The file size is read every 10
+saves. "Before" is the 1.1.0 build, whose `Replace` is the code before this change.
+
+| | 1.1.0 | this build, run 1 | this build, run 2 |
+|---|---|---|---|
+| fresh full index | 23.3 MB | 23.0 MB | 23.3 MB |
+| once the daemon is up | 32.3 MB | 25.0 MB | 25.3 MB |
+| saves 10 to 150 | 43.8 → 51.0 MB, rising | 30.3–38.0 MB, 37.0 at save 150 | 37.8–38.3 MB |
+| passes, the indexer's own time, including the start-up pass | 150, median 1.4 s (0.3–6.9 s) | | 149, median 1.0 s (0.2–7.8 s) |
+
+Round 13 measured 32.5 → 49.9 MB over 100 saves with the build before this change. The remaining room above the
+fresh 23 MB is where DuckDB writes a pass's touched row groups before it frees the old ones. The file reuses it
+and has stopped growing: 150 saves in two runs showed no trend. The pass times come from a machine that other
+sessions were also loading, so read them as "no slower", not as a speed-up.
+
+**Jellyfin** at `1fbd873`, the command-line indexer. A full index, a no-op pass, 5 passes that each add a class
+to `MediaBrowser.Model/Entities/MediaStream.cs` (61 files walked), then one that restores the file.
+
+| | 1.1.0 | this build |
+|---|---|---|
+| fresh full index | 124.5 MB | 124.5 MB |
+| after the no-op pass | 171.8 MB, 0.9 s | 126.5 MB, 0.3 s |
+| after each of the 6 edit and restore passes | 199.3–240.3 MB | 161.8–173.0 MB |
+| edit pass, the indexer's own time | 22.9–28.3 s | 21.4–24.6 s |
+
+These are 7 passes, too few to show whether Jellyfin's file levels off; this repo's 150 saves do.
+
+**Still the same graph.** After the restore pass, every table was compared with a fresh full index of the same
+source (`EXCEPT` both ways). Both graphs had 0 rows that differed:
+- this repo: 3,170 nodes, 19,297 edges, 19,387 edge origins, 107 file stamps, 2,112 search documents and 62,094
+  search terms;
+- Jellyfin: 21,174, 109,420, 110,217, 2,021, 17,010 and 370,629.
+
+Neither graph has vectors, so the vector path is covered by the unit tests only. All 428 tests pass. One new
+test runs 10 unchanged passes over a 5,000-node graph. On the 1.1.0 code it fails: the file grew 15,360 KB from
+9,740 KB, and its test class took 42.8 s instead of 4.7 s. A second new test checks that a pass swaps a node's
+search terms.
+
+**Not done.** The file could be compacted back to its fresh size: DuckDB's `COPY FROM DATABASE` copied the grown
+graph into a 23.0 MB file in 0.54 s, with every index and key. Now that the file no longer grows, it is not worth
+swapping the file under the readers for that.
+
+## Round 15: Windows
+
+On 2026-11-14 a Claude Code session on Windows 11 Pro (10.0.26300, x64) ran the branch at `2d13546`. It used the
+.NET 10.0.404 SDK, PowerShell 7.7.0 and Windows PowerShell 5.1, and Python 3.14.7. That session's report is
+`windows-report.md` on the `windows-test-results` branch, and these figures come from it. Its raw logs stayed on
+that machine.
+
+| check | result |
+|---|---|
+| test suite | 425 passed, 0 failed, 3 skipped: two need the TypeScript extractor's npm packages, which were not installed yet, and one uses a shell-script stand-in for a SCIP indexer |
+| full index of this repo, 2 runs | 3,207 nodes, 19,577 edges, 13.8–14.7 s (17.0–18.2 s wall), 20.3–20.5 MB |
+| no-op index | 0.2 s (3.3 s wall), file 22.3 MB |
+| 3 full indexes while a server answered `codegraph-bench --server` | all 3 finished (13.5–13.8 s each); a search of the indexer and bench output for "denied", "another process", "IOException", "exception" and "error" found only "0 compile error(s)"; the bench answered every call, after its first in 0.55–2.7 ms during the indexes, 0.53–2.8 ms after them and 0.56–2.4 ms with no index running |
+| `install.ps1 -FromSource -Client copilot,cursor,roo`, in pwsh 7 and in 5.1 | exit 0 in both; the 6 config files were byte-identical after each; VS Code and Cursor got `--root ${workspaceFolder}`, Visual Studio (`.vs\mcp.json` beside the solution) and JetBrains (`.github\mcp.json`) got the absolute root |
+| one stdio call from the set-up repo | initialize 426 ms, `graph_stats` 58 ms |
+| live daemon, one method added to `Worktree.cs`, on the unrestored clone (2,951 nodes; the pass reported 26 compile errors) | 10 files walked in 4.1 s; the new graph was ready 4.6 s after the save; `find_symbol` 105 ms for the first call, 4 ms for the second |
+| `uninstall.ps1`, in pwsh 7 and in 5.1 | all 6 entries removed; another server and another key added to each file were kept |
+| resilience battery | 11 of 12 after a stand-in for `SIGKILL` (below); R4: 424,812 calls from 8 servers during 6 writes, 0 errors, p99 6.9 ms |
+
+The same commit indexed on Linux after a `dotnet restore` gives the same 3,207 nodes and 19,577 edges. The 3,170
+nodes in rounds 13 and 14 came from an older copy of the repo.
+
+**What it found, and what changed:**
+
+- **The indexer crashed when the only SDK installed was a newer one.** With the .NET 11.0.100 SDK alone, every
+  index died at once with exit -532462766, an unhandled "No instances of MSBuild could be detected". The indexer
+  runs on .NET 10, and MSBuildLocator only offers an SDK that the running runtime can load. Now it stops with exit 1
+  and says what to install: the .NET 10 SDK. A build from source can also set `DOTNET_ROLL_FORWARD=LatestMajor`;
+  on Windows, with that set, the tests passed (425) and the index counts were the same. Installing SDK 10.0.404
+  also cured it.
+- **A clone whose packages were never restored indexed incompletely, with no clear warning.** The fresh clone gave
+  2,951 nodes and 17,155 edges with 1,168 compile errors (the first was `CS0246 … 'DuckDB'`), and nothing said why.
+  The next no-op passes then reported 0 compile errors, because a pass that walks no file wrote zeros over the
+  figures. On Linux the same unrestored commit gives 2,316 nodes, and its first error is CS0518 "System.Object is not
+  defined", the case the existing "not restored" note covers. Now:
+  - a project with missing-type errors (CS0246, CS0234) and no `obj/project.assets.json` gets the note "its NuGet
+    packages were not restored … Run dotnet restore and index again", even when the framework resolves;
+  - a pass that walks no file keeps the compile figures and notes of the last walk.
+- **The resilience script did not run on Windows.** `signal.SIGKILL` does not exist there, so it stopped at R3. The
+  Windows session ran it through a shim that maps `SIGKILL` to `SIGTERM`, which calls `TerminateProcess` on
+  Windows, the same hard kill. With the shim, R3 still failed, but every graph after a kill was whole: the answer
+  began with "⚠ STALE INDEX", and the script read that warning as part of the node count. The script now kills
+  with `Popen.kill()` (or `SIGTERM` where there is no `SIGKILL`), and it reads the count past the warning.
+- **Uninstall under Windows PowerShell 5.1 rewrote each config file in 5.1's own layout.** The content was the
+  same, but the layout made every line show as changed. `uninstall.ps1` now lays the JSON out as `init` writes it,
+  2 spaces a level, and it turns 5.1's `\u003c`-style escapes back into the characters. Checked in pwsh on
+  Linux against 5.1's layout as the report quotes it: content and layout come out the same, and running it twice
+  changes nothing.
+
+**The re-test on Windows**, the same machine on 2026-11-14 at `d3350b3`, with SDKs 10.0.404 and 11.0.100
+installed. Its report is `windows-report-2.md` on the same branch.
+
+| check | result |
+|---|---|
+| test suite | 434 passed, 1 failed, 1 skipped (the shell-script stand-in). The TypeScript packages were installed now, so the live TypeScript test ran for the first time on Windows, and it failed: below |
+| fresh clone, not restored, `--full` | the "not restored" note for the 4 projects with missing types (Core 19 errors, Indexer 163, Mcp 76, Tests 929); none for Web and Bench; 2,975 nodes, 17,322 edges |
+| the same clone, a pass without `--full` | 0 files walked; the graph meta and `index_status` still read 1,187 compile errors and the 4 notes |
+| after `dotnet restore`, `--full` | 3,232 nodes, 19,777 edges; a restored clone of `2d13546` gives 3,207 and 19,577, the same as Linux |
+| `uninstall.ps1` in Windows PowerShell 5.1 | exit 0; all 6 config files kept the other server and key, 2-space indents, LF, no BOM, the layout `init` writes |
+| resilience battery, no shim | 12 of 12. R3: 5 kills, each leaving the graph whole (3,232 nodes). R4: 435,009 calls, 0 errors, p99 6.4 ms, max 526 ms |
+
+It found two more things, now changed:
+
+- **The live TypeScript test could not read the daemon's log on Windows.** It read `daemon.log` with
+  `File.ReadAllText` to build its assertion messages, and it built them even when the assertion passed. The daemon
+  holds the file open for writing, and Windows refuses a reader that only shares for reading, so the test failed
+  with an IOException 3 times in 3. The test now opens the log sharing read and write. Linux does not lock the
+  file, so only a Windows run can show the fix works. The Windows CI run of pull request #4 at `7c726c2` (run
+  43700576787, the first CI run with the TypeScript packages installed before the tests) got past the log read,
+  then failed further on: both references came back with no enclosing member (`[null, null]`). The URI code
+  bundled in typescript-language-server (`lib/cli.mjs`) lower-cases a Windows drive letter and percent-encodes
+  its colon (`file:///d%3A/…`); .NET reads that as the rooted path `/d:/…`, which became `D:\d:\…` (run 43701266400
+  showed this in a unit test), while the graph holds the path as the extractor resolved it (`D:\…`), and the lookup from a
+  position to its member compared paths exactly. On Windows it now drops that leading slash, upper-cases the
+  drive letter, and compares paths without case. With that, references and rename passed on Windows (run
+  43701724025), and `check_change` failed instead: no new errors where 2 were expected. Diagnostics were stored
+  under the server's URI (`file:///c%3A/…`) and looked up under .NET's (`file:///C:/…`), so none was ever found;
+  the same mismatch made the start-up wait for a first file's diagnostics run out its 60 s (the daemon logged
+  "typescript-language-server ready in 66.6s"). Published diagnostics are now stored under .NET's form. In run
+  43702208790 at `b239329` the test passed on Windows (440 passed, 1 skipped: the shell-script SCIP test), and
+  Linux and macOS passed 439 with 2 skipped (the Windows-only path tests). The test prints the daemon's log only
+  when it fails, so the start-up time after the fix was not recorded.
+- **The uninstall did not name what it removed.** It printed "entry removed" once per file and "deleted" for each
+  folder. `uninstall.ps1` and `uninstall.sh` now print the path of each file and folder. Both were run here against
+  a scratch install and repo.
+
+`--root` with a folder that holds no graph still falls back to the graph of the folder the server runs in (R8
+passes); this is unchanged since the first run.
+
+**The third run on Windows**, the same machine on 2026-11-15 at `af1eab5`, with Node v24.20.0. Its report is
+`windows-report-3.md` on the same branch.
+
+| check | result |
+|---|---|
+| test suite | 441: 440 passed, 0 failed, 1 skipped (the shell-script SCIP test); the live TypeScript test and all 5 `LspPathTests` ran and passed |
+| install from source, pwsh 7 and 5.1 | exit 0 in both, no `note:` line |
+| restored clone, `--full` | 3,244 nodes, 19,843 edges; 11.2 s by the indexer, 14.6 s wall; 23,605,248 bytes |
+| C# live daemon, 5 saves adding a method to `Worktree.cs` | the first `find_symbol` after each save found the method 4,433, 2,239, 2,107, 1,915 and 1,485 ms after the write (10 files walked each time, 1.4–4.4 s) |
+| the daemon's memory (`live_status`) | 140 MB working set before the saves, 369 MB after them, 393 MB after the restore |
+| `uninstall.ps1` in Windows PowerShell 5.1 | exit 0; one line naming each file and folder; all 6 files kept the other server and key, with 2-space indents |
+| resilience battery, no shim | 12 of 12; R4: 438,207 calls, 0 errors, p99 6.0 ms, max 528 ms |
+
+It found two more things, now changed:
+
+- **`install.ps1` took an unknown option for a repo.** `$Repo` collects the arguments no parameter matches, so
+  `.\install.ps1 -ObsidianVault x` (the parameter retired in this branch) downloaded release 1.1.0 into the
+  default `C:\tools\codegraph`, then failed to set up "repos" `-ObsidianVault` and `x`. The test plan asked for
+  that command and expected an error. `C:\tools` did not exist before the run, and the user deleted it after.
+  `install.ps1` now stops with "unknown option" before it downloads or writes anything, as `install.sh` already
+  did; checked here in pwsh with `-ObsidianVault x` and `-Bogus`, and the install folder was not created.
+- **The daemon's log held its progress spinner.** 322 of the 513 lines of the daemon's `--log` file were spinner
+  frames. The status line turns itself off when stderr is redirected, but `--log` points stderr at a file from
+  inside the process, which that check does not see. `--log` now turns it off. Checked here by indexing this repo
+  with `--log` under a terminal: without the change, all 8 log lines carried spinner redraws (carriage returns);
+  with it, none did.
+
+The first `find_symbol` after each save returned the new method, so each figure in the live-daemon row is the
+time of one call that waited for the daemon's pass, not of a polling loop.
+
+**The fourth run on Windows**, at `ef202fe` on the same day, checked those two changes. Its report is
+`windows-report-4.md` on the same branch. The suite passed 440 of 441, with 1 skipped (the shell-script SCIP test).
+`install.ps1 -ObsidianVault x` and `-Bogus`, each with an `-InstallDir` under the test folder, stopped with
+"unknown option" in pwsh 7 and in Windows PowerShell 5.1 (exit 1 with `-File`): no download, no install folder,
+and no `C:\tools`. A daemon started with `--log` in its own console window, through 3 saves and a restore, wrote a
+47-line log with no spinner frame and no bare carriage return; the run-3 log had 322 spinner lines and 448 bare
+carriage returns in 513 lines. Every line of a Windows log ends in CRLF, so the plan's count of lines holding a
+carriage return (47 of 47) did not measure the spinner; the bare ones did. The daemon's passes for the 3 saves
+took 4.2, 2.1 and 2.1 s.
+
+**The battery on Linux with the changed script**, this build. R3 now passes: 8 kills, 5 during full indexes and 3
+during incremental ones, the graph whole (3,170 nodes) after each. 11 of 12 passed. R4 had 8 errors in 891,861 calls; each answer began with the "⚠ STALE
+INDEX" banner, and the script kept only its first 80 characters, so the error itself was lost. Run alone three
+more times (R4 cut out of the script into a scratch copy that printed each error in full; that copy is not
+committed), R4 passed each time with 0 errors in 853,764–904,146 calls. The slowest call took 8.6–14.1 s, against
+673 ms in round 13. The load average was 20–31 on 8 cores during those runs, against 1.3–4 in round 13. This
+section first said other sessions held it there; that was not measured, and round 16 shows R4 raises the load that
+far by itself. So these runs cannot say whether anything got slower. The cause of the 8 errors is open (round 16
+ran R4 26 more times on three systems, with no error). The script now keeps each error's whole text and prints the
+first 400 characters of the first 3.
+
+## Round 16: macOS, and R4 on its own on three systems
+
+**macOS.** On 2026-11-15 a Claude Code session on an Intel Mac (macOS 15.7.9, x86_64, 8 logical CPUs, 16 GB) ran
+the branch at `a3150ec`, with the .NET 10.0.302 SDK, Node v24.19.0 (from nvm) and Python 3.9.6. Its report is
+`mac-report-1.md` on the `mac-test-results` branch, with the R4 records `idle.jsonl` and `loaded.jsonl`. The Mac
+rebooted at 15:58, between the uninstall and the resilience battery; no panic report was found, so the cause is not
+known. macOS clears `/tmp` at boot, and the test folder was under `/tmp`, so the logs of the steps before the reboot
+were lost: those rows come from the console output the session kept. The battery and R4 ran on a folder rebuilt
+at the same commit.
+
+| check | result |
+|---|---|
+| test suite | 441: 439 passed, 0 failed, 2 skipped (the Windows drive-letter tests) |
+| Release build, `-warnaserror` | exit 0, 0 warnings, 0 errors |
+| `install.sh --from-source`, run from `/tmp/cg-mac1/src/codegraph` | failed 2 times in 2: first CS0006 (a Debug reference assembly not found), then CS0103 (`DuckDB` not found) in the publish step; below |
+| the same, run from `/private/tmp/cg-mac1/src/codegraph` | exit 0 |
+| `install.sh`, release 1.1.0 | downloaded `codegraph-osx-x64.tar.gz`, checksum ok, exit 0; `--version` printed 1.1.0; no Gatekeeper message, no quarantine attribute |
+| `install.sh --bogus` | "unknown option: --bogus", exit 1, no install folder |
+| restored clone, `--full` | 3,245 nodes, 19,848 edges; 16.2 s by the indexer, 21.11 s wall |
+| C# live daemon, 5 saves each adding a method to `Worktree.cs` | `find_symbol`, polled every 0.2 s, found the method 5.49, 2.80, 2.90, 2.81 and 2.33 s after the save; the daemon's passes took 5.2, 2.4, 2.6, 2.6 and 2.5 s |
+| the daemon's memory (`live_status`) | 162 MB working set before the saves, 356 MB after them |
+| the daemon's `--log` file | 66 lines, no bare carriage return |
+| `init --client claude,copilot,cursor,roo`, then `uninstall.sh --yes` | one line naming each file and folder; all 6 config files kept another server and another key |
+| resilience battery, after the reboot | 12 of 12; R4: 1,094,370 calls, 0 errors, p99 4.3 ms, max 582 ms |
+
+`uninstall.sh` without `--yes` asks on the terminal; a Claude Code session has none, so that prompt was not tested
+in this run. The second Mac run, below, tested it.
+
+**What it found, and what changed:**
+
+- **A checkout reached through a symlink built twice.** On macOS `/tmp` is a symlink to `/private/tmp`. The OS
+  reports a process's working directory with symlinks resolved, and MSBuild tasks resolve a relative item against
+  that directory. A solution opened as `/tmp/...` therefore had CodeGraph.Core and CodeGraph.Indexer under two
+  spellings: `dotnet restore` restored them twice (8 "Restored" lines for 6 projects; once it failed with
+  "nuget.g.props already exists"), the Release build also built them in Debug, and the from-source install failed at
+  random. Commit `f007cdd` adds `Directory.Build.targets`, which makes each project reference, embedded resource and
+  copied None or Content item absolute in the spelling of the solution; `install.sh` and `tools/release/package.sh`
+  resolve their own folder with `pwd -P`; and `tests/install-through-symlink.sh` clones the repo, reaches the clone
+  through a symlink, and restores, builds and installs from source through it. The macOS CI job runs that script,
+  and since the commit after `43aeb92` the Linux job does too.
+  Linux resolves the working directory the same way, so the script shows the bug there too. On Linux on 2026-11-15,
+  with the .NET 11.0.100 SDK (`global.json` rolls forward to the latest major):
+
+  | commit | `install-through-symlink.sh` | test suite through the symlink |
+  |---|---|---|
+  | `a3150ec`, before | exit 1: "restored more than once: CodeGraph.Core.csproj CodeGraph.Indexer.csproj" | the first build failed in restore ("project.assets.json already exists"); the second passed but also built CodeGraph.Core and CodeGraph.Indexer in Debug, and the suite then ran 421 of 441 tests: 88 passed, 331 failed ("Could not load file or assembly 'CodeGraph.Core'"), 2 skipped. The test output had no `Fixtures/` folder, and the web UI was embedded as `CodeGraph.Mcp.index.html` |
+  | `f007cdd`, after | exit 0: each of 6 projects restored once, Release output only, the install's executables start (`--version` 1.1.0) | 441: 439 passed, 0 failed, 2 skipped (the Windows drive-letter tests); the Release build printed no Debug output; the fixtures were in `Fixtures/`, and the web UI was embedded as `CodeGraph.Mcp.wwwroot.index.html` |
+
+  In CI run 43758540573 at `78a7307`, the macOS job (an Apple silicon runner; the install published osx-arm64)
+  ran the script: each of 6 projects restored once, Release output only, and the install finished. The suite
+  passed there 439 of 441 with 2 skipped, as on Linux; Windows passed 440 with 1 skipped.
+
+**The second Mac run**, the same Intel Mac on 2026-11-15 at `1a9ee1c`, checked the fix there and the uninstall
+prompt. Its report is `mac-report-2.md` on the `mac-test-results` branch; its step logs stayed on the Mac.
+
+| check | result |
+|---|---|
+| test suite | 441: 439 passed, 0 failed, 2 skipped (the Windows drive-letter tests) |
+| `install.sh --from-source --skip-tests` from `/tmp/cg-mac2/srcN/codegraph`, 3 fresh clones | exit 0 in 3 of 3 (2 of 2 failed in the first run); no `bin/Debug` line; each project restored once per dotnet command, every path spelled `/private/tmp`; `--version` 1.1.0 |
+| `tests/install-through-symlink.sh` | exit 0: each of 6 projects restored once, Release output only, the install finished |
+| `uninstall.sh` on a terminal (`script -q /dev/null`), every answer `n` | asked for the install folder and both config files; removed nothing |
+| the same, every answer `y` | asked the same 3 times; deleted the install folder and both codegraph entries, naming each path |
+
+Through `script`, the exit code of `uninstall.sh` itself cannot be seen, so it was not recorded. `init`, run as
+`/tmp/cg-mac2/bin3/codegraph-index`, wrote the server's path as `/private/tmp/cg-mac2/bin3/codegraph-mcp`; the
+uninstall found and removed those entries. After it, each config file held `{"mcpServers": {}}`.
+
+**R4 on its own.** Round 15's 8 errors were never seen in full, so R4 was cut out of the battery into a script that
+repeats it, keeps every error's whole text, and can start CPU burners (processes that spin in a loop) for the whole
+run. Each run copies an indexed clone, starts 8 servers with a reader thread each, and runs 3 full and 3
+incremental indexes under them. All runs were at `a3150ec`, on 2026-11-15. Load is the 1-minute load average at
+the end of each run.
+
+| system | runs | burners | calls per run | errors | p99 | slowest call | load |
+|---|---|---|---|---|---|---|---|
+| Linux, 8 cores | 3 | 0 | 879,968–964,092 | 0 | 6.2–52.2 ms | 495–678 ms | 24.6–30.5 |
+| Linux, 8 cores | 5 | 24 | 862,275–950,361 | 0 | not kept (59.2 and 66.5 ms in the 2 runs whose lines remain) | 468–1,354 ms | 21.4–33.2 |
+| Windows 11, 12 logical CPUs | 3 | 0 | 443,802–452,862 | 0 | 6.0–6.2 ms | 547–921 ms | none on Windows |
+| Windows 11, 12 logical CPUs | 6 | 36 | 212,754–368,403 | 0 | 123.8–229.7 ms | 6,280–10,343 ms | CPU 100% in 12 of 12 samples, queue 99–168 |
+| macOS, 8 logical CPUs | 3 | 0 | 1,043,673–1,089,801 | 0 | 4.2–4.4 ms | 418–475 ms | 56.5–63.4 |
+| macOS, 8 logical CPUs | 6 | 24 | 699,690–795,456 | 0 | 12.7–12.8 ms | 1,459–1,607 ms | 105.6–115.3 |
+
+The Windows records are in `windows-5/` on the `windows-test-results` branch (`windows-report-5.md`), the Mac's on
+`mac-test-results`. The Linux records were kept in a scratch folder that was later cleaned; the ranges above were
+read from them before that, and 2 of the 5 loaded runs' printed lines survive in the session log. Every writer in
+all 26 runs exited 0.
+
+No run had an error. The slowest call, 10,343 ms on Windows with 36 burners, was the only one over 10 s, and it
+stayed under the 15 s a reader waits for the graph's lock. With no burners the load average was 24.6–30.5 on
+Linux and 56.5–63.4 on the Mac, so R4's own 8 servers, 8 readers and indexer make most of that load. The cause of
+round 15's 8 errors is still open: these runs neither reproduce them nor show what they were.
+
 ## Where it ended up
 
 This repo's own graph, first baseline against the build before round 11 and the build after it, same machine and
 method. The graph grew 5 times over the work: the repo grew, and framework calls became External nodes.
 
-| measurement | first baseline | before round 11 | with the graph in memory |
+| measurement | first baseline | before round 11 (`96c5701`) | with the graph in memory (round 11) |
 |---|---|---|---|
 | graph | 595 nodes, 3,558 edges | 1,583 nodes, 8,784 edges | 2,885 nodes, 16,955 edges |
 | full index | 11.5 s | 10.5 s | 16.2 s (3,119 nodes, 18,685 edges, round 12) |
-| no-op incremental index | 3.5 s | 2.5 s | 2.6 s |
-| graph file after 3 more full rebuilds | 15,884 KB (and growing) | 12,556 KB (flat) | 20,748 KB (flat) |
+| no-op incremental index | 3.5 s | 2.5 s | 2.6 s (round 12) |
+| graph file after 3 more full rebuilds | 15,884 KB (and growing) | 12,556 KB (flat) | 20,748 KB (flat, round 12) |
 | open per tool call | 11 ms | 0.024 ms while the anchor holds the graph | none for graph reads |
 | impact_of depth 20 (store) | 7.9 ms | 8.6 ms | 0.067 ms |
 | path_between depth 10 (store) | 11 ms | 3.9 ms | 0.006 ms |
@@ -644,12 +1041,19 @@ method. The graph grew 5 times over the work: the repo grew, and framework calls
 | `graph_stats` through the server | 12.1 ms | 1.3 ms | 0.34 ms |
 | `impact_of` depth 5 through the server, calls 2 s apart | | 29 ms (`aa01b14`) | 1.1 ms |
 
+The "before round 11" figures were measured when this section was first written (`96c5701`, 2026-11-09) and are in
+no round's table. The store figures and the back-to-back server figures in the last column come from round 11's
+bench runs on this repo; round 11's table for this repo prints only the first call and the calls 2 s apart.
+Round 12 measured the same server calls back to back: `find_symbol` 1.1 ms, `impact_of` depth 5 1.1 ms,
+`graph_stats` 0.37 ms.
+
 Store queries held steady while the graph grew, until round 11 took them out of the database: they now cost
 microseconds here and stay under 2 ms on Jellyfin. Tool calls through the server went from 12 to 28 ms at the
 start to about a millisecond; on large solutions `path_between` is 15 to 60 times faster than it was, traversal
-answers are about 150 times smaller, and walks are 10 to 5,000 times faster than the SQL they replaced (the low
-end on a hub that reaches 100,000 nodes, where the time is in returning the rows).
+answers are about 100 to 150 times smaller, and walks are about 10 to 17,000 times faster than the SQL they replaced
+(round 11: the low end is `impact_of` depth 5 on its 165,000-method graph, 378 to 40 ms, on a hub that reaches about 100,000
+nodes, where the time is in returning the rows; the high end is `path_between` on Jellyfin, 50 to 0.003 ms).
 
 ---
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)

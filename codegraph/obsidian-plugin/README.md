@@ -1,6 +1,8 @@
 # CodeGraph for Obsidian
 
-[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin**
+Retired for now: the Obsidian plugin and export are not shipped or supported. The code stays in the repository; this page describes it as it was at commit 07bcb17.
+
+[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin (retired)**
 
 This plugin turns a repo's code graph into notes in an Obsidian vault. Developers, architects, testers and product
 people can then browse the code the way they browse their other notes, and the plugin adds a panel that answers
@@ -37,7 +39,7 @@ Everything in `_code/` is generated. Each note there carries `codegraph: generat
 rewritten on every export. The exporter:
 
 - deletes only notes it wrote before (listed in `_code/.codegraph-export.json`);
-- leaves alone any file in the folder without the `codegraph: generated` marker;
+- never deletes a file without the `codegraph: generated` marker, but overwrites any file at a generated note's path;
 - refuses to write into a folder that is not empty and has no export manifest.
 
 Keep feature notes, decisions and onboarding pages outside `_code/`, for example in `docs/`. Link them into the
@@ -48,7 +50,7 @@ links survive every rebuild.
 
 1. Set the repo up for CodeGraph once: `codegraph-index init` inside it (see the main README). This writes
    `.mcp.json` with the server's command and environment, which the plugin can reuse once you approve it (below).
-2. Install the plugin into a vault:
+2. Install the plugin into a vault. From the `codegraph/` folder of a checkout:
 
    ```bash
    node obsidian-plugin/install-plugin.mjs ~/Notes/MyVault        # or: install.sh --obsidian-vault ~/Notes/MyVault (downloads codegraph-obsidian.zip from the release)
@@ -87,9 +89,10 @@ Every type note's frontmatter has these fields:
 
 - `codegraph_id`, `kind`, `type_kind`, `accessibility`, `project`, `language`;
 - `file` and `line`;
-- `is_test`;
-- `tested_by` (test types) and `test_count`;
-- `inbound_refs` (members outside the type that use it).
+- `is_test` (the type holds tests);
+- `tested_by` (the test types whose tests call the type or its members directly) and `test_count` (the number of
+  those tests);
+- `inbound_refs` (uses from outside the type: each pair of a user and the type or member it uses counts once).
 
 With the [Dataview](https://github.com/blacksmithgu/obsidian-dataview) plugin you can query the code as a table:
 
@@ -120,14 +123,15 @@ codegraph-index export obsidian --out ~/Notes/MyVault/_code [--db <graph.db>] [-
 
 The plugin is plain CommonJS with no dependencies. `lib/` holds the parts that don't use the Obsidian API: the MCP
 client, the tool-output parser, links and launch configuration. `src/main.js` is the Obsidian side. Obsidian loads
-a single file, so `build.mjs` bundles both into `main.js`, which is checked in.
+a single file, so `build.mjs` bundles both into `main.js`, which is checked in. From `obsidian-plugin/`:
 
 ```bash
 node build.mjs     # writes main.js
 npm test           # node --test: parser, links, config, MCP client against a fake server, bundle check
 ```
 
-Edit `src/` and `lib/`, never `main.js`. The tests fail when `main.js` is out of date.
+Edit `src/` and `lib/`, never `main.js`. The tests fail when `main.js` is out of date. `npm test` needs Node 22 or
+later: Node 20 does not expand the test glob. `install-plugin.mjs` runs on Node 20.
 
 Two more test layers run in Docker:
 
@@ -138,4 +142,4 @@ Two more test layers run in Docker:
 
 ---
 
-[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin**
+[CodeGraph](../README.md) · [Docs](../docs/README.md) · [MCP server](../MCP-SERVER.md) · [Extractors](../EXTRACTORS.md) · [Benchmarks](../BENCHMARKS.md) · [Prompts](../PROMPTS.md) · [Changelog](../CHANGELOG.md) · [Claude Code plugin](../plugin/README.md) · **Obsidian plugin (retired)**

@@ -1,6 +1,8 @@
 # Obsidian end-to-end
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · **Obsidian end-to-end**
+Retired for now: the Obsidian plugin and export are not shipped or supported. The code stays in the repository; this page describes it as it was at commit 07bcb17.
+
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · [With and without](../eval/README.md) · **Obsidian end-to-end (retired)**
 
 This harness runs the CodeGraph plugin inside real Obsidian, headless in Docker, against a generated codebase from
 [tools/corpus](../corpus/README.md). It tests what the unit tests and the corpus checks can't:
@@ -10,11 +12,11 @@ This harness runs the CodeGraph plugin inside real Obsidian, headless in Docker,
 - the plugin's commands and live panel in the real app.
 
 ```bash
-python3 tools/obsidian-e2e/run.py --base foundry-field-test:none                      # 1.5.12 and 1.8.9, C# and TypeScript
+python3 tools/obsidian-e2e/run.py --base <image>                                      # 1.5.12 and 1.8.9, C# and TypeScript
 python3 tools/obsidian-e2e/run.py --base <image> --versions 1.8.9 --langs csharp --no-build
 ```
 
-`--base` is a local image with the .NET 10 SDK, Node 22 or later and Python 3, the same one the corpus uses.
+`--base` is a local image with the .NET 10 SDK, Node.js 22.22.3+ or 24.15+ and Python 3, the same one the corpus uses.
 `run.py` does the following:
 
 1. Publishes `codegraph-index` and `codegraph-mcp`.
@@ -23,7 +25,7 @@ python3 tools/obsidian-e2e/run.py --base <image> --versions 1.8.9 --langs csharp
 3. Runs one container per version and language with `--network none`. With no network, Obsidian can't fetch a
    newer `app.asar`, so the version tested is the version named.
 
-The default versions are 1.5.12, the plugin's `minAppVersion`, and 1.8.9. Obsidian isn't open source, so build
+The default versions are 1.5.12, a 1.5 release (the plugin's `minAppVersion` is 1.5.0), and 1.8.9. Obsidian isn't open source, so build
 these images locally and never publish them.
 
 ## What a run does
@@ -45,7 +47,7 @@ these images locally and never publish them.
 | the plugin loads | it is enabled, and it set its server and indexer up from `.mcp.json` and the data file |
 | Rebuild code notes | the command writes the notes and Obsidian's metadata cache holds every one |
 | every link resolves | `metadataCache.getFirstLinkpathDest` finds each link's note, each `#heading` is one of its headings, and nothing under `_code/` is in `unresolvedLinks` |
-| frontmatter parses | each code note's frontmatter has the fields Dataview queries, with the right types |
+| frontmatter parses | each note under `_code/Types/` and `_code/Files/` has `codegraph: generated`, a string `codegraph_id`, a list `tested_by`, a number `inbound_refs`, a boolean `is_test` and a list `aliases` |
 | the live panel answers | for the most-used type, opened in a note |
 | picking a member | the drop-down changes member, the Callers tab lists rows, and every row link resolves |
 | clicking a row | opens that row's note |
@@ -58,8 +60,8 @@ these images locally and never publish them.
 | no plugin errors | no exception or console error mentioning codegraph |
 
 Each run writes `<name>.json` with every step's outcome and details, and `<name>.out` with the container's output.
-It also keeps Obsidian's log and takes screenshots of the panel, the search box, the stale banner and the final
-state. `summary.md` puts the steps side by side for every version and language.
+It also keeps Obsidian's log and takes screenshots of the panel, the .mcp.json dialog, the search box, the stale
+banner and the final state. `summary.md` puts the steps side by side for every version and language.
 
 ## Screenshots for the docs
 
@@ -68,7 +70,7 @@ state. `summary.md` puts the steps side by side for every version and language.
 show real names:
 
 ```bash
-./install.sh                                    # installs codegraph-index and codegraph-mcp, indexes this repo
+./install.sh --from-source .                    # builds codegraph-index and codegraph-mcp from this checkout, indexes this repo
 python3 tools/obsidian-e2e/screenshots.py       # writes docs/images/obsidian-*.png
 python3 tools/obsidian-e2e/screenshots.py --version 1.8.9 --type CodeGraph.Core.GraphStore --member Replace
 ```
@@ -79,7 +81,9 @@ The script does the following:
 2. Mounts the copy at the repo's own path, and the NuGet package folder read-only, so the graph's file paths stay
    valid and the panel reports the index as fresh.
 3. Starts Obsidian 1.8.9 at 1600×1000 with the dark theme and `--network none`.
-4. Runs [shots.mjs](shots.mjs), which opens each note, panel tab and report and saves one PNG each.
+4. Runs [shots.mjs](shots.mjs), which saves ten PNGs: the index note, the type note on the References tab, the
+   member's Callers, Impact and Tests tabs, Find symbol, the Project map and Test coverage reports, the settings tab
+   and the graph view.
 
 The settings screenshot shows a placeholder repo folder, so no home folder lands in the docs. Nothing is saved
 with it.
@@ -95,4 +99,4 @@ with it.
 
 ---
 
-[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · **Obsidian end-to-end**
+[CodeGraph](../../README.md) · [Docs](../../docs/README.md) · [Contributing](../../docs/contributing.md) · [Corpus](../corpus/README.md) · [Older toolchains](../corpus/toolchains/README.md) · [With and without](../eval/README.md) · **Obsidian end-to-end (retired)**

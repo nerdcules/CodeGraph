@@ -83,7 +83,34 @@ internal sealed class LspClient : IAsyncDisposable
 
     public static string UriOf(string path) => new Uri(Path.GetFullPath(path)).AbsoluteUri;
 
-    public static string PathOf(string uri) => Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.IsFile ? Path.GetFullPath(parsed.LocalPath) : uri;
+    /// <summary>A server's file URI in the form <see cref="UriOf"/> writes; any other URI unchanged.</summary>
+    public static string CanonicalUri(string uri) =>
+        Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.IsFile ? UriOf(PathOf(uri)) : uri;
+
+    /// <summary>
+    /// The local path of a file URI. typescript-language-server's bundled URI code lower-cases a Windows drive
+    /// letter, and .NET reads a URI whose drive colon is percent-encoded (<c>file:///d%3A/a</c>) as the rooted path
+    /// <c>/d:/a</c>, which GetFullPath turns into <c>D:\d:\a</c> (seen in Windows CI). On Windows the leading slash
+    /// goes and the drive letter is upper-cased, to match the paths the graph stores (<c>D:\…</c>).
+    /// </summary>
+    public static string PathOf(string uri)
+    {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed) || !parsed.IsFile)
+        {
+            return uri;
+        }
+
+        var local = parsed.LocalPath;
+        if (OperatingSystem.IsWindows() && local.Length >= 3 && local[0] is ('/' or '\\') && char.IsAsciiLetter(local[1]) && local[2] == ':')
+        {
+            local = local[1..];
+        }
+
+        var path = Path.GetFullPath(local);
+        return OperatingSystem.IsWindows() && path.Length >= 2 && path[1] == ':' && char.IsAsciiLetterLower(path[0])
+            ? char.ToUpperInvariant(path[0]) + path[1..]
+            : path;
+    }
 
     public bool HasExited => _process.HasExited;
 
@@ -342,8 +369,10 @@ internal sealed class LspClient : IAsyncDisposable
         }
 
         var method = json["method"]?.GetValue<string>();
-        if (method == "textDocument/publishDiagnostics" && json["params"] is JsonObject parameters && parameters["uri"]?.GetValue<string>() is { } uri)
+        if (method == "textDocument/publishDiagnostics" && json["params"] is JsonObject parameters && parameters["uri"]?.GetValue<string>() is { } published)
         {
+            // Keyed by our own form of the URI: on Windows the server writes file:///c%3A/…, we look up file:///C:/….
+            var uri = CanonicalUri(published);
             var version = parameters["version"]?.GetValueKind() == JsonValueKind.Number ? parameters["version"]!.GetValue<int>() : 0;
             _diagnostics[uri] = (version, parameters["diagnostics"]?.DeepClone() as JsonArray ?? []);
             var now = Stopwatch.GetTimestamp();

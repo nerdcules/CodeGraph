@@ -192,6 +192,47 @@ public sealed class BulkWriteTests
         Assert.Equal((Graph.Nodes.Length, Graph.Edges.Length), db.Store.Count());
     }
 
+    [Fact]
+    public void Incremental_passes_that_change_nothing_do_not_grow_the_file()
+    {
+        // DuckDB writes every row group and index a delete or insert touches as new blocks. Deleting and
+        // re-inserting each replaced file's unchanged rows grew a --watch session's graph by megabytes per pass.
+        using var db = new TempDb();
+        var (nodes, edges, origins, files) = Synthetic(nodeCount: 5_000, edgesPerNode: 3);
+        var search = nodes.Select(n => SearchText.Document(n.Id, [(n.Name, 3), ("some body text", 1)])!).ToArray();
+        db.Store.Replace(full: true, [], nodes, edges, origins, files, Meta(), search);
+        var fresh = new FileInfo(db.DbPath).Length;
+
+        var everyFile = files.Select(f => f.Path).ToArray();
+        for (var pass = 0; pass < 10; pass++)
+        {
+            var meta = new Dictionary<string, string>(Meta()) { ["indexed_at"] = pass.ToString() };
+            db.Store.Replace(full: false, everyFile, nodes, edges, origins, files, meta, search);
+        }
+
+        Assert.Equal((nodes.Length, edges.Length), db.Store.Count());
+        var grown = new FileInfo(db.DbPath).Length - fresh;
+        Assert.True(grown <= 2 * 262_144, $"ten unchanged passes grew the file by {grown / 1024} KB from {fresh / 1024} KB");
+    }
+
+    [Fact]
+    public void An_incremental_pass_writes_a_nodes_new_search_terms_and_drops_its_old_ones()
+    {
+        using var db = new TempDb();
+        var node = Graph.Node("M:A.Save", NodeKind.Method, "Save", "A.Save", filePath: FileA);
+        var other = Graph.Node("M:B.Load", NodeKind.Method, "Load", "B.Load", filePath: FileB);
+        db.Store.Replace(full: true, [], [node, other], [], [], [], Meta(),
+            [SearchText.Document(node.Id, [("Save", 3), ("write workout disk", 1)])!,
+             SearchText.Document(other.Id, [("Load", 3), ("read workout", 1)])!]);
+
+        db.Store.Replace(full: false, [FileA], [node], [], [], [], Meta(),
+            [SearchText.Document(node.Id, [("Save", 3), ("write workout cloud", 2)])!]);
+
+        Assert.Empty(db.Store.Search("disk"));
+        Assert.Equal(node.Id, Assert.Single(db.Store.Search("cloud")).Node.Id);
+        Assert.Equal(2, db.Store.Search("workout").Count);
+    }
+
     private static Dictionary<string, string> Meta() => new() { ["schema_version"] = GraphStore.SchemaVersion };
 
     /// <summary>A deterministic graph of the shape the indexer emits: one file per 50 nodes, varied flags, chained edges.</summary>

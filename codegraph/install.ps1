@@ -28,8 +28,10 @@
 .PARAMETER Live
     The MCP server starts the live daemon itself on its first call (CODEGRAPH_DAEMON=auto in .mcp.json).
 
-.PARAMETER ObsidianVault
-    Also install the Obsidian plugin into this vault folder.
+.PARAMETER Client
+    The assistants to set each repo up for: claude (the default; also the Copilot CLI), copilot (CLI, VS Code,
+    Visual Studio, JetBrains), vscode, visualstudio, jetbrains, cursor, gemini, codex, roo, kilo, continue, or all.
+    Comma-separated or an array.
 
 .PARAMETER FromSource
     Build this checkout and publish it, instead of downloading a release. Needs the .NET 10 SDK; Node.js for
@@ -53,13 +55,19 @@ param(
     [string] $InstallDir,
     [switch] $AddToPath,
     [switch] $Live,
-    [string] $ObsidianVault,
+    [string[]] $Client = @(),
     [switch] $FromSource,
     [switch] $SkipTests,
     [switch] $Force
 )
 
 $ErrorActionPreference = 'Stop'
+# $Repo takes the arguments no parameter matched, so a mistyped or removed option (-ObsidianVault) would land there
+# and the install would go ahead. Stop before downloading or writing anything, as install.sh does.
+$unknown = @($Repo | Where-Object { $_ -like '-*' })
+if ($unknown.Count -gt 0) {
+    throw "unknown option: $($unknown -join ', '). See Get-Help $PSCommandPath -Detailed"
+}
 $repoSlug = 'nerdcules/CodeGraph'
 # $PSScriptRoot is empty when the script runs from a downloaded string.
 $root = if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot 'CodeGraph.slnx'))) { $PSScriptRoot } else { $null }
@@ -127,7 +135,7 @@ try {
             try { npm ci --omit=dev --no-audit --no-fund --loglevel=error } finally { Pop-Location }
             if ($LASTEXITCODE -ne 0) { throw 'npm ci failed for the TypeScript extractor' }
         } else {
-            Write-Host 'note: node and npm are not on PATH; TypeScript and Angular indexing is skipped (install Node.js 22.22 or later to add it)'
+            Write-Host 'note: node and npm are not on PATH; TypeScript and Angular indexing is skipped (install Node.js 22.22.3+ or 24.15+ to add it)'
         }
 
         Step 'Building (warnings are errors)'
@@ -194,7 +202,7 @@ try {
         }
         Write-Host "  codegraph $(Get-Content (Join-Path $InstallDir 'VERSION'))"
         if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-            Write-Host '  note: node is not on PATH; C# and the SCIP languages work, TypeScript and Angular need Node.js 22.22 or later'
+            Write-Host '  note: node is not on PATH; C# and the SCIP languages work, TypeScript and Angular need Node.js 22.22.3+ or 24.15+'
         }
     }
 
@@ -256,26 +264,9 @@ try {
         Step "Setting up $target"
         $initArgs = @('init', $target)
         if ($Live) { $initArgs += '--live' }
+        if ($Client.Count -gt 0) { $initArgs += @('--client', ($Client -join ',')) }
         Invoke-WithRoot $(if ($rootFor) { $rootFor } else { $env:DOTNET_ROOT }) $indexExe $initArgs
         if ($LASTEXITCODE -ne 0) { $failed++ }
-    }
-
-    if ($ObsidianVault) {
-        Step "Installing the Obsidian plugin into $ObsidianVault"
-        if (-not (Test-Path (Join-Path $ObsidianVault '.obsidian'))) {
-            Write-Warning "$ObsidianVault has no .obsidian folder: open it as a vault in Obsidian once first"
-            $failed++
-        } elseif ($FromSource -and (Get-Command node -ErrorAction SilentlyContinue)) {
-            & node (Join-Path $root 'obsidian-plugin/install-plugin.mjs') $ObsidianVault
-            if ($LASTEXITCODE -ne 0) { $failed++ }
-        } else {
-            $pluginDir = Join-Path $ObsidianVault '.obsidian/plugins/codegraph'
-            $zip = Join-Path $tmp 'codegraph-obsidian.zip'
-            Get-Asset 'codegraph-obsidian.zip' $zip
-            New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
-            Expand-Archive -Path $zip -DestinationPath $pluginDir -Force
-            Write-Host "installed to $pluginDir; enable `"CodeGraph`" under Settings → Community plugins"
-        }
     }
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
@@ -290,7 +281,7 @@ if ($rootFor) {
     Write-Host "Run by hand, the executables need DOTNET_ROOT=$rootFor in the environment (.mcp.json entries carry it already)."
 }
 Write-Host 'Set up a repo (writes .mcp.json and .gitignore at its root, then builds the graph):'
-Write-Host "  $call init <repo-or-solution> [--live]"
+Write-Host "  $call init <repo-or-solution> [--live] [--client copilot,cursor,gemini,codex,roo,kilo,continue]"
 Write-Host 'Keep a graph fresh while you work:'
 Write-Host "  $call <App.sln> --watch"
 if ($failed -gt 0) { throw "$failed repo setup(s) failed; see above" }

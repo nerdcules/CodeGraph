@@ -255,9 +255,16 @@ internal static class GraphImport
         using (var store = GraphStore.Open(fresh, readOnly: false, TimeSpan.FromSeconds(60)))
         {
             store.Replace(full: true, [], batch.Nodes, batch.Edges, batch.Origins, stamps, meta, batch.Search, embeddings, batch.Language);
-            if (store.CopyOtherLanguages(dbPath, languages) is > 0 and var kept)
+            try
             {
-                log($"kept {kept} node(s) of other languages from the previous graph");
+                if (store.CopyOtherLanguages(dbPath, languages) is > 0 and var kept)
+                {
+                    log($"kept {kept} node(s) of other languages from the previous graph");
+                }
+            }
+            catch (Exception e) when (GraphStore.IsCorrupt(e))
+            {
+                log($"the previous graph is damaged ({e.Message.Split('\n', 2)[0].Trim()}); rows of other languages were not kept, index them again");
             }
         }
 

@@ -229,6 +229,53 @@ public sealed class RoslynIndexerTests
     }
 
     [Fact]
+    public async Task A_method_only_a_test_class_constructor_reaches_is_guarded_by_every_test_of_the_class()
+    {
+        var indexed = await Indexed.OfAsync(
+            """
+            namespace N;
+            class FactAttribute : System.Attribute { }
+            class Store { public void Replace() { } public void Close() { } }
+            class Tests : System.IDisposable
+            {
+                public Tests() { new Store().Replace(); }
+                public void Dispose() { new Store().Close(); }
+                public void Helper() { }
+                [Fact] public void First() { }
+                [Fact] public void Second() { }
+            }
+            """);
+
+        foreach (var test in new[] { "M:N.Tests.First", "M:N.Tests.Second" })
+        {
+            Assert.True(indexed.HasEdge(test, "M:N.Tests.#ctor", EdgeKind.Calls));
+            Assert.True(indexed.HasEdge(test, "M:N.Tests.Dispose", EdgeKind.Calls));
+            Assert.True(indexed.HasEdge("M:N.Tests.#ctor", test, EdgeKind.TestedBy));
+            Assert.False(indexed.HasEdge(test, "M:N.Tests.Helper", EdgeKind.Calls));
+        }
+    }
+
+    [Theory]
+    [InlineData("SetUp")]
+    [InlineData("TestInitialize")]
+    [InlineData("OneTimeSetUp")]
+    public async Task A_setup_method_in_a_base_class_runs_for_each_test(string attribute)
+    {
+        var indexed = await Indexed.OfAsync(
+            $$"""
+            namespace N;
+            class TestAttribute : System.Attribute { }
+            class {{attribute}}Attribute : System.Attribute { }
+            class Store { public void Replace() { } }
+            abstract class Base { [{{attribute}}] public void Prepare() { new Store().Replace(); } public void Unused() { } }
+            class Tests : Base { [Test] public void Runs() { } }
+            """);
+
+        Assert.True(indexed.HasEdge("M:N.Tests.Runs", "M:N.Base.Prepare", EdgeKind.Calls));
+        Assert.False(indexed.HasEdge("M:N.Tests.Runs", "M:N.Base.Unused", EdgeKind.Calls));
+    }
+
+    [Fact]
     public async Task A_call_from_a_non_test_emits_no_TestedBy_edge()
     {
         var indexed = await Indexed.OfAsync(

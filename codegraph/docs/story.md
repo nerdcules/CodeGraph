@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · **The story** · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -47,10 +47,11 @@ the working tree has moved on, the answer says so in its first line.
 From there the questions kept coming from use, not from a roadmap:
 
 - "Why does this take ten seconds every time?" led to the live daemon, which keeps the compiled solution
-  in memory and re-indexes a save in about a second. Once the compiler was resident, it could also
+  in memory and re-indexes a save in about one to one and a half seconds (BENCHMARKS rounds 12 and 13). Once the compiler was resident, it could also
   answer things a stored graph cannot: compiler errors, and what an edit would break *before* writing it.
 - "My architect wants to see this, and she does not use Claude Code" led to the Obsidian export: the same
-  graph as linked notes, so a person can browse it with no editor and no tokens.
+  graph as linked notes, so a person can browse it with no editor and no tokens. It is retired for now:
+  the code is still in the repository, but releases no longer ship the plugin.
 - "Our front end is Angular" led to a TypeScript extractor, then to a language-neutral record format,
   then to Java, Go, Rust and Python through their SCIP indexers.
 - "Does it work on a repo that is still on .NET 8 and C# 7?" led to the version checks, the generated
@@ -66,8 +67,9 @@ and nobody but me could install it without a .NET SDK, a checkout and a build. T
 release closes: prebuilt binaries, an installer, a Claude Code plugin, and this documentation sorted by
 who is reading it. The [roadmap](roadmap.md) lists what is still missing, in order.
 
-**Measure or you are guessing.** The number that justifies the whole project is on the front page: about
-5,500 tokens for an impact question with the graph, against about 123,000 without it. I did not know
+**Measure or you are guessing.** The number that justifies the whole project is in the
+[README](../README.md): about 5,500 tokens of answers for an impact question, against about 123,000 for the
+files that match the name, measured on release 1.1.0's code (`72822e6`, BENCHMARKS round 12). I did not know
 that number until I measured it, and it changed what I worked on next.
 
 **Let the tool tell you when it is wrong.** The stale warning, the compiler-version notes, the
@@ -79,4 +81,4 @@ what to build next.
 
 ---
 
-← Previous: [Home](README.md) · Next: [What is missing](roadmap.md) →
+← Previous: [Why it saves tokens](why-it-saves-tokens.md) · Next: [What is missing](roadmap.md) →

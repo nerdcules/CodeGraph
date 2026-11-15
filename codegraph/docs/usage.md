@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · **Usage** · [Obsidian](obsidian.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md)
+[Home](README.md) · [Installation](installation.md) · **Usage** · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -13,7 +13,7 @@
   - [Run the indexer again](#run-the-indexer-again)
   - [Use watch mode](#use-watch-mode)
   - [Let the server start the live daemon](#let-the-server-start-the-live-daemon)
-- [Ask questions in Claude Code](#ask-questions-in-claude-code)
+- [Ask questions in your assistant](#ask-questions-in-your-assistant)
 - [The tools](#the-tools)
 - [Read an answer](#read-an-answer)
 - [Import and export a graph](#import-and-export-a-graph)
@@ -35,7 +35,9 @@ The target tells the indexer which language route to use.
 | `Cargo.toml` | Rust | rust-analyzer |
 | `pyproject.toml`, `setup.py`, `setup.cfg` | Python | scip-python |
 
-A folder that holds one of these files is also a target.
+For TypeScript and the SCIP languages, a folder is also a target: one that holds `angular.json`, `nx.json` or
+`tsconfig.json`, or one of the build files above.
+For C#, give the `.sln`, `.slnx` or `.csproj` file. `codegraph-index init` also finds it in a folder.
 
 1. Go to the repository.
 2. Run the indexer with the target:
@@ -77,7 +79,7 @@ Give `--full` to build the graph again from the start.
 > A new overload can change what an unchanged file calls.
 
 For the other languages, each run indexes the full workspace again.
-This takes a few seconds for 1,000 files.
+This took 7.7 to 7.8 seconds for the 1,180 files of NestJS ([BENCHMARKS round 12](../BENCHMARKS.md#round-12-the-docs-re-measured)).
 
 ### Use watch mode
 
@@ -94,8 +96,9 @@ It indexes each save and answers the live tools.
 3. Keep the terminal open while you work.
 4. Push Ctrl+C to stop it.
 
-For C#, a save of one file updates the graph in about one second on a solution the size of this repository.
-A change to a `.csproj`, `.sln`, `.props` or `.targets` file loads the solution again.
+For C#, on a solution the size of this repository, a save of one file gives a fresh answer in 0.9 to 1.3 seconds
+([BENCHMARKS round 12](../BENCHMARKS.md#round-12-the-docs-re-measured); round 13 measured a median of 1.4 seconds).
+A change to a `.csproj`, `.sln`, `.slnx`, `.props` or `.targets` file loads the solution again.
 
 > **NOTE:** In a repository with C# and TypeScript, `--watch` on the solution updates only C#.
 > Start a second `--watch` on the front end, or run `codegraph-index init` again.
@@ -105,27 +108,37 @@ A change to a `.csproj`, `.sln`, `.props` or `.targets` file loads the solution 
 You can let the server start the live daemon.
 Do one of these:
 
-- Run `codegraph-index init --live`. This adds `CODEGRAPH_DAEMON=auto` to `.mcp.json`.
-- Ask Claude Code to call `live_status` with `start=true`.
+- Run `codegraph-index init --live`. This adds `CODEGRAPH_DAEMON=auto` to each client configuration that `init` writes.
+- Ask the assistant to call `live_status` with `start=true`.
 
 The live daemon that the server starts stops after 120 minutes with no save and no request.
 
-## Ask questions in Claude Code
+## Ask questions in your assistant
 
 Ask your question in normal words.
-Claude Code selects the tools.
+The assistant selects the tools.
 For example:
 
 - "Who calls `SaveAsync`?"
 - "What breaks if I change the signature of `PriceCalculator.Total`?"
 - "Which tests guard `OrderService.Submit`?"
-- "Show me the dead code in the `Billing` project."
+- "Show me the dead code."
 
-To make Claude Code use the graph first, add this line to `CLAUDE.md`:
+To make the assistant use the graph first, add this line to its instructions file:
 
 ```
 Use the codegraph tools before you read source files to find callers, tests or impact.
 ```
+
+| Assistant | Instructions file |
+|---|---|
+| Claude Code | `CLAUDE.md` |
+| GitHub Copilot | `.github/copilot-instructions.md`, or `AGENTS.md` |
+| Codex, Cursor, Kilo Code | `AGENTS.md` |
+| Gemini CLI | `GEMINI.md` |
+| Roo Code | A file in `.roo/rules/`, or `AGENTS.md` |
+| Continue | A file in `.continue/rules/` |
+| Cline | `.clinerules` |
 
 [PROMPTS.md](../PROMPTS.md) gives more prompts.
 
@@ -135,11 +148,12 @@ A typical turn uses three tools:
 
 1. `find_symbol` finds the node id of the method.
 2. `impact_of` finds the dependents and the tests that guard them.
-3. `snippet` shows only the lines that Claude Code must change.
+3. `snippet` shows only the lines that the assistant must change.
 
-This uses some thousands of tokens.
-To read all the files that contain the name uses tens of thousands of tokens.
-[Why it saves tokens](../README.md#why-it-saves-tokens) shows a measured example.
+In [BENCHMARKS round 12](../BENCHMARKS.md#round-12-the-docs-re-measured), the three answers for `GraphStore.Replace` used about 5,500 tokens.
+The 15 files that the answers name use about 65,000 tokens.
+The 25 files that contain `.Replace(` use about 123,000 tokens.
+[Why it saves tokens](why-it-saves-tokens.md) shows a measured example.
 
 ## The tools
 
@@ -169,7 +183,7 @@ An answer is compact text.
 Each row shows the kind, the name, the file and lines, and the node id:
 
 ```
-method  App.Core.OrderService.Submit  depth 1  src/App.Core/OrderService.cs:41-58  [M:App.Core.OrderService.Submit(App.Core.Order)]
+method  App.Core.OrderService.Submit(App.Core.Order)  depth 1  /repo/src/App.Core/OrderService.cs:41-58  [M:App.Core.OrderService.Submit(App.Core.Order)]
 ```
 
 Give the id in brackets to the next tool.
@@ -202,14 +216,6 @@ codegraph-index export --language typescript --out graph.ndjson
 Give `--dead-code` to add the dead-code candidates to the export.
 [EXTRACTORS.md](../EXTRACTORS.md#the-record-contract) gives the record format.
 
-The indexer can also write the graph as notes for an Obsidian vault:
-
-```bash
-codegraph-index export obsidian --out ~/Notes/MyProject/_code
-```
-
-[Obsidian](obsidian.md) tells how to use the notes and the plugin.
-
 ## See what the graph did for you
 
 The server writes one line per tool call to `.codegraph/telemetry.jsonl`.
@@ -221,8 +227,7 @@ codegraph-index usage
 ```
 
 ```
-last 7 days: 143 tool calls answered; the files they pointed at come to about 1,230,000 tokens, the answers
-to 48,000, so about 1,180,000 tokens stayed out of the context; most used: find_symbol ×61, impact_of ×24, tests_for ×19
+last 7 days: 143 tool calls answered (2 failed); the files they pointed at come to about 1,230,412 tokens, the answers to 48,207, so about 1,182,205 tokens stayed out of the context; most used: find_symbol ×61, impact_of ×24, tests_for ×19
 since 2026-10-28: ...
 
 tool          calls  errors   avg ms  result tok  source tok   saved tok
@@ -233,7 +238,8 @@ find_symbol      61       2       14        6100      310000      303900
 "Source tok" is the size of the files that the answers pointed at.
 That is what the client would have read without the graph.
 Give `--days 30` for a longer period.
-The indexer prints the first line after each run.
+After a one-shot C# index, the indexer prints the first line with `(codegraph-index usage for details)` at the end.
+It does this only when the server has recorded tool calls.
 The `usage_stats` tool shows the same figures to the client.
 Set `CODEGRAPH_TELEMETRY=off` in `.mcp.json` to keep the calls in memory only.
 
@@ -241,12 +247,11 @@ Set `CODEGRAPH_TELEMETRY=off` in `.mcp.json` to keep the calls in memory only.
 
 ```
 codegraph-index <target> [--db <path>] [--full] [--all-targets] [--watch] [--log <file>] [--idle-exit <minutes>]
-codegraph-index init [target | folder] [--live] [--no-index] [--db <path>]
+codegraph-index init [target | folder] [--client <names>] [--live] [--no-index] [--db <path>]
 codegraph-index import <records.ndjson | index.scip | -> [--db <path>]
 codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]
-codegraph-index export obsidian --out <vault>/<folder> [--db <path>] [--language <name>] [--link-root <path>]
 codegraph-index usage [--db <path>] [--days <n>]
-codegraph-mcp [<graph.db>] [--web <port>]
+codegraph-mcp [<graph.db>] [--root <folder>] [--web <port>]
 ```
 
 | Option | Function |
@@ -257,6 +262,8 @@ codegraph-mcp [<graph.db>] [--web <port>]
 | `--watch` | Keep running. Index each save and answer the live tools. |
 | `--log <file>` | Write the log to a file, not to stderr. |
 | `--idle-exit <minutes>` | With `--watch`, stop after this time with no save and no request. |
+| `--client <names>` | With `init`, write the configuration for these assistants. See [Use another assistant](installation.md#use-another-assistant). |
+| `--root <folder>` | Find the graph from this folder, not from the working folder of the server. |
 | `--web <port>` | Serve the graph viewer on this local port. |
 
 ## Environment variables
@@ -264,12 +271,17 @@ codegraph-mcp [<graph.db>] [--web <port>]
 | Variable | Function |
 |---|---|
 | `CODEGRAPH_DB` | The graph file for the server. A path argument has priority. |
+| `CODEGRAPH_ROOT` | The folder from which the server finds the graph. `--root` has priority. |
 | `CODEGRAPH_DAEMON=auto` | The server starts the live daemon on its first tool call. |
+| `CODEGRAPH_INDEXER` | The path of `codegraph-index`, for the server to start the live daemon. Use it when the indexer is not next to the server. |
+| `CODEGRAPH_TELEMETRY=off` | The server keeps the tool calls in memory only. It does not write `.codegraph/telemetry.jsonl`. |
 | `CODEGRAPH_SNAPSHOT=off` | The server answers with SQL on the graph file, not from its copy in memory. |
 | `CODEGRAPH_LSP` | The language server command for the live tools, for example `jdtls -data /tmp/ws`. |
 | `CODEGRAPH_TS` | The path of the TypeScript extractor `cli.mjs`. |
 | `CODEGRAPH_EMBEDDINGS_URL` | An embeddings endpoint. It adds meaning-based search to `search_code`. |
+| `CODEGRAPH_EMBEDDINGS_MODEL` | The embeddings model. The default is `nomic-embed-text`. |
+| `CODEGRAPH_EMBEDDINGS_KEY` | A key for the embeddings endpoint, sent as a bearer token. |
 
 ---
 
-← Previous: [Installation](installation.md) · Next: [Obsidian](obsidian.md) →
+← Previous: [Installation](installation.md) · Next: [Use cases](use-cases.md) →

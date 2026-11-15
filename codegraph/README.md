@@ -2,23 +2,31 @@
 
 # CodeGraph
 
-**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
 
-**CodeGraph gives Claude Code the compiler's answers: who calls this, what breaks if I change it,
-which tests guard it.**
+**CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I
+change it, which tests guard it.**
+
+It is an MCP server, so it works with any assistant that speaks MCP. `codegraph-index init` writes the
+config for Claude Code, GitHub Copilot (CLI, VS Code, Visual Studio, JetBrains), Codex, Cursor, the Gemini
+CLI, and the Roo Code, Kilo Code and Continue extensions. [Tested with](docs/installation.md#tested-with)
+Claude Code, the Copilot CLI, Copilot in VS Code, Codex and Cursor, with real tool calls.
 
 [![CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml/badge.svg)](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/nerdcules/CodeGraph?label=release)](https://github.com/nerdcules/CodeGraph/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
-It reads a codebase with its compiler, stores what it finds as a graph, and serves that graph to Claude
-Code (or any MCP client) as tools. Every edge is a resolved symbol, never a text match. One question
-costs one tool call instead of twenty file reads: on this repository, "what breaks if I change
-`GraphStore.Replace`?" takes about 5,500 tokens of answers where opening the files that match would take
-about 123,000.
+It reads a codebase with its compiler, stores what it finds as a graph, and serves that graph to your
+assistant as tools. Every edge is a resolved symbol, never a text match. On this repository at release
+1.1.0's code (`72822e6`, BENCHMARKS round 12), the answers to "what breaks if I change `GraphStore.Replace`?"
+are about 5,500 tokens, where the 25 files that match `.Replace(` are about 123,000. Four assistants got that
+question three times with CodeGraph and three times without: with it, 7 of 12 answers said how many tests run
+the method; without it, none did. Claude Code was also faster and cheaper with it; Codex and the Copilot CLI
+were not, and Cursor's runs varied too much to call
+([measured](docs/why-it-saves-tokens.md#four-assistants-with-and-without)).
 
 - Precision and recall of 100% on generated codebases in eight languages, on current toolchains and on 2023-era ones, bar one old rust-analyzer at 87% call recall ([benchmarks](BENCHMARKS.md))
-- 405 tests, run on Linux, macOS and Windows on every push
+- 441 tests: in a local Linux run on 15 November 2026, 439 passed and 2 skipped (tests of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
 - Prebuilt for six platforms, nothing to compile ([releases](https://github.com/nerdcules/CodeGraph/releases/latest))
 
 Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the TypeScript compiler; Java,
@@ -31,7 +39,9 @@ API and its Angular front end.
 
 **1. Install.** The script downloads the release for your platform, checks its checksum, and sets up the
 repository you name: it writes the `codegraph` server into the repo's `.mcp.json`, ignores `.codegraph/`,
-and builds the first graph.
+and builds the first graph. `.mcp.json` is what Claude Code and the Copilot CLI read; add
+`--client copilot,cursor,codex,roo` and so on (or `all`) for other assistants
+([installation](docs/installation.md#use-another-assistant)).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/YourApp --add-to-path
@@ -41,16 +51,19 @@ curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\YourApp -AddToPath
 ```
 
-C# repositories also need the .NET SDK the project builds with, because the graph comes from a real
-compile. TypeScript needs Node.js 22. Java, Go, Rust and Python need their SCIP indexer on PATH
-([installation](docs/installation.md) has the table). Indexing this repository (3,119 nodes) takes about 16 seconds.
+C# repositories also need the .NET SDK the project builds with, no newer than 10, because the graph comes
+from a real compile. TypeScript needs Node.js 22.22.3 or later on 22, or 24.15 or later (what the extractor's
+packages declare; round 10 also indexed at 100% on Node 20). Java, Go, Rust and Python need their SCIP indexer
+on PATH ([installation](docs/installation.md) has the table). A full index of this repository (3,170 nodes)
+took 16.7 to 17.6 seconds in BENCHMARKS round 13.
 
-**2. Ask.** Start Claude Code in the repository, approve the `codegraph` server when it asks, and ask a
-question you would normally answer with grep and a lot of scrolling:
+**2. Ask.** Start your assistant in the repository, approve the `codegraph` server when it asks, and ask
+a question you would normally answer with grep and a lot of scrolling:
 
 > What breaks if I change `GraphStore.Replace`, and which tests cover it?
 
-Claude calls `find_symbol`, then `impact_of`, and gets this back in about 3 milliseconds, trimmed here:
+The assistant calls `find_symbol`, then `impact_of`, and gets this back in about 2 milliseconds (1.8 ms, the
+median in BENCHMARKS round 12). This is the answer on release 1.1.0's code (`72822e6`), trimmed here:
 
 ```
 impact of CodeGraph.Core.GraphStore.Replace(...): 12 dependents, 37 guarding tests
@@ -68,7 +81,7 @@ method  CodeGraph.Tests.IncrementalIndexTests.Incremental_reindex_matches_a_full
 ```
 
 The dependents at depth 2 and 3 reach `Replace` through other methods. A text search would not have
-found them, and would have matched every `string.Replace` on the way. Claude then opens only the
+found them, and would have matched every `string.Replace` on the way. The assistant then opens only the
 members it is going to change, with `snippet`.
 
 **3. See what it did for you.** After a week, run `codegraph-index usage` in the repository. It prints a
@@ -100,14 +113,13 @@ The indexer prints the same line after each run, and the `usage_stats` tool open
 Every answer is checked against the working tree first. If indexed files changed since the graph was
 built, the answer starts with a `⚠ STALE INDEX` line and marks the affected rows, so the model never
 reasons silently from an old graph. `codegraph-index --watch` keeps the compiled solution in memory,
-applies each save in about a second, and answers the live tools from the real compiler.
+applies a save in about 1 to 1.5 seconds (BENCHMARKS rounds 12 and 13), and answers the live tools from the real compiler.
 
 ## Where to go next
 
 | You are | Read |
 |---|---|
-| A developer who uses Claude Code | [Installation](docs/installation.md), [Usage](docs/usage.md), [Prompts that use the graph](PROMPTS.md), [Use cases](docs/use-cases.md) |
-| Someone who reads code without an AI assistant: an architect, a tester, a product manager | [The code as notes in Obsidian](docs/obsidian.md): browse projects, types, tests and reports as linked notes, with no editor and no tokens |
+| A developer who uses an AI coding assistant | [Installation](docs/installation.md), [Usage](docs/usage.md), [Prompts that use the graph](PROMPTS.md), [Use cases](docs/use-cases.md) |
 | Deciding whether to trust it | [Why it saves tokens](docs/why-it-saves-tokens.md), [How it works](docs/how-it-works.md), [Performance](docs/performance.md), [Benchmarks](BENCHMARKS.md), [Trust and privacy](#trust-and-privacy) |
 | Adding a language, or hacking on it | [Contributing](docs/contributing.md), [Architecture](docs/architecture.md), [The extractor contract](EXTRACTORS.md), [Language versions](docs/language-versions.md), [Every tool](MCP-SERVER.md) |
 | Curious where this came from | [The story](docs/story.md): a developer, Claude Code, and the thought that the compiler already knew the answer |
@@ -117,12 +129,18 @@ applies each save in about a second, and answers the live tools from the real co
 
 ## Trust and privacy
 
-- **Local and read-only.** No source leaves the machine. The server only reads the graph file, and
-  nothing is written during a query. Telemetry is one JSON line per call in
-  `.codegraph/telemetry.jsonl` beside the graph (`CODEGRAPH_TELEMETRY=off` keeps it in memory).
+- **Local.** No source leaves the machine, unless you set `CODEGRAPH_EMBEDDINGS_URL` to a remote endpoint
+  for semantic search: that endpoint then receives declaration text (names, signatures, doc comments and
+  the start of each body) and the search queries. Semantic search is off unless the variable is set.
+- **Read-only on the graph.** The server only reads the graph file. What it writes itself is telemetry:
+  one JSON line per call in `.codegraph/telemetry.jsonl` beside the graph (`CODEGRAPH_TELEMETRY=off`
+  keeps it in memory). A live daemon it starts when asked (`live_status start=true`, or
+  `CODEGRAPH_DAEMON=auto`) is the indexer, which writes the graph and `daemon.log`.
 - **Honest about staleness.** Every answer compares the graph with the working tree first.
-- **The repo's `.mcp.json` is repo content.** Claude Code asks before starting a project's servers.
-  The Obsidian plugin does the same: it starts the server only after you approve that exact command.
+- **The repo's MCP config is repo content.** Claude Code asks before starting a project's
+  servers, Cursor lists a new one as Disabled until you enable it,
+  VS Code starts them only in a folder you trust, and the Copilot CLI reads `.mcp.json` only in a
+  trusted folder ([client tests](docs/client-tests/README.md)).
 - **Checked builds.** Every release is built by the [release workflow](../.github/workflows/release.yml)
   from a tag, with a `SHA256SUMS` file the installers verify. The executables are not code-signed yet.
 
@@ -131,19 +149,29 @@ applies each save in about a second, and answers the live tools from the real co
 In order of what would matter most, from a frank look at the gap between the engineering and the
 product. [docs/roadmap.md](docs/roadmap.md) has the detail.
 
-1. **macOS is tested by CI, not by daily use.** The author works on Linux and Windows. The release builds
-   and the test suite run on macOS on every push, but no one has lived with it there yet.
+1. **macOS is tested by CI and two runs on one Mac, not by daily use.** The author works on Linux and Windows. CI
+   builds the Release configuration and runs the test suite on macOS for every push to main and every pull
+   request, and the release workflow builds the macOS archives on each version tag. One run on an Intel Mac
+   (macOS 15, 2026-11-15) covered the installers, the live daemon and the resilience battery, and found a build
+   bug in checkouts reached through a symlink. The fix is checked on Linux, in macOS CI and in a second run on that
+   Mac ([BENCHMARKS.md](BENCHMARKS.md) round 16). No one has lived with it there yet.
 2. **No package managers.** There is a release archive and an installer, but no Homebrew tap, winget
    package or `dotnet tool`. The Claude Code plugin in [plugin/](plugin/) removes the install step on
    macOS and Linux; on Windows it needs the installer first.
-3. **The first answer still needs a graph.** `init` builds it, but a repository with no SDK for its
-   language indexes nothing, and says so only in the log.
+3. **The first answer still needs a graph.** `init` builds it. Without the .NET SDK or the SCIP indexer a
+   repository needs, the indexer exits with an error that names what to install, but the assistant's
+   tools then answer only "no code graph".
 4. **Nothing for teams.** The graph is per machine. A team shares only `.mcp.json`. Building the graph in
    CI and shipping it to teammates is possible and not done.
 5. **TypeScript and the SCIP languages re-index the whole workspace on each save**, where C# re-walks
-   one file. A few seconds for 1,000 files.
-6. **`data_flow` answers for C# only**, and Java goes through scip-java, which tells calls and reads
+   the changed files and their dependents (10 files for a save to `Worktree.cs`, BENCHMARKS round 12).
+   A full index of NestJS's 1,180 files takes 7.7 to 7.8 seconds (round 12).
+6. **One daemon per language.** In a repository with C# and Angular, `--watch` on the solution keeps
+   only the C# part current.
+7. **`data_flow` answers for C# only**, and Java goes through scip-java, which tells calls and reads
    apart by the target's kind only.
+8. **No recording of the install.** The install and the usage line a week later are still a picture of
+   a terminal.
 
 ## License
 
@@ -151,4 +179,4 @@ product. [docs/roadmap.md](docs/roadmap.md) has the detail.
 
 ---
 
-**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [Obsidian plugin](obsidian-plugin/README.md)
+**CodeGraph** · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
