@@ -1181,7 +1181,7 @@ public sealed class GraphStore : IDisposable
         command.CommandText =
             $"""
              SELECT {NodeColumns} FROM nodes
-             WHERE file_path = $file AND start_line <= $line AND end_line >= $line AND kind NOT IN ('File', 'Project', 'External')
+             WHERE {(OperatingSystem.IsWindows() ? "lower(file_path) = lower($file)" : "file_path = $file")} AND start_line <= $line AND end_line >= $line AND kind NOT IN ('File', 'Project', 'External')
              ORDER BY end_line - start_line, start_line DESC, id
              LIMIT 1;
              """;

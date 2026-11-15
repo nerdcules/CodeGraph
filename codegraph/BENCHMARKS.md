@@ -855,7 +855,13 @@ It found two more things, now changed:
   `File.ReadAllText` to build its assertion messages, and it built them even when the assertion passed. The daemon
   holds the file open for writing, and Windows refuses a reader that only shares for reading, so the test failed
   with an IOException 3 times in 3. The test now opens the log sharing read and write. Linux does not lock the
-  file, so only a Windows run can show the fix works; that has not been done yet.
+  file, so only a Windows run can show the fix works. The Windows CI run of pull request #4 at `7c726c2` (run
+  43700576787, the first CI run with the TypeScript packages installed before the tests) got past the log read,
+  then failed further on: both references came back with no enclosing member (`[null, null]`). The URI code
+  bundled in typescript-language-server (`lib/cli.mjs`) lower-cases a Windows drive letter, while the graph holds the path as the extractor resolved it (`D:\…`), and the lookup from a
+  position to its member compared paths exactly. It now upper-cases the drive letter of a language server's path
+  on Windows and compares paths without case there. That is read from the code and the bundle, not yet seen on
+  Windows. Linux and macOS ran all 436 tests in that run, with none skipped.
 - **The uninstall did not name what it removed.** It printed "entry removed" once per file and "deleted" for each
   folder. `uninstall.ps1` and `uninstall.sh` now print the path of each file and folder. Both were run here against
   a scratch install and repo.

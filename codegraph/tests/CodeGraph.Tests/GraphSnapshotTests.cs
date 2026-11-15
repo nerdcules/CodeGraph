@@ -130,6 +130,12 @@ public sealed class GraphSnapshotTests
             foreach (var line in new[] { 1, 7, 40 })
             {
                 Assert.Equal(sql.NodeAt(file, line), memory.NodeAt(file, line));
+                if (OperatingSystem.IsWindows())
+                {
+                    // A language server's path can differ in case (typescript-language-server lower-cases the drive letter).
+                    Assert.Equal(memory.NodeAt(file, line), memory.NodeAt(file.ToLowerInvariant(), line));
+                    Assert.Equal(memory.NodeAt(file, line), sql.NodeAt(file.ToLowerInvariant(), line));
+                }
             }
         }
     }

@@ -66,8 +66,10 @@ The executables report their version with `--version`; the MCP server shows it t
   A second run there, at `d3350b3`, confirmed the restore note, the kept compile errors, the 5.1 layout and the
   battery (12 of 12 with no shim). It found two more:
   - The live TypeScript test failed on Windows: it read the daemon's log while the daemon held it open for
-    writing. It now opens the log sharing read and write. That fix has not run on Windows yet: the Windows CI
-    run of pull request #4 skipped the test.
+    writing. It now opens the log sharing read and write. The next Windows CI run got past the log and failed on
+    the references: each had no enclosing member, because the language server writes the drive letter lower-case
+    (`d:`) and the graph's paths have it upper-case. The live tools now match a language server's paths to the
+    graph's without case on Windows; not yet run there.
   - `uninstall.ps1` and `uninstall.sh` name each file and folder they remove, not just "entry removed".
 - The server accepts the id under the names models guess for it (`symbolId`, `nodeId`, `memberId`, and their
   snake-case forms, or `id` for the tools that take `symbol`). A Cursor agent passed `symbolId` to every tool, got

@@ -83,7 +83,23 @@ internal sealed class LspClient : IAsyncDisposable
 
     public static string UriOf(string path) => new Uri(Path.GetFullPath(path)).AbsoluteUri;
 
-    public static string PathOf(string uri) => Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.IsFile ? Path.GetFullPath(parsed.LocalPath) : uri;
+    /// <summary>
+    /// The local path of a file URI. typescript-language-server's bundled URI code lower-cases a Windows drive
+    /// letter, while the graph stores paths as the indexer resolved them (<c>D:\…</c>), so on Windows
+    /// the drive letter is upper-cased to match.
+    /// </summary>
+    public static string PathOf(string uri)
+    {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed) || !parsed.IsFile)
+        {
+            return uri;
+        }
+
+        var path = Path.GetFullPath(parsed.LocalPath);
+        return OperatingSystem.IsWindows() && path.Length >= 2 && path[1] == ':' && char.IsAsciiLetterLower(path[0])
+            ? char.ToUpperInvariant(path[0]) + path[1..]
+            : path;
+    }
 
     public bool HasExited => _process.HasExited;
 

@@ -276,13 +276,16 @@ public sealed class GraphSnapshot
     }
 
     /// <inheritdoc cref="GraphStore.NodeAt"/>
+    /// <summary>File paths compare without case on Windows, where the file system ignores it.</summary>
+    private static readonly StringComparison PathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
     public GraphNode? NodeAt(string file, int line)
     {
         GraphNode? best = null;
         for (var i = 0; i < _nodeRows; i++)
         {
             var n = _nodes[i]!;
-            if (n.FilePath == file && n.StartLine <= line && n.EndLine >= line && n.Kind is not (NodeKind.File or NodeKind.Project or NodeKind.External)
+            if (string.Equals(n.FilePath, file, PathComparison) && n.StartLine <= line && n.EndLine >= line && n.Kind is not (NodeKind.File or NodeKind.Project or NodeKind.External)
                 && (best is null
                     || n.EndLine - n.StartLine < best.EndLine - best.StartLine
                     || (n.EndLine - n.StartLine == best.EndLine - best.StartLine && (n.StartLine > best.StartLine

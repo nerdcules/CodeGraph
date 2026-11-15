@@ -26,7 +26,7 @@ were not, and Cursor's runs varied too much to call
 ([measured](docs/why-it-saves-tokens.md#four-assistants-with-and-without)).
 
 - Precision and recall of 100% on generated codebases in eight languages, on current toolchains and on 2023-era ones, bar one old rust-analyzer at 87% call recall ([benchmarks](BENCHMARKS.md))
-- 436 tests, all passing in a local Linux run at `d3bfc1b`. CI runs them for every push to main and every pull request. In PR #4's CI run at `d3bfc1b`, 434 passed and 2 skipped on Linux and macOS, and 433 passed and 3 skipped on Windows: the 2 TypeScript tests skipped on all three, because that CI installed their npm packages after the .NET tests, and on Windows a SCIP test skipped because its stand-in indexer is a shell script
+- 439 tests: in a local Linux run on 15 November 2026, 438 passed and 1 skipped (a test of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
 - Prebuilt for six platforms, nothing to compile ([releases](https://github.com/nerdcules/CodeGraph/releases/latest))
 
 Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the TypeScript compiler; Java,
