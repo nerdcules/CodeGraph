@@ -859,15 +859,17 @@ It found two more things, now changed:
   43700576787, the first CI run with the TypeScript packages installed before the tests) got past the log read,
   then failed further on: both references came back with no enclosing member (`[null, null]`). The URI code
   bundled in typescript-language-server (`lib/cli.mjs`) lower-cases a Windows drive letter and percent-encodes
-  its colon (`file:///d%3A/…`); .NET reads that as the rooted path `/d:/…`, which became `D:\d:\…` (the next CI
-  run showed this in a unit test), while the graph holds the path as the extractor resolved it (`D:\…`), and the lookup from a
+  its colon (`file:///d%3A/…`); .NET reads that as the rooted path `/d:/…`, which became `D:\d:\…` (run 43701266400
+  showed this in a unit test), while the graph holds the path as the extractor resolved it (`D:\…`), and the lookup from a
   position to its member compared paths exactly. On Windows it now drops that leading slash, upper-cases the
   drive letter, and compares paths without case. With that, references and rename passed on Windows (run
   43701724025), and `check_change` failed instead: no new errors where 2 were expected. Diagnostics were stored
   under the server's URI (`file:///c%3A/…`) and looked up under .NET's (`file:///C:/…`), so none was ever found;
   the same mismatch made the start-up wait for a first file's diagnostics run out its 60 s (the daemon logged
-  "typescript-language-server ready in 66.6s"). Published diagnostics are now stored under .NET's form. That is read from the code and the bundle, not yet seen on
-  Windows. Linux and macOS ran all 436 tests in that run, with none skipped.
+  "typescript-language-server ready in 66.6s"). Published diagnostics are now stored under .NET's form. In run
+  43702208790 at `b239329` the test passed on Windows (440 passed, 1 skipped: the shell-script SCIP test), and
+  Linux and macOS passed 439 with 2 skipped (the Windows-only path tests). The test prints the daemon's log only
+  when it fails, so the start-up time after the fix was not recorded.
 - **The uninstall did not name what it removed.** It printed "entry removed" once per file and "deleted" for each
   folder. `uninstall.ps1` and `uninstall.sh` now print the path of each file and folder. Both were run here against
   a scratch install and repo.
