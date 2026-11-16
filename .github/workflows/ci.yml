@@ -52,6 +52,34 @@ jobs:
         if: runner.os == 'macOS' || runner.os == 'Linux'
         run: tests/install-through-symlink.sh
 
+      # The VS Code extension: unit tests, then the extension driven inside VS Code against the indexer built above
+      # (index, a stale edit, a live daemon, stop, rebuild), then the .vsix it would ship.
+      - name: VS Code extension packages
+        working-directory: codegraph/vscode-extension
+        run: npm ci --no-audit --no-fund
+
+      - name: VS Code extension unit tests
+        working-directory: codegraph/vscode-extension
+        run: npm test
+
+      - uses: actions/cache@v4
+        with:
+          path: codegraph/vscode-extension/.vscode-test
+          key: vscode-test-${{ runner.os }}-${{ hashFiles('codegraph/vscode-extension/package-lock.json') }}
+
+      - name: VS Code extension integration tests
+        working-directory: codegraph/vscode-extension
+        shell: bash
+        env:
+          CODEGRAPH_TEST_INSTALL_DIR: ${{ github.workspace }}/codegraph/src/CodeGraph.Indexer/bin/Release/net10.0
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a npm run test:integration; else npm run test:integration; fi
+
+      - name: VS Code extension packs
+        if: runner.os == 'Linux'
+        working-directory: codegraph/vscode-extension
+        run: npm run package
+
       - name: Packaging script runs
         if: runner.os == 'Linux'
         env:

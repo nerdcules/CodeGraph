@@ -47,6 +47,7 @@ Reference pages outside this folder:
 - [PROMPTS.md](../PROMPTS.md) gives prompts that make the client use the tools.
 - [CHANGELOG.md](../CHANGELOG.md) lists each release.
 - [plugin/README.md](../plugin/README.md) is the Claude Code plugin.
+- [vscode-extension/README.md](../vscode-extension/README.md) is the VS Code extension.
 
 ## Supported languages
 

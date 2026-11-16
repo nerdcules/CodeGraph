@@ -114,7 +114,8 @@ answer key covers it.
    ```
 
 The [release workflow](../../.github/workflows/release.yml) builds and tests on Linux, packages the six
-platforms on three runners (Linux, macOS and Windows, two architectures each) with `tools/release/package.sh`, writes `SHA256SUMS`, and publishes a
+platforms on three runners (Linux, macOS and Windows, two architectures each) with `tools/release/package.sh`, packs
+the VS Code extension as `codegraph-vscode.vsix` with the tag's version, writes `SHA256SUMS`, and publishes a
 GitHub Release whose notes are the CHANGELOG section plus the install one-liners. The installers download
 `releases/latest`, so a published release is live at once. To try the packaging locally:
 

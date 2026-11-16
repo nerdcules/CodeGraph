@@ -1076,6 +1076,29 @@ public sealed class GraphStore : IDisposable
         return (reader.GetInt32(0), reader.GetInt32(1));
     }
 
+    /// <summary>Nodes and indexed files per language, for <c>codegraph-index status</c>. Reads the database, not the snapshot.</summary>
+    public IReadOnlyList<(string Language, int Nodes, int Files)> CountByLanguage()
+    {
+        using var command = Connection.CreateCommand();
+        command.CommandText = TableExists("files")
+            ? """
+              SELECT language, CAST(SUM(n) AS INTEGER), CAST(SUM(f) AS INTEGER) FROM (
+                  SELECT language, COUNT(*) AS n, 0 AS f FROM nodes WHERE language IS NOT NULL GROUP BY language
+                  UNION ALL
+                  SELECT language, 0, COUNT(*) FROM files WHERE language IS NOT NULL GROUP BY language)
+              GROUP BY language ORDER BY language;
+              """
+            : "SELECT language, CAST(COUNT(*) AS INTEGER), 0 FROM nodes WHERE language IS NOT NULL GROUP BY language ORDER BY language;";
+        var rows = new List<(string, int, int)>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add((reader.GetString(0), reader.GetInt32(1), reader.GetInt32(2)));
+        }
+
+        return rows;
+    }
+
     public GraphNode? GetNode(string id)
     {
         if (_snapshot is not null)

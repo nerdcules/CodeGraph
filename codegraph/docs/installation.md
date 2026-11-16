@@ -17,6 +17,7 @@
 - [Tested with](#tested-with)
 - [Make sure that it works](#make-sure-that-it-works)
 - [Install as a Claude Code plugin](#install-as-a-claude-code-plugin)
+- [Install the VS Code extension](#install-the-vs-code-extension)
 - [Install by hand](#install-by-hand)
 - [Upgrade](#upgrade)
 - [Build from source](#build-from-source)
@@ -356,6 +357,23 @@ The launcher of the plugin is a shell script, and it looks only in `~/.codegraph
 `install.ps1` installs in `C:\tools\codegraph`.
 The skill of the plugin still helps.
 [plugin/README.md](../plugin/README.md) gives the details.
+
+## Install the VS Code extension
+
+The VS Code extension installs CodeGraph for you, sets repositories up, and runs the live daemon.
+Releases after 1.2.0 carry it as `codegraph-vscode.vsix`.
+
+1. Download the extension and install it:
+
+   ```bash
+   curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/latest/download/codegraph-vscode.vsix
+   code --install-extension codegraph-vscode.vsix
+   ```
+
+2. Open a repository and choose the CodeGraph icon in the activity bar.
+3. Choose **Install CodeGraph** if CodeGraph is not installed, then **Set up repository…**.
+
+[vscode-extension/README.md](../vscode-extension/README.md) gives the details.
 
 ## Install by hand
 

@@ -1,5 +1,6 @@
 # A tag v<version> builds, tests and packages codegraph-index and codegraph-mcp for six platforms, and publishes
-# them as a GitHub Release with checksums. The version in the executables comes from the tag.
+# them as a GitHub Release with checksums, beside the VS Code extension (codegraph-vscode.vsix). The version in the
+# executables and the extension comes from the tag.
 name: Release
 
 on:
@@ -66,8 +67,29 @@ jobs:
           name: ${{ matrix.os }}
           path: codegraph/dist/*
 
+  vsix:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: codegraph/vscode-extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      # The extension's version is the tag's, like the executables'.
+      - run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+      - run: npm test
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: codegraph/dist/codegraph-vscode.vsix
+
   release:
-    needs: package
+    needs: [package, vsix]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

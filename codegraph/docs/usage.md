@@ -13,6 +13,8 @@
   - [Run the indexer again](#run-the-indexer-again)
   - [Use watch mode](#use-watch-mode)
   - [Let the server start the live daemon](#let-the-server-start-the-live-daemon)
+  - [Check the graph and stop the daemon](#check-the-graph-and-stop-the-daemon)
+  - [Use the VS Code extension](#use-the-vs-code-extension)
 - [Ask questions in your assistant](#ask-questions-in-your-assistant)
 - [The tools](#the-tools)
 - [Read an answer](#read-an-answer)
@@ -101,7 +103,9 @@ For C#, on a solution the size of this repository, a save of one file gives a fr
 A change to a `.csproj`, `.sln`, `.slnx`, `.props` or `.targets` file loads the solution again.
 
 > **NOTE:** In a repository with C# and TypeScript, `--watch` on the solution updates only C#.
-> Start a second `--watch` on the front end, or run `codegraph-index init` again.
+> One daemon serves each graph, so a second `--watch` on the front end of the same graph does not start.
+> Run `codegraph-index` on the front end again, or use the [VS Code extension](#use-the-vs-code-extension), which
+> re-indexes the front end when you save one of its files.
 
 ### Let the server start the live daemon
 
@@ -112,6 +116,34 @@ Do one of these:
 - Ask the assistant to call `live_status` with `start=true`.
 
 The live daemon that the server starts stops after 120 minutes with no save and no request.
+
+### Check the graph and stop the daemon
+
+To see how the graph stands, run `status` in the repository:
+
+```bash
+codegraph-index status
+```
+
+It prints the graph file, when and at which commit it was built, and its size. It says whether the graph matches the
+working tree, how many files each language has, whether a daemon serves the graph, and the last week of tool calls.
+Add `--json` for the same report as JSON.
+
+To stop the daemon that serves the graph, run `stop`:
+
+```bash
+codegraph-index stop
+```
+
+It asks the daemon to stop over its pipe and waits until it has gone. A daemon from 1.2.0 or earlier is ended by its
+process id.
+
+### Use the VS Code extension
+
+The [VS Code extension](../vscode-extension/README.md) does all of this from the editor.
+It installs CodeGraph, sets a repository up, starts a daemon for each graph, and stops the daemons it started when
+the window closes.
+It shows each graph's state in the sidebar and the status bar.
 
 ## Ask questions in your assistant
 
@@ -251,6 +283,8 @@ codegraph-index init [target | folder] [--client <names>] [--live] [--no-index] 
 codegraph-index import <records.ndjson | index.scip | -> [--db <path>]
 codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]
 codegraph-index usage [--db <path>] [--days <n>]
+codegraph-index status [--db <path>] [--json]
+codegraph-index stop [--db <path>]
 codegraph-mcp [<graph.db>] [--root <folder>] [--web <port>]
 ```
 
@@ -265,6 +299,7 @@ codegraph-mcp [<graph.db>] [--root <folder>] [--web <port>]
 | `--client <names>` | With `init`, write the configuration for these assistants. See [Use another assistant](installation.md#use-another-assistant). |
 | `--root <folder>` | Find the graph from this folder, not from the working folder of the server. |
 | `--web <port>` | Serve the graph viewer on this local port. |
+| `--json` | With `status`, print the report as JSON, for tools such as the VS Code extension. |
 
 ## Environment variables
 

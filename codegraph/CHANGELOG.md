@@ -1,9 +1,38 @@
 # Changelog
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md) · [VS Code extension](vscode-extension/README.md)
 
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
+
+## Unreleased
+
+### VS Code extension
+
+- A VS Code extension ([vscode-extension/README.md](vscode-extension/README.md)) installs CodeGraph, sets
+  repositories up, and runs each graph's live daemon. It shows each graph's state in an Overview, a Graphs tree and
+  the status bar.
+  - It installs from the GitHub release after checking the archive against `SHA256SUMS`, and checks for a newer
+    release once a day.
+  - It starts a daemon with `--idle-exit` for each graph that exists, and stops the daemons it started when the
+    window closes.
+  - It re-indexes on save the targets the daemon does not watch, such as an Angular front end beside a C# solution.
+  - It offers `codegraph-mcp` to VS Code's chat clients, unless `.vscode/mcp.json` already names one.
+  - Each release carries it as `codegraph-vscode.vsix`. It is not on the Marketplace.
+- Tested: 9 unit tests, and an integration test that drives the extension inside VS Code 1.146.0 against the
+  indexer built from this repository. It runs 7 steps: find the solution, index it, see an edit go stale, start the
+  daemon and wait for it to index the edit, stop it, and rebuild. All 7 passed on Linux on 16 November 2026. CI runs
+  them on Linux, macOS and Windows.
+- `codegraph-index status [--db PATH] [--json]` reports, in one call:
+  - the graph and how it compares with the working tree: edited and deleted files, and a moved HEAD;
+  - nodes and files for each language, with each language's compiler facts;
+  - the daemon serving the graph;
+  - the last 7 days of tool calls.
+
+  With `--json` it is for tools; the extension reads it.
+- `codegraph-index stop [--db PATH]` asks the daemon serving a graph to stop and waits until its pipe is gone. Both
+  daemons, C# and the language-server one, answer a new `stop` request on the pipe. A daemon from 1.2.0 or earlier
+  does not know it, and is ended by its process id instead.
 
 ## 1.2.0
 
@@ -212,4 +241,4 @@ The first packaged release. Everything below was built between August and Novemb
 
 ---
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md) · [VS Code extension](vscode-extension/README.md)

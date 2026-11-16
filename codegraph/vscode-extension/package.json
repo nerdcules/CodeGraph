@@ -1,0 +1,306 @@
+{
+  "name": "codegraph",
+  "displayName": "CodeGraph",
+  "description": "Build, watch and inspect CodeGraph indexes from VS Code: the compiler's answers for your AI coding assistant.",
+  "version": "1.2.0",
+  "publisher": "nerdcules",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1b1f3a",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nerdcules/CodeGraph.git",
+    "directory": "codegraph/vscode-extension"
+  },
+  "homepage": "https://github.com/nerdcules/CodeGraph/blob/main/codegraph/vscode-extension/README.md",
+  "bugs": "https://github.com/nerdcules/CodeGraph/issues",
+  "engines": {
+    "vscode": "^1.101.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "mcp",
+    "code graph",
+    "roslyn",
+    "copilot",
+    "claude"
+  ],
+  "activationEvents": [
+    "workspaceContains:.codegraph/graph.db",
+    "workspaceContains:**/*.sln",
+    "workspaceContains:**/*.slnx",
+    "workspaceContains:**/*.csproj",
+    "workspaceContains:**/tsconfig.json",
+    "workspaceContains:**/angular.json",
+    "workspaceContains:**/nx.json",
+    "workspaceContains:**/pom.xml",
+    "workspaceContains:**/build.gradle",
+    "workspaceContains:**/build.gradle.kts",
+    "workspaceContains:**/pyproject.toml",
+    "workspaceContains:**/go.mod",
+    "workspaceContains:**/Cargo.toml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codegraph",
+          "title": "CodeGraph",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "codegraph": [
+        {
+          "type": "webview",
+          "id": "codegraph.overview",
+          "name": "Overview"
+        },
+        {
+          "id": "codegraph.graphs",
+          "name": "Graphs"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "codegraph.graphs",
+        "contents": "CodeGraph is not installed yet.\n[$(cloud-download) Install CodeGraph](command:codegraph.install)\nIt downloads the latest release from GitHub and checks it against the release's SHA256SUMS.",
+        "when": "codegraph.ready && !codegraph.installed"
+      },
+      {
+        "view": "codegraph.graphs",
+        "contents": "No C#, TypeScript, Java, Python, Go or Rust project was found in this workspace.\n[Refresh](command:codegraph.refresh)",
+        "when": "codegraph.ready && codegraph.installed && !codegraph.hasGraphs"
+      }
+    ],
+    "commands": [
+      {
+        "command": "codegraph.refresh",
+        "title": "Refresh",
+        "category": "CodeGraph",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "codegraph.init",
+        "title": "Set Up Repository…",
+        "category": "CodeGraph",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "codegraph.index",
+        "title": "Index Now",
+        "category": "CodeGraph",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "codegraph.rebuild",
+        "title": "Rebuild Graph",
+        "category": "CodeGraph",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "codegraph.startDaemon",
+        "title": "Start Live Daemon",
+        "category": "CodeGraph",
+        "icon": "$(play)"
+      },
+      {
+        "command": "codegraph.stopDaemon",
+        "title": "Stop Live Daemon",
+        "category": "CodeGraph",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "codegraph.restartDaemon",
+        "title": "Restart Live Daemon",
+        "category": "CodeGraph",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "codegraph.showDaemonLog",
+        "title": "Show Daemon Log",
+        "category": "CodeGraph",
+        "icon": "$(output)"
+      },
+      {
+        "command": "codegraph.showUsage",
+        "title": "Show Usage",
+        "category": "CodeGraph",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "codegraph.install",
+        "title": "Install or Update CodeGraph",
+        "category": "CodeGraph",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "codegraph.showOutput",
+        "title": "Show Output",
+        "category": "CodeGraph",
+        "icon": "$(list-flat)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "codegraph.refresh",
+          "when": "view == codegraph.graphs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codegraph.init",
+          "when": "view == codegraph.graphs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codegraph.install",
+          "when": "view == codegraph.graphs",
+          "group": "1_install"
+        },
+        {
+          "command": "codegraph.showOutput",
+          "when": "view == codegraph.graphs",
+          "group": "1_install"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "codegraph.index",
+          "when": "view == codegraph.graphs && viewItem =~ /^graph/",
+          "group": "inline@1"
+        },
+        {
+          "command": "codegraph.index",
+          "when": "view == codegraph.graphs && viewItem == target",
+          "group": "inline@1"
+        },
+        {
+          "command": "codegraph.rebuild",
+          "when": "view == codegraph.graphs && viewItem =~ /^graph/",
+          "group": "1_index@2"
+        },
+        {
+          "command": "codegraph.startDaemon",
+          "when": "view == codegraph.graphs && viewItem == daemon.stopped",
+          "group": "inline@1"
+        },
+        {
+          "command": "codegraph.stopDaemon",
+          "when": "view == codegraph.graphs && viewItem == daemon.running",
+          "group": "inline@1"
+        },
+        {
+          "command": "codegraph.restartDaemon",
+          "when": "view == codegraph.graphs && viewItem == daemon.running",
+          "group": "inline@2"
+        },
+        {
+          "command": "codegraph.showDaemonLog",
+          "when": "view == codegraph.graphs && viewItem =~ /^daemon/",
+          "group": "inline@3"
+        },
+        {
+          "command": "codegraph.showUsage",
+          "when": "view == codegraph.graphs && viewItem == usage",
+          "group": "inline@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "codegraph.refresh",
+          "when": "codegraph.ready"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CodeGraph",
+      "properties": {
+        "codegraph.installDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Folder holding `codegraph-index` and `codegraph-mcp`. Empty: `codegraph-index` on `PATH`, else `~/.codegraph/bin` (macOS, Linux) or `C:\\tools\\codegraph` (Windows), the folders the installers use."
+        },
+        "codegraph.daemon.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Start the live daemon (`codegraph-index --watch`) for each graph that already exists when the workspace opens. The daemon holds the loaded solution in memory; it stops after `#codegraph.daemon.idleExitMinutes#` unused and when the window closes."
+        },
+        "codegraph.daemon.idleExitMinutes": {
+          "type": "number",
+          "default": 120,
+          "minimum": 1,
+          "markdownDescription": "A daemon this extension starts stops itself after this many minutes with no save and no tool call (`--idle-exit`)."
+        },
+        "codegraph.reindexOnSave": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Re-index a target on save when no daemon serves it, such as the Angular front end beside a C# solution (one daemon serves each graph)."
+        },
+        "codegraph.registerMcpServer": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Offer `codegraph-mcp` to GitHub Copilot and other VS Code chat clients for each graph, unless `.vscode/mcp.json` already names a `codegraph` server."
+        },
+        "codegraph.checkForUpdates": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Check GitHub for a newer CodeGraph release once a day."
+        },
+        "codegraph.clients": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "copilot",
+              "vscode",
+              "visualstudio",
+              "jetbrains",
+              "cursor",
+              "gemini",
+              "codex",
+              "roo",
+              "kilo",
+              "continue"
+            ]
+          },
+          "default": [
+            "claude"
+          ],
+          "markdownDescription": "Assistants pre-selected when **Set Up Repository** asks which ones to configure (`codegraph-index init --client`)."
+        }
+      }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "codegraph.mcp",
+        "label": "CodeGraph"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test:unit": "node --test \"out/test/unit/**/*.test.js\"",
+    "test:integration": "node out/test/integration/runTest.js",
+    "test": "npm run compile && npm run test:unit",
+    "package": "node -e \"require('fs').mkdirSync('../dist',{recursive:true})\" && vsce package --no-dependencies --out ../dist/codegraph-vscode.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/vscode": "~1.101.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.1.1",
+    "typescript": "~6.0.3"
+  }
+}
