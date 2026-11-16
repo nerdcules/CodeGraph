@@ -1,5 +1,6 @@
 # TEMPORARY (PR #5): the macOS runner dies during `dotnet test` on this branch and keeps no log. Each job runs one
-# slice of the suite, so the job that dies names the slice. Delete this file once the cause is found.
+# slice of the suite, so the job that dies names the slice. Round 1 (one test per job) passed everywhere; round 2
+# runs the whole suite in one process, leaving one new test out per job. Delete this file once the cause is found.
 name: macOS bisect
 
 on:
@@ -18,18 +19,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: everything but StatusCommandTests
-            filter: FullyQualifiedName!~StatusCommandTests
-          - name: A_folder_with_no_graph
-            filter: FullyQualifiedName~StatusCommandTests.A_folder_with_no_graph
-          - name: A_graph_reports
-            filter: FullyQualifiedName~StatusCommandTests.A_graph_reports
-          - name: A_damaged_graph
-            filter: FullyQualifiedName~StatusCommandTests.A_damaged_graph
-          - name: Status_reports_a_running_daemon
-            filter: FullyQualifiedName~StatusCommandTests.Status_reports_a_running_daemon
-          - name: Stop_leaves_a_daemon
-            filter: FullyQualifiedName~StatusCommandTests.Stop_leaves_a_daemon
+          - name: whole suite (control)
+            filter: FullyQualifiedName~CodeGraph.Tests
+          - name: whole suite without A_folder_with_no_graph
+            filter: FullyQualifiedName!~StatusCommandTests.A_folder_with_no_graph
+          - name: whole suite without A_graph_reports
+            filter: FullyQualifiedName!~StatusCommandTests.A_graph_reports
+          - name: whole suite without A_damaged_graph
+            filter: FullyQualifiedName!~StatusCommandTests.A_damaged_graph
+          - name: whole suite without Status_reports_a_running_daemon
+            filter: FullyQualifiedName!~StatusCommandTests.Status_reports_a_running_daemon
+          - name: whole suite without Stop_leaves_a_daemon
+            filter: FullyQualifiedName!~StatusCommandTests.Stop_leaves_a_daemon
     defaults:
       run:
         working-directory: codegraph
