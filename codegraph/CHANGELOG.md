@@ -21,8 +21,8 @@ The executables report their version with `--version`; the MCP server shows it t
   - Each release carries it as `codegraph-vscode.vsix`. It is not on the Marketplace.
 - Tested: 9 unit tests, and an integration test that drives the extension inside VS Code 1.146.0 against the
   indexer built from this repository. It runs 7 steps: find the solution, index it, see an edit go stale, start the
-  daemon and wait for it to index the edit, stop it, and rebuild. All 7 passed on Linux on 16 November 2026. CI runs
-  them on Linux, macOS and Windows.
+  daemon and wait for it to index the edit, stop it, and rebuild. CI run 43972862634 (16 November 2026) passed all
+  9 unit tests and all 7 steps on Linux, macOS and Windows.
 - `codegraph-index status [--db PATH] [--json]` reports, in one call:
   - the graph and how it compares with the working tree: edited and deleted files, and a moved HEAD;
   - nodes and files for each language, with each language's compiler facts;
@@ -30,6 +30,11 @@ The executables report their version with `--version`; the MCP server shows it t
   - the last 7 days of tool calls.
 
   With `--json` it is for tools; the extension reads it.
+- A graph file that is not a DuckDB database fails to open at once. Before, `GraphStore.Open` retried it as if it
+  were locked, every 100 ms for the whole wait: `codegraph-index status` took 5 s to say the file was damaged, and
+  the test for that took 5.06 s and now takes 36 ms. On macOS CI the whole suite stalled the runner on this branch
+  until this changed; a macOS bisect passed the suite when that test was left out (and when either of two others
+  was), and three runs of the whole suite passed after the change.
 - `codegraph-index stop [--db PATH]` asks the daemon serving a graph to stop and waits until its pipe is gone. Both
   daemons, C# and the language-server one, answer a new `stop` request on the pipe. A daemon from 1.2.0 or earlier
   does not know it: `stop` says so, names its process id, exits 1 and leaves it running.

@@ -150,10 +150,10 @@ The indexer and the MCP server run on your machine, and the graph stays in `.cod
 - **Integration test** (`npm run test:integration`): VS Code 1.146.0 starts with the extension on a copy of a small
   C# solution and runs 7 steps against a real `codegraph-index` built from this repository. The extension finds the
   solution, indexes it, sees an edit make the graph stale, starts the daemon and waits for it to index the edit,
-  stops it, and rebuilds the graph. On 16 November 2026 on Linux, all 7 steps passed.
+  stops it, and rebuilds the graph. CI run 43972862634 (commit `3ae5ace`, 16 November 2026) passed all 9 unit tests
+  and all 7 steps on Linux, macOS and Windows.
 - **Not tested yet:** the install and update download against a published release (the first release with the
-  extension will be the first), the MCP server offered to Copilot, and the Windows and macOS runs of the integration
-  test.
+  extension will be the first), and the MCP server offered to Copilot.
 
 ## Build it from source
 
