@@ -1,0 +1,49 @@
+# TEMPORARY (PR #5): the macOS runner dies during `dotnet test` on this branch and keeps no log. Each job runs one
+# slice of the suite, so the job that dies names the slice. Delete this file once the cause is found.
+name: macOS bisect
+
+on:
+  push:
+    branches: [vscode-extension]
+
+permissions:
+  contents: read
+
+jobs:
+  slice:
+    name: ${{ matrix.name }}
+    runs-on: macos-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: everything but StatusCommandTests
+            filter: FullyQualifiedName!~StatusCommandTests
+          - name: A_folder_with_no_graph
+            filter: FullyQualifiedName~StatusCommandTests.A_folder_with_no_graph
+          - name: A_graph_reports
+            filter: FullyQualifiedName~StatusCommandTests.A_graph_reports
+          - name: A_damaged_graph
+            filter: FullyQualifiedName~StatusCommandTests.A_damaged_graph
+          - name: Status_reports_a_running_daemon
+            filter: FullyQualifiedName~StatusCommandTests.Status_reports_a_running_daemon
+          - name: Stop_leaves_a_daemon
+            filter: FullyQualifiedName~StatusCommandTests.Stop_leaves_a_daemon
+    defaults:
+      run:
+        working-directory: codegraph
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: codegraph/global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - working-directory: codegraph/extractors/typescript
+        run: npm ci --no-audit --no-fund
+      - run: dotnet build CodeGraph.slnx -c Release -warnaserror --nologo
+      - name: Test slice
+        timeout-minutes: 15
+        run: dotnet test tests/CodeGraph.Tests -c Release --no-build --output detailed --filter "${{ matrix.filter }}"
