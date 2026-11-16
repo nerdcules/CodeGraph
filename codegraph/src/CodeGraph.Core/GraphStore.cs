@@ -243,7 +243,9 @@ public sealed class GraphStore : IDisposable
             {
                 return new GraphStore(dbPath, readOnly);
             }
-            catch (DuckDBException) when (DateTime.UtcNow < deadline)
+            // A lock clears when the writer finishes; a damaged file never does, so it fails now instead of being
+            // reopened every 100 ms for the whole wait (50 native opens for a 5 s wait).
+            catch (DuckDBException e) when (DateTime.UtcNow < deadline && !IsCorrupt(e))
             {
                 Thread.Sleep(100);
             }

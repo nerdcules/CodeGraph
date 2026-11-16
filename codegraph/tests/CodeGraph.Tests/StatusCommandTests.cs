@@ -113,11 +113,14 @@ public sealed class StatusCommandTests
             Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
             File.WriteAllText(dbPath, "this is not a database");
 
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             var report = await StatusCommand.ReadAsync(dbPath, "9.9.9");
 
             Assert.True(report.Exists);
             Assert.Null(report.Graph);
-            Assert.NotNull(report.Error);
+            Assert.Contains("the graph file is damaged", report.Error);
+            // Not retried as if it were locked: the open fails at once instead of after the 5 s lock wait.
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(2), $"took {clock.Elapsed.TotalSeconds:F1} s");
         }
         finally
         {
