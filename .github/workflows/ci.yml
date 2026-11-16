@@ -39,8 +39,10 @@ jobs:
       - name: Build (warnings are errors)
         run: dotnet build CodeGraph.slnx -c Release -warnaserror --nologo
 
+      # A stall ends the step with its log kept; a runner that dies keeps none (macOS, PR #5).
       - name: Test
-        run: dotnet test CodeGraph.slnx -c Release --no-build
+        timeout-minutes: 20
+        run: dotnet test CodeGraph.slnx -c Release --no-build --output detailed
 
       - name: TypeScript extractor tests
         working-directory: codegraph/extractors/typescript

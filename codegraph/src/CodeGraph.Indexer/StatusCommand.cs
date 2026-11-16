@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -192,7 +191,7 @@ internal static class StatusCommand
 
     /// <summary>
     /// <c>codegraph-index stop [--db PATH]</c>: asks the daemon serving the graph to stop, and waits until its pipe is
-    /// gone. A daemon from 1.2.0 or earlier does not know <c>stop</c>; it is ended by process id instead.
+    /// gone. A daemon from 1.2.0 or earlier does not know <c>stop</c>; the command says so and leaves it running.
     /// </summary>
     public static async Task<int> StopAsync(string[] args, TextWriter output, TextWriter error, string? currentDirectory = null)
     {
@@ -225,17 +224,10 @@ internal static class StatusCommand
         }
         catch (LiveException)
         {
-            // An older daemon: end the process. Its socket file is cleared by the next daemon's claim.
-            try
-            {
-                using var process = Process.GetProcessById(running.Pid);
-                process.Kill();
-            }
-            catch (Exception e) when (e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-                error.WriteLine($"could not stop pid {running.Pid}: {e.Message}");
-                return 1;
-            }
+            // A daemon from 1.2.0 or earlier answers "unknown method". Ending a process by the pid a pipe reports is
+            // not safe (the pid may be stale, or not the daemon's), so say what to do instead.
+            error.WriteLine($"the daemon (pid {running.Pid}) is from CodeGraph 1.2.0 or earlier and does not know `stop`; end it with Ctrl+C in its terminal, or end process {running.Pid}");
+            return 1;
         }
         catch (IOException)
         {

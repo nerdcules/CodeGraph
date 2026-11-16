@@ -32,7 +32,7 @@ The executables report their version with `--version`; the MCP server shows it t
   With `--json` it is for tools; the extension reads it.
 - `codegraph-index stop [--db PATH]` asks the daemon serving a graph to stop and waits until its pipe is gone. Both
   daemons, C# and the language-server one, answer a new `stop` request on the pipe. A daemon from 1.2.0 or earlier
-  does not know it, and is ended by its process id instead.
+  does not know it: `stop` says so, names its process id, exits 1 and leaves it running.
 
 ## 1.2.0
 

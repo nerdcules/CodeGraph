@@ -135,8 +135,8 @@ To stop the daemon that serves the graph, run `stop`:
 codegraph-index stop
 ```
 
-It asks the daemon to stop over its pipe and waits until it has gone. A daemon from 1.2.0 or earlier is ended by its
-process id.
+It asks the daemon to stop over its pipe and waits until it has gone. A daemon from 1.2.0 or earlier does not know
+this request. `stop` says so, names its process id, and leaves it running: stop it with Ctrl+C in its terminal.
 
 ### Use the VS Code extension
 

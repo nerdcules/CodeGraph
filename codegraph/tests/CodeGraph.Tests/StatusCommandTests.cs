@@ -131,7 +131,7 @@ public sealed class StatusCommandTests
         var dbPath = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"), "graph.db");
         using var stopping = new CancellationTokenSource();
         var stopRequests = 0;
-        var status = new LiveStatus(4242, "App.slnx", dbPath, 3, 40, DateTime.UnixEpoch, null, null, 0, false);
+        var status = new LiveStatus(Environment.ProcessId, "App.slnx", dbPath, 3, 40, DateTime.UnixEpoch, null, null, 0, false);
         var server = new LiveServer(LivePipe.NameFor(dbPath), (request, _) =>
         {
             if (request.Method == "stop")
@@ -146,18 +146,39 @@ public sealed class StatusCommandTests
         var serving = server.RunAsync(stopping.Token);
 
         var report = await StatusCommand.ReadAsync(dbPath, "9.9.9");
-        Assert.Equal(4242, report.Daemon?.Pid);
-        Assert.Contains("daemon    : pid 4242, watching, 3 project(s), 40 document(s)", StatusCommand.Text(report));
+        Assert.Equal(Environment.ProcessId, report.Daemon?.Pid);
+        Assert.Contains($"daemon    : pid {Environment.ProcessId}, watching, 3 project(s), 40 document(s)", StatusCommand.Text(report));
 
         var output = new StringWriter();
         Assert.Equal(0, await StatusCommand.StopAsync(["--db", dbPath], output, TextWriter.Null));
         Assert.Equal(1, stopRequests);
-        Assert.StartsWith("stopped the daemon (pid 4242)", output.ToString());
+        Assert.StartsWith($"stopped the daemon (pid {Environment.ProcessId})", output.ToString());
         await serving;
 
         var again = new StringWriter();
         Assert.Equal(0, await StatusCommand.StopAsync(["--db", dbPath], again, TextWriter.Null));
         Assert.StartsWith("no daemon serves", again.ToString());
         Assert.Equal(1, await StatusCommand.StopAsync(["--bogus"], TextWriter.Null, TextWriter.Null));
+    }
+
+    [Fact]
+    public async Task Stop_leaves_a_daemon_that_does_not_know_the_request_running()
+    {
+        // A 1.2.0 daemon answers "unknown method". The pid it reports is this test's own process, which stop must not end.
+        var dbPath = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"), "graph.db");
+        using var stopping = new CancellationTokenSource();
+        var status = new LiveStatus(Environment.ProcessId, "App.slnx", dbPath, 1, 1, DateTime.UnixEpoch, null, null, 0, false);
+        var server = new LiveServer(LivePipe.NameFor(dbPath), (request, _) => request.Method == "ping"
+            ? Task.FromResult(LiveResponse.Ok(status))
+            : throw new LiveException($"unknown method '{request.Method}'"));
+        var serving = server.RunAsync(stopping.Token);
+
+        var error = new StringWriter();
+        Assert.Equal(1, await StatusCommand.StopAsync(["--db", dbPath], TextWriter.Null, error));
+        Assert.Contains("does not know `stop`", error.ToString());
+        Assert.NotNull(await new LiveClient(dbPath).PingAsync(TestContext.Current.CancellationToken));
+
+        stopping.Cancel();
+        await serving;
     }
 }
