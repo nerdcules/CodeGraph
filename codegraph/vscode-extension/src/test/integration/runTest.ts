@@ -1,6 +1,7 @@
 // Starts VS Code with the extension on a copy of the Hello fixture and runs suite.ts inside it.
 //   CODEGRAPH_TEST_INSTALL_DIR  the folder with codegraph-index (required: a build output or a release)
 //   CODEGRAPH_TEST_VSCODE       a VS Code executable to use instead of downloading the stable build (optional)
+//   CODEGRAPH_TEST_MCP          the codegraph-mcp the MCP step starts, when the install folder has none (a build output)
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';

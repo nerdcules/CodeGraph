@@ -159,17 +159,26 @@ The indexer and the MCP server run on your machine, and the graph stays in `.cod
   `.sln` or `.slnx` lists, the one target of each language a graph takes, which folders an update may replace,
   release asset names, checksums, version order, status parsing and formatting.
 - **Integration test** (`npm run test:integration`): VS Code 1.146.0 starts with the extension on a copy of a small
-  C# solution and runs 7 steps against a real `codegraph-index` built from this repository. The extension finds the
-  solution, indexes it, sees an edit make the graph stale, starts the daemon and waits for it to index the edit,
-  stops it, and rebuilds the graph. CI run 43972862634 (commit `3ae5ace`, 16 November 2026) passed the 9 unit tests
-  of that commit and all 7 steps on Linux, macOS and Windows. After the review fixes (17 November 2026, Linux only,
-  not yet in CI), all 13 unit tests and all 7 steps passed.
-- **Install, by hand:** the install code was run against the 1.2.0 release archive on Linux (17 November 2026). It
-  installed into a missing folder and updated over an installation, leaving no file of the old one behind. It
-  refused a folder holding another program and left that folder as it was.
-- **Not tested yet:** an update refused on Windows because a program still runs from the folder; an update from a
-  published release carrying the extension (the first release with it will be the first); and the MCP server
-  offered to Copilot.
+  C# solution and runs 8 steps against a real `codegraph-index` built from this repository. The extension finds the
+  solution and indexes it. It offers one MCP server for the graph: the test starts it with the offered arguments,
+  calls `graph_stats` over stdio, and gets the graph's own counts. A `codegraph` entry in `.vscode/mcp.json`
+  withdraws the offer and removing it brings it back. Then the extension sees an edit make the graph stale, starts
+  the daemon and waits for it to index the edit, stops it, and rebuilds the graph.
+  - CI run 43972862634 (commit `3ae5ace`, 16 November 2026) passed that commit's 9 unit tests and the 7 steps it had,
+    on Linux, macOS and Windows.
+  - CI run 44033732682 (commit `e3de08c`, 17 November 2026) passed all 13 unit tests and the same 7 steps on all three.
+  - All 8 steps, including the MCP step, passed on Linux (17 November 2026); not yet in CI.
+- **Install test** (`CODEGRAPH_TEST_INSTALL_RELEASE=1 npm run test:install`): installs the 1.2.0 release with the
+  extension's own code (download, checksum, unpack, swap), then updates it while `codegraph-mcp` runs from the
+  folder. On Windows the update must be refused with the folder unchanged. On macOS and Linux it must replace the
+  folder under the running program. With the program stopped, a second update must go through everywhere. It
+  downloads the release archive (89 to 115 MB), so it runs only when asked. On Linux it passed (17 November 2026,
+  26.9 s); not yet in CI. A folder holding another program is refused (a unit test).
+- **Not tested yet:**
+  - An update from a published release that carries the extension: the first release with it will be the first.
+  - GitHub Copilot listing and calling the server; CI cannot sign in to Copilot. To check it by hand, open a
+    repository that is set up in VS Code with Copilot signed in. Run **MCP: List Servers**, check that **CodeGraph**
+    is listed and starts, then ask agent mode a question about the code (for example, who calls a method).
 
 ## Build it from source
 
@@ -177,7 +186,9 @@ The indexer and the MCP server run on your machine, and the graph stays in `.cod
 cd codegraph/vscode-extension
 npm ci
 npm test                      # compile and run the unit tests
-CODEGRAPH_TEST_INSTALL_DIR=../src/CodeGraph.Indexer/bin/Release/net10.0 npm run test:integration
+CODEGRAPH_TEST_INSTALL_DIR=../src/CodeGraph.Indexer/bin/Release/net10.0 \
+CODEGRAPH_TEST_MCP=../src/CodeGraph.Mcp/bin/Release/net10.0/codegraph-mcp npm run test:integration
+CODEGRAPH_TEST_INSTALL_RELEASE=1 npm run test:install   # downloads the 1.2.0 release archive
 npm run package               # writes ../dist/codegraph-vscode.vsix
 ```
 

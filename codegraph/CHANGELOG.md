@@ -27,8 +27,14 @@ The executables report their version with `--version`; the MCP server shows it t
 - Tested: 13 unit tests, and an integration test that drives the extension inside VS Code 1.146.0 against the
   indexer built from this repository. It runs 7 steps: find the solution, index it, see an edit go stale, start the
   daemon and wait for it to index the edit, stop it, and rebuild. CI run 43972862634 (16 November 2026) passed the
-  9 unit tests of that commit and all 7 steps on Linux, macOS and Windows; after the review fixes, all 13 unit tests
-  and all 7 steps passed on Linux (17 November 2026, not yet in CI).
+  9 unit tests of that commit and all 7 steps on Linux, macOS and Windows; after the review fixes, CI run
+  44033732682 (17 November 2026) passed all 13 unit tests and all 7 steps on all three.
+  - An 8th step checks the MCP server the extension offers. It starts the server with the offered arguments, calls
+    `graph_stats` and gets the graph's counts. It also checks that a `.vscode/mcp.json` entry withdraws the offer
+    and that removing the entry brings it back.
+  - An install test installs the 1.2.0 release with the extension's code, then updates it while `codegraph-mcp`
+    runs from the folder: refused with nothing changed on Windows, replaced on macOS and Linux.
+  - Both passed on Linux (17 November 2026); CI runs both on all three systems.
 - `codegraph-index status [--db PATH] [--json]` reports, in one call:
   - the graph and how it compares with the working tree: edited and deleted files, and a moved HEAD;
   - nodes and files for each language, with each language's compiler facts;

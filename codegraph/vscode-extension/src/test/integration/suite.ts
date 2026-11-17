@@ -1,11 +1,13 @@
 // Runs inside VS Code (see runTest.ts): the extension finds the fixture, indexes it with the real codegraph-index,
 // starts and stops a real daemon, and sees an edit make the graph stale. No test framework: each step throws on failure.
 import * as assert from 'assert';
+import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { Cli } from '../../cli';
 import type { Graph, Graphs } from '../../graphs';
+import type { McpOffer } from '../../mcp';
 
 async function until<T>(what: string, probe: () => Promise<T | undefined> | T | undefined, seconds: number): Promise<T> {
   const deadline = Date.now() + seconds * 1000;
@@ -21,7 +23,52 @@ async function until<T>(what: string, probe: () => Promise<T | undefined> | T | 
   }
 }
 
-const steps: [string, (ctx: { graphs: Graphs; cli: Cli; graph: () => Graph }) => Promise<void>][] = [
+/**
+ * Starts an MCP server the way a chat client does with a definition (command, args, working folder), and asks it to
+ * initialize and call one tool over stdio (newline-delimited JSON-RPC). Returns the tool's text.
+ */
+async function callTool(command: string, args: string[], cwd: string, tool: string): Promise<string> {
+  const child = cp.spawn(command, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  const stderr: string[] = [];
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => stderr.push(chunk));
+  const answers = new Map<number, (message: { result?: { content?: { text?: string }[] }; error?: unknown }) => void>();
+  let buffer = '';
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+    buffer += chunk;
+    for (let end = buffer.indexOf('\n'); end >= 0; end = buffer.indexOf('\n')) {
+      const line = buffer.slice(0, end).trim();
+      buffer = buffer.slice(end + 1);
+      if (line) {
+        const message = JSON.parse(line) as { id?: number; result?: { content?: { text?: string }[] }; error?: unknown };
+        if (typeof message.id === 'number') {
+          answers.get(message.id)?.(message);
+        }
+      }
+    }
+  });
+  const request = (id: number, method: string, params: unknown) =>
+    new Promise<{ result?: { content?: { text?: string }[] }; error?: unknown }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`${method}: no answer in 60 s (stderr: ${stderr.join('').trim()})`)), 60_000);
+      answers.set(id, (message) => {
+        clearTimeout(timer);
+        resolve(message);
+      });
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+    });
+  try {
+    const init = await request(1, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'codegraph-vscode-test', version: '0' } });
+    assert.ok(init.result, `initialize answered: ${JSON.stringify(init)}`);
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    const call = await request(2, 'tools/call', { name: tool, arguments: {} });
+    assert.ok(call.result, `${tool} answered: ${JSON.stringify(call)}`);
+    return (call.result.content ?? []).map((c) => c.text ?? '').join('\n');
+  } finally {
+    child.stdin.end();
+    child.kill();
+  }
+}
+
+const steps: [string, (ctx: { graphs: Graphs; cli: Cli; mcp: McpOffer; graph: () => Graph }) => Promise<void>][] = [
   [
     'registers its commands',
     async () => {
@@ -52,6 +99,45 @@ const steps: [string, (ctx: { graphs: Graphs; cli: Cli; graph: () => Graph }) =>
       assert.equal(status.graph!.stale, false);
       const csharp = status.graph!.languages.find((l) => l.name === 'csharp');
       assert.ok(csharp && csharp.nodes > 0 && csharp.files > 0 && csharp.compileErrors === 0, `C# rows: ${JSON.stringify(csharp)}`);
+    },
+  ],
+  [
+    'offers the MCP server for the graph, which answers from it',
+    async ({ graphs, cli, mcp, graph }) => {
+      const root = graph().root;
+      const [definition, ...more] = mcp.definitions();
+      assert.equal(more.length, 0, 'one definition for one graph');
+      assert.equal(definition.label, 'CodeGraph');
+      assert.equal(definition.command, cli.server());
+      assert.deepEqual(definition.args, ['--root', root]);
+      assert.equal(definition.cwd?.fsPath, root);
+
+      // The definition started as a chat client starts it. The test's install folder may be the indexer's build
+      // output, which has no codegraph-mcp: CODEGRAPH_TEST_MCP names the server's own build then.
+      const command = process.env.CODEGRAPH_TEST_MCP || definition.command;
+      const stats = await callTool(command, definition.args, definition.cwd!.fsPath, 'graph_stats');
+      assert.equal(stats, `${graph().status!.graph!.nodes} nodes, ${graph().status!.graph!.edges} edges`);
+
+      // A workspace that names its own codegraph server in .vscode/mcp.json gets no second one, and gets ours back
+      // when the entry goes; each change re-announces the list.
+      let announced = 0;
+      const subscription = mcp.onDidChange(() => announced++);
+      const config = path.join(root, '.vscode', 'mcp.json');
+      try {
+        fs.writeFileSync(config, JSON.stringify({ servers: { codegraph: { type: 'stdio', command: definition.command, args: definition.args } } }));
+        await graphs.refreshAll();
+        assert.equal(announced, 1, 'adding the workspace entry re-announces');
+        assert.deepEqual(mcp.definitions(), []);
+        fs.rmSync(config);
+        await graphs.refreshAll();
+        assert.equal(announced, 2, 'removing it re-announces');
+        assert.equal(mcp.definitions().length, 1);
+        await graphs.refreshAll();
+        assert.equal(announced, 2, 'a status refresh with nothing changed does not');
+      } finally {
+        subscription.dispose();
+        fs.rmSync(config, { force: true });
+      }
     },
   ],
   [
@@ -104,7 +190,7 @@ const steps: [string, (ctx: { graphs: Graphs; cli: Cli; graph: () => Graph }) =>
 ];
 
 export async function run(): Promise<void> {
-  const extension = vscode.extensions.getExtension<{ graphs: Graphs; cli: Cli }>('nerdcules.codegraph');
+  const extension = vscode.extensions.getExtension<{ graphs: Graphs; cli: Cli; mcp: McpOffer }>('nerdcules.codegraph');
   assert.ok(extension, 'the extension is loaded');
   const api = await extension.activate();
   const ctx = { ...api, graph: () => api.graphs.all()[0] };

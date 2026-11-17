@@ -9,7 +9,7 @@ import * as path from 'path';
 import { Readable, Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 import type { ReadableStream as WebReadableStream } from 'stream/web';
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 import { assetName, checksumFor, isInstallFolder, repository, runtimeId } from './platform';
 
 const userAgent = 'codegraph-vscode-extension';
@@ -53,8 +53,6 @@ export async function installRelease(
   const asset = assetName(rid);
   const base = `https://github.com/${repository}/releases/download/${tag}`;
   const scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'codegraph-install-'));
-  const parent = path.dirname(dir);
-  let staging: string | undefined;
   try {
     progress.report({ message: `downloading ${asset}` });
     const archive = path.join(scratch, asset);
@@ -71,10 +69,27 @@ export async function installRelease(
     }
     log(`checksum ok (${hash})`);
 
-    progress.report({ message: `unpacking beside ${dir}` });
-    // Beside the install folder, on the same disk, so the swap below is two renames.
-    await fs.promises.mkdir(parent, { recursive: true });
-    staging = await fs.promises.mkdtemp(path.join(parent, `.${path.basename(dir)}.new-`));
+    progress.report({ message: `installing into ${dir}` });
+    await installArchive(archive, dir, token, log);
+    log(`installed ${tag} into ${dir}`);
+  } finally {
+    await fs.promises.rm(scratch, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Unpacks a release archive (already checked) into a new folder beside `dir` and swaps it in (see installRelease).
+ * Exported for the install test, which updates from an archive of an installation instead of downloading again.
+ */
+export async function installArchive(archive: string, dir: string, token: { isCancellationRequested: boolean }, log: (line: string) => void): Promise<void> {
+  if (!isInstallFolder(dir)) {
+    throw new Error(`${dir} holds files that are not a CodeGraph installation; set codegraph.installDir to a folder of its own`);
+  }
+  // Beside the install folder, on the same disk, so the swap is two renames.
+  const parent = path.dirname(dir);
+  await fs.promises.mkdir(parent, { recursive: true });
+  let staging: string | undefined = await fs.promises.mkdtemp(path.join(parent, `.${path.basename(dir)}.new-`));
+  try {
     // tar unpacks both: a .tar.gz everywhere, and a .zip with the bsdtar Windows 10+ ships as tar.exe.
     await exec('tar', ['-xf', archive, '-C', staging]);
     if (process.platform !== 'win32') {
@@ -89,13 +104,9 @@ export async function installRelease(
     if (token.isCancellationRequested) {
       throw new Error('the update was cancelled; the installation is unchanged');
     }
-
-    progress.report({ message: `replacing ${dir}` });
     await swapIn(staging, dir, log);
     staging = undefined;
-    log(`installed ${tag} into ${dir}`);
   } finally {
-    await fs.promises.rm(scratch, { recursive: true, force: true });
     if (staging) {
       await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined);
     }

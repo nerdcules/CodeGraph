@@ -6,13 +6,29 @@ import * as vscode from 'vscode';
 import { Cli } from './cli';
 import { Graphs } from './graphs';
 
-export function registerMcp(context: vscode.ExtensionContext, cli: Cli, graphs: Graphs, version: () => string | undefined): void {
-  // registerMcpServerDefinitionProvider arrived in VS Code 1.101; an editor without it (an older fork) just skips this.
-  const lm = vscode.lm as typeof vscode.lm | undefined;
-  if (!lm || typeof lm.registerMcpServerDefinitionProvider !== 'function') {
-    return;
-  }
+/** What the extension offers, for the integration test: the definitions now, and the event that re-announces them. */
+export interface McpOffer {
+  definitions(): vscode.McpStdioServerDefinition[];
+  readonly onDidChange: vscode.Event<void>;
+}
+
+export function registerMcp(context: vscode.ExtensionContext, cli: Cli, graphs: Graphs, version: () => string | undefined): McpOffer {
   const changed = new vscode.EventEmitter<void>();
+  const definitions = (): vscode.McpStdioServerDefinition[] => {
+    if (!enabled() || !cli.installed()) {
+      return [];
+    }
+    const server = cli.server();
+    return graphs
+      .all()
+      .filter((g) => g.status?.exists && !namedInWorkspaceConfig(g.root))
+      .map((g) => {
+        const label = graphs.all().length > 1 ? `CodeGraph (${g.name})` : 'CodeGraph';
+        const definition = new vscode.McpStdioServerDefinition(label, server, ['--root', g.root], {}, version());
+        definition.cwd = vscode.Uri.file(g.root);
+        return definition;
+      });
+  };
   let last = '';
   context.subscriptions.push(
     changed,
@@ -26,25 +42,18 @@ export function registerMcp(context: vscode.ExtensionContext, cli: Cli, graphs: 
       }
     }),
     vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration('codegraph') && changed.fire()),
-    lm.registerMcpServerDefinitionProvider('codegraph.mcp', {
-      onDidChangeMcpServerDefinitions: changed.event,
-      provideMcpServerDefinitions: () => {
-        if (!enabled() || !cli.installed()) {
-          return [];
-        }
-        const server = cli.server();
-        return graphs
-          .all()
-          .filter((g) => g.status?.exists && !namedInWorkspaceConfig(g.root))
-          .map((g) => {
-            const label = graphs.all().length > 1 ? `CodeGraph (${g.name})` : 'CodeGraph';
-            const definition = new vscode.McpStdioServerDefinition(label, server, ['--root', g.root], {}, version());
-            definition.cwd = vscode.Uri.file(g.root);
-            return definition;
-          });
-      },
-    }),
   );
+  // registerMcpServerDefinitionProvider arrived in VS Code 1.101; an editor without it (an older fork) just skips this.
+  const lm = vscode.lm as typeof vscode.lm | undefined;
+  if (lm && typeof lm.registerMcpServerDefinitionProvider === 'function') {
+    context.subscriptions.push(
+      lm.registerMcpServerDefinitionProvider('codegraph.mcp', {
+        onDidChangeMcpServerDefinitions: changed.event,
+        provideMcpServerDefinitions: definitions,
+      }),
+    );
+  }
+  return { definitions, onDidChange: changed.event };
 }
 
 function enabled(): boolean {

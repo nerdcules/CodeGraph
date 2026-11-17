@@ -54,8 +54,9 @@ jobs:
         if: runner.os == 'macOS' || runner.os == 'Linux'
         run: tests/install-through-symlink.sh
 
-      # The VS Code extension: unit tests, then the extension driven inside VS Code against the indexer built above
-      # (index, a stale edit, a live daemon, stop, rebuild), then the .vsix it would ship.
+      # The VS Code extension: unit tests; its install code against a published release; the extension driven inside
+      # VS Code against the indexer and server built above (index, the MCP server it offers, a stale edit, a live
+      # daemon, stop, rebuild); then the .vsix it would ship.
       - name: VS Code extension packages
         working-directory: codegraph/vscode-extension
         run: npm ci --no-audit --no-fund
@@ -63,6 +64,15 @@ jobs:
       - name: VS Code extension unit tests
         working-directory: codegraph/vscode-extension
         run: npm test
+
+      # Downloads the 1.2.0 archive for this runner (89 to 115 MB), then updates with codegraph-mcp running from the
+      # folder: refused with nothing changed on Windows, replaced under the running program elsewhere.
+      - name: VS Code extension install and update
+        working-directory: codegraph/vscode-extension
+        timeout-minutes: 10
+        env:
+          CODEGRAPH_TEST_INSTALL_RELEASE: '1'
+        run: npm run test:install
 
       - uses: actions/cache@v4
         with:
@@ -74,6 +84,8 @@ jobs:
         shell: bash
         env:
           CODEGRAPH_TEST_INSTALL_DIR: ${{ github.workspace }}/codegraph/src/CodeGraph.Indexer/bin/Release/net10.0
+          # The indexer's build output has no codegraph-mcp; the MCP step starts the server's own build.
+          CODEGRAPH_TEST_MCP: ${{ github.workspace }}/codegraph/src/CodeGraph.Mcp/bin/Release/net10.0/codegraph-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
         run: |
           if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a npm run test:integration; else npm run test:integration; fi
 

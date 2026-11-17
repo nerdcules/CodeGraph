@@ -8,7 +8,7 @@ import { Daemons } from './daemons';
 import { Graph, Graphs } from './graphs';
 import { Indexing } from './indexing';
 import { installRelease, latestTag } from './install';
-import { registerMcp } from './mcp';
+import { McpOffer, registerMcp } from './mcp';
 import { OverviewView } from './overview';
 import { compareVersions, isInstallFolder } from './platform';
 import { StatusBar } from './statusBar';
@@ -31,7 +31,7 @@ const clientChoices: { id: string; label: string; detail: string }[] = [
 
 let daemons: Daemons | undefined;
 
-export async function activate(context: vscode.ExtensionContext): Promise<{ graphs: Graphs; cli: Cli }> {
+export async function activate(context: vscode.ExtensionContext): Promise<{ graphs: Graphs; cli: Cli; mcp: McpOffer }> {
   const output = vscode.window.createOutputChannel('CodeGraph', { log: true });
   const cli = new Cli(output);
   const graphs = new Graphs(cli);
@@ -54,7 +54,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
     vscode.window.registerWebviewViewProvider('codegraph.overview', overview),
     vscode.workspace.registerTextDocumentContentProvider(UsageDocuments.scheme, usageDocs),
   );
-  registerMcp(context, cli, graphs, () => info.version);
+  const mcp = registerMcp(context, cli, graphs, () => info.version);
 
   const refreshInstall = async () => {
     info.installed = cli.installed();
@@ -324,7 +324,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
   void daemons.autoStart();
   void checkForUpdate(context, info, () => overview.post());
 
-  return { graphs, cli };
+  return { graphs, cli, mcp };
 }
 
 export async function deactivate(): Promise<void> {

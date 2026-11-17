@@ -292,6 +292,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test:unit": "node --test \"out/test/unit/**/*.test.js\"",
+    "test:install": "node --test \"out/test/install/**/*.test.js\"",
     "test:integration": "node out/test/integration/runTest.js",
     "test": "npm run compile && npm run test:unit",
     "package": "node -e \"require('fs').mkdirSync('../dist',{recursive:true})\" && vsce package --no-dependencies --out ../dist/codegraph-vscode.vsix"
