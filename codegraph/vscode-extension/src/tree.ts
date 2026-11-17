@@ -155,11 +155,19 @@ export class GraphTree implements vscode.TreeDataProvider<Node>, vscode.Disposab
         item.contextValue = 'target';
         item.resourceUri = vscode.Uri.file(target.file);
         item.command = { command: 'vscode.open', title: 'Open', arguments: [vscode.Uri.file(target.file)] };
+        const replaced = this.graphs.replaces(graph, target);
         if (target.missing) {
           item.iconPath = new vscode.ThemeIcon('warning', yellow);
           item.description += ` · needs ${target.missing.tool}`;
           item.tooltip = new vscode.MarkdownString(
             `\`${target.missing.tool}\` is not on PATH, so this target cannot be indexed.\n\n${target.missing.install}: [${target.missing.url}](${target.missing.url})`,
+          );
+        } else if (replaced) {
+          item.iconPath = new vscode.ThemeIcon('circle-slash');
+          item.description += ' · not indexed';
+          item.tooltip = new vscode.MarkdownString(
+            `${target.file}\n\nNot in this graph: its ${languageName(target.kind)} rows come from \`${path.relative(graph.root, replaced.file) || replaced.file}\`, ` +
+              `and an index replaces all of a language's rows, so one ${languageName(target.kind)} target feeds a graph. Index this one to replace them.`,
           );
         } else {
           item.tooltip = target.file;

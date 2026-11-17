@@ -403,6 +403,12 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull, 
             return Task.FromResult(LiveResponse.Ok(loop.Status()));
         }
 
+        if (request.Method == "status")
+        {
+            // A poll (codegraph-index status, the VS Code extension): answered like ping, but not activity.
+            return Task.FromResult(LiveResponse.Ok(loop.Status()));
+        }
+
         loop.Touch();
         return service.HandleAsync(request, cancellationToken);
     }, Log);
@@ -485,6 +491,8 @@ static string IndexerVersion() => typeof(RoslynIndexer).Assembly
 /// </summary>
 static async Task IndexOrRebuildAsync(Solution solution, string target, string dbPath, bool forceFull, CancellationToken cancellationToken)
 {
+    // One writer per graph across processes, from reading the indexed files to the swap (GraphFile.LockAsync).
+    using var writing = await GraphFile.LockAsync(dbPath, Log, cancellationToken);
     try
     {
         await IndexAsync(solution, target, dbPath, forceFull, cancellationToken);

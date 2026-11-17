@@ -1,13 +1,17 @@
 // Starts and stops the live daemon (`codegraph-index --watch`) of each graph. The extension stops the daemons it
 // started when the window closes; a daemon someone else started (a terminal, the MCP server) is left running.
+import * as cp from 'child_process';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Cli } from './cli';
 import { Graph, Graphs } from './graphs';
 
 export class Daemons implements vscode.Disposable {
-  /** Graph files whose daemon this window started. */
-  private readonly started = new Set<string>();
+  /**
+   * The daemon process this window started for each graph file, from the moment it is spawned (the status that
+   * would show it is only read later). A second Start while one is starting or running does nothing.
+   */
+  private readonly started = new Map<string, cp.ChildProcess>();
   private readonly timers = new Set<NodeJS.Timeout>();
 
   constructor(
@@ -26,7 +30,7 @@ export class Daemons implements vscode.Disposable {
   }
 
   async start(graph: Graph): Promise<void> {
-    if (graph.status?.daemon) {
+    if (graph.status?.daemon || this.started.has(graph.db)) {
       return;
     }
     const target = this.graphs.daemonTarget(graph);
@@ -40,12 +44,15 @@ export class Daemons implements vscode.Disposable {
     );
     child.on('error', (error) => this.output.error(`daemon for ${graph.name} did not start: ${error.message}`));
     child.on('exit', (code) => {
-      this.started.delete(graph.db);
+      // Only this child's own entry: a later start may have replaced it.
+      if (this.started.get(graph.db) === child) {
+        this.started.delete(graph.db);
+      }
       this.output.info(`daemon for ${graph.name} exited (${code ?? 'signal'})`);
       void this.graphs.refresh(graph);
     });
     child.unref();
-    this.started.add(graph.db);
+    this.started.set(graph.db, child);
 
     // The pipe answers within a second or two, "loading" until the solution is in; watch it come up.
     for (const delay of [800, 2500, 6000, 12000, 25000, 45000, 90000]) {
@@ -67,7 +74,7 @@ export class Daemons implements vscode.Disposable {
   }
 
   async restart(graph: Graph): Promise<void> {
-    if (graph.status?.daemon) {
+    if (graph.status?.daemon || this.started.has(graph.db)) {
       await this.stop(graph);
     }
     await this.start(graph);
@@ -91,7 +98,7 @@ export class Daemons implements vscode.Disposable {
 
   /** Stops every daemon this window started, for deactivation and before an update replaces the binaries. */
   async stopManaged(): Promise<void> {
-    const graphs = [...this.started].map((db) => this.graphs.get(db) ?? ({ db, root: path.dirname(path.dirname(db)), name: db, targets: [] } as Graph));
+    const graphs = [...this.started.keys()].map((db) => this.graphs.get(db) ?? ({ db, root: path.dirname(path.dirname(db)), name: db, targets: [] } as Graph));
     await Promise.all(graphs.map((g) => this.stop(g).catch(() => undefined)));
   }
 

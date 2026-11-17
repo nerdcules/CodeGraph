@@ -127,7 +127,8 @@ codegraph-index status
 
 It prints the graph file, when and at which commit it was built, and its size. It says whether the graph matches the
 working tree, how many files each language has, whether a daemon serves the graph, and the last week of tool calls.
-Add `--json` for the same report as JSON.
+Add `--json` for the same report as JSON. Asking the daemon for its state does not count as using it, so running
+`status` often never keeps an idle daemon from stopping.
 
 To stop the daemon that serves the graph, run `stop`:
 

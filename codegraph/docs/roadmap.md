@@ -61,9 +61,14 @@ means here, and where it stands.
    second `--watch` on the front end does not start, because one daemon serves each graph. The front end needs a
    re-run of `codegraph-index` on it. The [VS Code extension](../vscode-extension/README.md) does that on each save;
    other editors and terminals do not.
-7. **`data_flow` answers for C# only.** Java goes through scip-java, which tells calls and reads apart
+7. **One target per language in a graph.** An import replaces every row of its language, so two TypeScript
+   workspaces (or two C# solutions) indexed into one graph keep only the last one's rows. `init` on a C# solution
+   indexes every front end it finds under the repository the same way, so with two front ends only the last stays.
+   The [VS Code extension](../vscode-extension/README.md) indexes one target of each language and marks the others
+   as not indexed. A fix is to index the workspaces of a language in one run, or to replace a language's rows per target.
+8. **`data_flow` answers for C# only.** Java goes through scip-java, which tells calls and reads apart
    by the target's kind only.
-8. **A recording of the install.** The [front page](../../README.md) opens with a real Claude Code session,
+9. **A recording of the install.** The [front page](../../README.md) opens with a real Claude Code session,
    replayed from its transcript, and a video of the same question with CodeGraph on and off. The install and the
    usage line a week later are still a picture of a terminal.
 

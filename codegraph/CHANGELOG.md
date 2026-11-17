@@ -13,16 +13,22 @@ The executables report their version with `--version`; the MCP server shows it t
   repositories up, and runs each graph's live daemon. It shows each graph's state in an Overview, a Graphs tree and
   the status bar.
   - It installs from the GitHub release after checking the archive against `SHA256SUMS`, and checks for a newer
-    release once a day.
+    release once a day. It unpacks the release beside the install folder and then swaps the two folders, so a
+    failed update leaves the old installation whole. It never replaces a folder that holds other programs (a
+    `codegraph-index` on `PATH` in `~/.local/bin` is followed to its own folder, or the default folder is used).
+  - A graph takes one target of each language, because an index replaces all of a language's rows. A second
+    TypeScript workspace or C# solution in the same repository shows as not indexed, and indexing it asks first.
+    A solution hides only the projects it lists.
   - It starts a daemon with `--idle-exit` for each graph that exists, and stops the daemons it started when the
     window closes.
   - It re-indexes on save the targets the daemon does not watch, such as an Angular front end beside a C# solution.
   - It offers `codegraph-mcp` to VS Code's chat clients, unless `.vscode/mcp.json` already names one.
   - Each release carries it as `codegraph-vscode.vsix`. It is not on the Marketplace.
-- Tested: 9 unit tests, and an integration test that drives the extension inside VS Code 1.146.0 against the
+- Tested: 13 unit tests, and an integration test that drives the extension inside VS Code 1.146.0 against the
   indexer built from this repository. It runs 7 steps: find the solution, index it, see an edit go stale, start the
-  daemon and wait for it to index the edit, stop it, and rebuild. CI run 43972862634 (16 November 2026) passed all
-  9 unit tests and all 7 steps on Linux, macOS and Windows.
+  daemon and wait for it to index the edit, stop it, and rebuild. CI run 43972862634 (16 November 2026) passed the
+  9 unit tests of that commit and all 7 steps on Linux, macOS and Windows; after the review fixes, all 13 unit tests
+  and all 7 steps passed on Linux (17 November 2026, not yet in CI).
 - `codegraph-index status [--db PATH] [--json]` reports, in one call:
   - the graph and how it compares with the working tree: edited and deleted files, and a moved HEAD;
   - nodes and files for each language, with each language's compiler facts;
@@ -35,6 +41,12 @@ The executables report their version with `--version`; the MCP server shows it t
   the test for that took 5.06 s and now takes 36 ms. On macOS CI the whole suite stalled the runner on this branch
   until this changed; a macOS bisect passed the suite when that test was left out (and when either of two others
   was), and three runs of the whole suite passed after the change.
+- Both daemons answer a `status` request like `ping`, but it does not reset the idle-exit clock;
+  `codegraph-index status` uses it, so the extension's poll every 15 s no longer keeps an unused daemon running.
+  A daemon from 1.2.0 or earlier does not know it and is asked with `ping`.
+- Index runs on one graph take turns across processes: each holds `graph.db.lock` from reading the old graph to
+  swapping in the new one. Before, the daemon re-indexing C# and an import of the TypeScript rows could overlap,
+  share `graph.db.tmp`, and drop rows the other had just written.
 - `codegraph-index stop [--db PATH]` asks the daemon serving a graph to stop and waits until its pipe is gone. Both
   daemons, C# and the language-server one, answer a new `stop` request on the pipe. A daemon from 1.2.0 or earlier
   does not know it: `stop` says so, names its process id, exits 1 and leaves it running.

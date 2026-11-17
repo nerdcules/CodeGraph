@@ -1,4 +1,5 @@
 // What codegraph-index can index, and which tool each kind of target needs. No VS Code imports.
+import * as fs from 'fs';
 import * as path from 'path';
 
 export type TargetKind = 'csharp' | 'typescript' | 'java' | 'python' | 'go' | 'rust';
@@ -64,21 +65,22 @@ export const sourceExtensions: Record<TargetKind, string[]> = {
 };
 
 /**
- * Which targets to show, from every marker file found. A solution covers its projects, so .csproj files are dropped
- * when a .sln or .slnx exists; a tsconfig.json beside an angular.json or nx.json is the same workspace; nested
- * markers of one SCIP language (a Maven module inside a Maven build) are covered by the outermost one.
+ * Which targets to show, from every marker file found. A solution covers the projects it lists, so those .csproj
+ * files are dropped (a project no solution lists, or one in another repository of the same folder, stays); a
+ * tsconfig.json beside an angular.json or nx.json is the same workspace; nested markers of one SCIP language (a Maven
+ * module inside a Maven build) are covered by the outermost one. `projectsOf` reads a solution's project paths.
  */
-export function chooseTargets(files: string[]): { file: string; kind: TargetKind }[] {
+export function chooseTargets(files: string[], projectsOf: (solution: string) => string[] = readSolutionProjects): { file: string; kind: TargetKind }[] {
   const found = files
     .map((file) => ({ file, kind: classify(file) }))
     .filter((t): t is { file: string; kind: TargetKind } => t.kind !== undefined)
     .sort((a, b) => a.file.length - b.file.length || a.file.localeCompare(b.file));
 
-  const hasSolution = found.some((t) => /\.slnx?$/i.test(t.file));
+  const inSolutions = new Set(found.filter((t) => /\.slnx?$/i.test(t.file)).flatMap((t) => projectsOf(t.file)).map(pathKey));
   const chosen: { file: string; kind: TargetKind }[] = [];
   for (const target of found) {
     const dir = path.dirname(target.file);
-    if (target.kind === 'csharp' && hasSolution && /\.csproj$/i.test(target.file)) {
+    if (target.kind === 'csharp' && /\.csproj$/i.test(target.file) && inSolutions.has(pathKey(target.file))) {
       continue;
     }
     if (target.kind === 'csharp') {
@@ -92,6 +94,59 @@ export function chooseTargets(files: string[]): { file: string; kind: TargetKind
     }
   }
   return chosen.sort((a, b) => a.kind.localeCompare(b.kind) || a.file.localeCompare(b.file));
+}
+
+/** The project paths a .sln or .slnx lists, absolute; none when it cannot be read. */
+export function readSolutionProjects(solution: string): string[] {
+  try {
+    return solutionProjects(solution, fs.readFileSync(solution, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+/** The .csproj paths in a solution's text, resolved against its folder: `Project(...) = "Name", "a\\B.csproj", ...` lines of a .sln, `<Project Path="a/B.csproj" />` of a .slnx. */
+export function solutionProjects(solution: string, text: string): string[] {
+  const pattern = /\.slnx$/i.test(solution) ? /<Project\b[^>]*\bPath\s*=\s*"([^"]+\.csproj)"/gi : /^\s*Project\([^)]*\)\s*=\s*"[^"]*"\s*,\s*"([^"]+\.csproj)"/gim;
+  const dir = path.dirname(solution);
+  return [...text.matchAll(pattern)].map((m) => path.resolve(dir, m[1].replace(/[\\/]/g, path.sep)));
+}
+
+/** The languages a kind's import writes rows in (the language column of the graph). */
+export const kindLanguages: Record<TargetKind, string[]> = {
+  csharp: ['csharp'],
+  typescript: ['typescript', 'javascript'],
+  java: ['java', 'kotlin', 'scala'],
+  python: ['python'],
+  go: ['go'],
+  rust: ['rust'],
+};
+
+/**
+ * The targets indexed into one graph: one per kind. Each import replaces every row of its languages, so two
+ * TypeScript workspaces (or two C# solutions) indexed into one graph would leave only the last one's rows. Per kind
+ * it is the target the graph already holds (`held`), else `preferred` (the daemon's), else a solution before a
+ * project, else the first.
+ */
+export function indexedTargets<T extends { file: string; kind: TargetKind }>(targets: readonly T[], held: (kind: TargetKind) => string | undefined, preferred?: T): T[] {
+  const chosen: T[] = [];
+  for (const kind of [...new Set(targets.map((t) => t.kind))]) {
+    const ofKind = targets.filter((t) => t.kind === kind);
+    const heldFile = held(kind);
+    const pick =
+      (heldFile ? ofKind.find((t) => pathKey(t.file) === pathKey(heldFile)) : undefined) ??
+      (preferred?.kind === kind ? ofKind.find((t) => pathKey(t.file) === pathKey(preferred.file)) : undefined) ??
+      ofKind.find((t) => /\.slnx?$/i.test(t.file)) ??
+      ofKind[0];
+    chosen.push(pick);
+  }
+  return chosen;
+}
+
+/** A path as a comparison key: absolute, forward slashes, lower case where the file system ignores case. */
+function pathKey(p: string): string {
+  const key = path.resolve(p).replace(/\\/g, '/');
+  return process.platform === 'linux' ? key : key.toLowerCase();
 }
 
 /** True when `child` is `parent` or below it. */

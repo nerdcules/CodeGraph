@@ -54,7 +54,8 @@ internal static class StatusCommand
     /// <summary>Everything the status reports. Never throws for a missing, locked or damaged graph: it says so in <see cref="StatusReport.Error"/>.</summary>
     public static async Task<StatusReport> ReadAsync(string dbPath, string version)
     {
-        var daemon = await new LiveClient(dbPath).PingAsync();
+        // status, not ping: a status poll must not reset the daemon's idle-exit clock.
+        var daemon = await new LiveClient(dbPath).StatusAsync();
         var usage = Usage(dbPath);
         if (!File.Exists(dbPath))
         {

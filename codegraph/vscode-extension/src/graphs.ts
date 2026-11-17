@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { Cli, findOnPath } from './cli';
 import { StatusReport } from './status';
-import { chooseTargets, excludeGlob, isInside, Requirement, requirements, TargetKind, targetGlob } from './targets';
+import { chooseTargets, classify, excludeGlob, indexedTargets, isInside, kindLanguages, Requirement, requirements, TargetKind, targetGlob } from './targets';
 
 export interface Target {
   file: string;
@@ -79,16 +79,15 @@ export class Graphs implements vscode.Disposable {
   }
 
   private async discoverNow(): Promise<void> {
-    const found = new Map<string, Graph>();
-    const add = (db: string): Graph => {
-      let graph = found.get(db);
-      if (!graph) {
-        const previous = this.get(db);
-        const root = path.dirname(path.dirname(db));
-        graph = { db, root, name: path.basename(root), targets: [], status: previous?.status, busy: previous?.busy };
-        found.set(db, graph);
+    // Targets per graph file, collected first; the Graph objects are filled in at the end.
+    const found = new Map<string, Target[]>();
+    const add = (db: string): Target[] => {
+      let targets = found.get(db);
+      if (!targets) {
+        targets = [];
+        found.set(db, targets);
       }
-      return graph;
+      return targets;
     };
 
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
@@ -102,11 +101,18 @@ export class Graphs implements vscode.Disposable {
       }
       const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, targetGlob), excludeGlob, 500);
       for (const target of chooseTargets(uris.map((u) => u.fsPath))) {
-        add(defaultDb(target.file)).targets.push({ ...target, missing: missingTool(target.kind) });
+        add(defaultDb(target.file)).push({ ...target, missing: missingTool(target.kind) });
       }
     }
 
-    this.graphs = [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+    // A graph found again keeps its object: an index run in progress holds it, and clears its busy state on it.
+    this.graphs = [...found]
+      .map(([db, targets]) => {
+        const graph = this.get(db) ?? { db, root: path.dirname(path.dirname(db)), name: path.basename(path.dirname(path.dirname(db))), targets };
+        graph.targets = targets;
+        return graph;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
     this.changed.fire();
     await this.refreshAll();
   }
@@ -147,6 +153,28 @@ export class Graphs implements vscode.Disposable {
       graph.targets[0] ??
       (built && fs.existsSync(built) ? { file: built, kind: 'csharp' as TargetKind } : undefined)
     );
+  }
+
+  /**
+   * The targets that feed this graph, one per kind (see indexedTargets): an import replaces all of its language's
+   * rows, so a second TypeScript workspace or C# solution in the same repository is shown but not indexed with it.
+   */
+  indexed(graph: Graph): Target[] {
+    return indexedTargets(graph.targets, (kind) => this.held(graph, kind), this.daemonTarget(graph));
+  }
+
+  /** The target of the same kind whose rows indexing `target` would replace, when it is not `target` itself. */
+  replaces(graph: Graph, target: Target): Target | undefined {
+    const indexed = this.indexed(graph).find((t) => t.kind === target.kind);
+    return indexed && !samePath(indexed.file, target.file) ? indexed : undefined;
+  }
+
+  /** The target a kind's rows in the graph were built from, as the graph records it. */
+  private held(graph: Graph, kind: TargetKind): string | undefined {
+    const report = graph.status?.graph;
+    const fromLanguage = report?.languages.find((l) => kindLanguages[kind].includes(l.name) && l.target)?.target;
+    // C# records no per-language target; the graph's solution is C#'s when it names a C# file.
+    return fromLanguage ?? (report?.solution && classify(report.solution) === kind ? report.solution : undefined);
   }
 
   dispose(): void {

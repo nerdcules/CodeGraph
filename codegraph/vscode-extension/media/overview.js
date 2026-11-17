@@ -134,6 +134,26 @@
   /** @param {string} p */
   const base = (p) => p.split(/[\\/]/).pop() || p;
 
+  /**
+   * A control's identity across redraws: its label, else its text (a graph tab's text is the graph's name). The page
+   * is redrawn whenever the extension posts state (every 15 s while the window has focus), so focus moves back to
+   * the control with the same identity, and keyboard users keep their place.
+   * @param {Element} el
+   */
+  const identity = (el) => el.tagName + '|' + (el.getAttribute('aria-label') || el.textContent || '');
+
+  /** @param {any[]} children */
+  function commit(children) {
+    const focused = document.activeElement && app.contains(document.activeElement) && document.activeElement !== app
+      ? identity(document.activeElement)
+      : undefined;
+    app.replaceChildren(...children);
+    if (focused) {
+      const again = Array.from(app.querySelectorAll('button, a, [tabindex]')).find((el) => identity(el) === focused);
+      if (again instanceof HTMLElement) again.focus({ preventScroll: true });
+    }
+  }
+
   function render(state) {
     const children = [];
     if (!state.installed) {
@@ -145,7 +165,7 @@
           h('div', { class: 'actions', style: { justifyContent: 'center' } },
             h('button', { class: 'btn primary', onclick: () => run('codegraph.install') }, 'Install CodeGraph'))),
       );
-      app.replaceChildren(...children);
+      commit(children);
       return;
     }
 
@@ -159,7 +179,7 @@
             h('button', { class: 'btn', onclick: () => run('codegraph.refresh') }, 'Search again'))),
       );
       children.push(footer(state));
-      app.replaceChildren(...children);
+      commit(children);
       return;
     }
 
@@ -183,7 +203,7 @@
       children.push(usageCard(graph));
     }
     children.push(footer(state));
-    app.replaceChildren(...children);
+    commit(children);
   }
 
   function health(g) {

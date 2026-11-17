@@ -72,6 +72,28 @@ public sealed class LiveClient(string dbPath)
     }
 
     /// <summary>
+    /// The daemon's status without counting as activity: a <c>ping</c> resets the idle-exit clock (the MCP server
+    /// pings before every tool call), <c>status</c> does not, so a tool that polls (the VS Code extension, every
+    /// 15 s) never keeps an unused daemon alive. A daemon from 1.2.0 or earlier does not know <c>status</c> and is
+    /// asked with <c>ping</c> instead.
+    /// </summary>
+    public async Task<LiveStatus?> StatusAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await CallAsync<LiveStatus>("status", null, cancellationToken);
+        }
+        catch (LiveException)
+        {
+            return await PingAsync(cancellationToken);
+        }
+        catch (Exception e) when (e is IOException or TimeoutException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Asks the daemon to index everything pending right now and waits for it, so the next graph query sees the
     /// working tree. Null when no daemon is running or it did not finish within <paramref name="wait"/>.
     /// </summary>

@@ -184,4 +184,31 @@ public sealed class StatusCommandTests
         stopping.Cancel();
         await serving;
     }
+    [Fact]
+    public async Task Status_asks_with_the_status_request_and_falls_back_to_ping_for_an_old_daemon()
+    {
+        // A ping resets the daemon's idle-exit clock and status does not, so a poll must use status.
+        foreach (var knowsStatus in new[] { true, false })
+        {
+            var dbPath = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"), "graph.db");
+            using var stopping = new CancellationTokenSource();
+            var methods = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            var status = new LiveStatus(Environment.ProcessId, "App.slnx", dbPath, 1, 1, DateTime.UnixEpoch, null, null, 0, false);
+            var server = new LiveServer(LivePipe.NameFor(dbPath), (request, _) =>
+            {
+                methods.Enqueue(request.Method);
+                return request.Method == "ping" || (knowsStatus && request.Method == "status")
+                    ? Task.FromResult(LiveResponse.Ok(status))
+                    : throw new LiveException($"unknown method '{request.Method}'");
+            });
+            var serving = server.RunAsync(stopping.Token);
+
+            var report = await StatusCommand.ReadAsync(dbPath, "9.9.9");
+            Assert.Equal(Environment.ProcessId, report.Daemon?.Pid);
+            Assert.Equal(knowsStatus ? ["status"] : ["status", "ping"], methods.ToArray());
+
+            stopping.Cancel();
+            await serving;
+        }
+    }
 }

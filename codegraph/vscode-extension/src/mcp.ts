@@ -17,8 +17,9 @@ export function registerMcp(context: vscode.ExtensionContext, cli: Cli, graphs: 
   context.subscriptions.push(
     changed,
     graphs.onDidChange(() => {
-      // Only a change in what would be offered re-announces the list; status refreshes do not.
-      const key = JSON.stringify([enabled(), cli.installed(), version(), graphs.all().map((g) => [g.root, g.status?.exists])]);
+      // Only a change in what would be offered re-announces the list; status refreshes do not. Whether
+      // .vscode/mcp.json names a codegraph server is part of it: set-up adds one, and removing it brings ours back.
+      const key = JSON.stringify([enabled(), cli.installed(), version(), graphs.all().map((g) => [g.root, g.status?.exists, namedInWorkspaceConfig(g.root)])]);
       if (key !== last) {
         last = key;
         changed.fire();

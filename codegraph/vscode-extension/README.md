@@ -29,11 +29,16 @@ tokens of VS Code's Dark Modern and Light Modern themes.*
 ## What it does
 
 - **Installs and updates CodeGraph.** It downloads the release archive for your machine from GitHub and checks it
-  against the release's `SHA256SUMS`. It unpacks it into the folder the installers use. Once a day it checks for a
-  newer release.
+  against the release's `SHA256SUMS`. It unpacks it beside the install folder and then swaps the two folders, so a
+  failed update leaves the old installation whole. It never replaces a folder that holds other programs, such as
+  `~/.local/bin`. Once a day it checks for a newer release.
 - **Finds what to index.** It finds the C# solutions, TypeScript and Angular workspaces, Maven and Gradle builds,
   Python projects, Go modules and Rust crates in the workspace. It groups them by the graph they feed: one graph
-  for each git worktree.
+  for each git worktree. A solution hides the projects it lists; a project it does not list stays a target.
+- **One target per language.** Indexing a target replaces every row of its language in the graph. So a graph
+  takes one target of each language: the one it was built from, else the daemon's, else a solution. A second
+  TypeScript workspace or C# solution in the same repository shows as **not indexed**. Indexing it replaces the
+  first one's rows, after you confirm.
 - **Sets a repository up.** **Set Up Repository** runs `codegraph-index init` with the assistants you pick.
   It writes their MCP configuration and a `.gitignore` entry, then indexes.
 - **Runs the live daemon.** One daemon for each graph (`codegraph-index --watch`). It starts and stops the daemon
@@ -65,7 +70,11 @@ not, so the views show an error until you update.
 1. Open a repository. The CodeGraph icon appears in the activity bar.
 2. If CodeGraph is not installed, choose **Install CodeGraph**. It installs into `~/.codegraph/bin` on macOS and
    Linux, and `C:\tools\codegraph` on Windows: the same folders `install.sh` and `install.ps1` use. If
-   `codegraph-index` is already on `PATH`, the extension uses that one.
+   `codegraph-index` is already on `PATH`, the extension uses that one, following a link to the folder it points
+   into. An update writes to that folder too. If the folder holds other programs, the update installs into the
+   default folder instead and sets `codegraph.installDir` to it.
+   On Windows a running program cannot be replaced. If an MCP server or a daemon still runs from the folder, the
+   update stops before it changes anything and says so.
 3. Choose **Set up repository…** and pick your assistants. Claude Code is selected by default. VS Code's own chat
    gets the server from the extension (see [below](#github-copilot-and-other-chat-clients)).
 4. When the index is done, choose **Start Live Daemon**.
@@ -92,7 +101,8 @@ server's launcher uses.
 
 - A daemon holds the loaded solution in memory. On this repository its working set was 217 MB (16 November 2026). The extension stops the daemons
   it started when the window closes. A daemon stops itself after `codegraph.daemon.idleExitMinutes` (120) with no
-  save and no tool call.
+  save and no tool call. The extension reads each graph's status every 15 seconds while the window has focus. Those
+  reads use a `status` request that does not count as use, so they never keep an idle daemon running.
 - One daemon serves each graph; a second one would fight the first for the graph file and the pipe. If a daemon is
   already running, started from a terminal or by the MCP server, the extension shows it and leaves it running.
 - **Stop** asks the daemon to stop over its pipe (`codegraph-index stop`) and waits until it has gone.
@@ -114,7 +124,7 @@ one. Turn it off with `codegraph.registerMcpServer`.
 |---|---|
 | CodeGraph: Install or Update CodeGraph | Downloads and installs the latest release after checking it against `SHA256SUMS` |
 | CodeGraph: Set Up Repository… | `codegraph-index init <target> --client <your picks>` |
-| CodeGraph: Index Now | `codegraph-index <target>` for each target of the graph, only the files that changed |
+| CodeGraph: Index Now | `codegraph-index <target>` for the graph's target of each language, only the files that changed |
 | CodeGraph: Rebuild Graph | The same with `--full` for C# |
 | CodeGraph: Start / Stop / Restart Live Daemon | `codegraph-index --watch`, `codegraph-index stop` |
 | CodeGraph: Show Daemon Log | Opens `.codegraph/daemon.log` at its end |
@@ -145,15 +155,21 @@ The indexer and the MCP server run on your machine, and the graph stays in `.cod
 
 ## Tested
 
-- **Unit tests** (`npm test`): 9 tests of the parts without VS Code. They cover target discovery, release asset
-  names, checksums, version order, status parsing and formatting.
+- **Unit tests** (`npm test`): 13 tests of the parts without VS Code. They cover target discovery, the projects a
+  `.sln` or `.slnx` lists, the one target of each language a graph takes, which folders an update may replace,
+  release asset names, checksums, version order, status parsing and formatting.
 - **Integration test** (`npm run test:integration`): VS Code 1.146.0 starts with the extension on a copy of a small
   C# solution and runs 7 steps against a real `codegraph-index` built from this repository. The extension finds the
   solution, indexes it, sees an edit make the graph stale, starts the daemon and waits for it to index the edit,
-  stops it, and rebuilds the graph. CI run 43972862634 (commit `3ae5ace`, 16 November 2026) passed all 9 unit tests
-  and all 7 steps on Linux, macOS and Windows.
-- **Not tested yet:** the install and update download against a published release (the first release with the
-  extension will be the first), and the MCP server offered to Copilot.
+  stops it, and rebuilds the graph. CI run 43972862634 (commit `3ae5ace`, 16 November 2026) passed the 9 unit tests
+  of that commit and all 7 steps on Linux, macOS and Windows. After the review fixes (17 November 2026, Linux only,
+  not yet in CI), all 13 unit tests and all 7 steps passed.
+- **Install, by hand:** the install code was run against the 1.2.0 release archive on Linux (17 November 2026). It
+  installed into a missing folder and updated over an installation, leaving no file of the old one behind. It
+  refused a folder holding another program and left that folder as it was.
+- **Not tested yet:** an update refused on Windows because a program still runs from the folder; an update from a
+  published release carrying the extension (the first release with it will be the first); and the MCP server
+  offered to Copilot.
 
 ## Build it from source
 

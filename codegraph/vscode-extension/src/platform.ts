@@ -1,4 +1,5 @@
 // Where CodeGraph is installed and which release archive fits this machine. No VS Code imports.
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -19,6 +20,21 @@ export function assetName(rid: string): string {
 /** The folders install.sh and install.ps1 install into by default. */
 export function defaultInstallDir(platform: NodeJS.Platform = process.platform, home: string = os.homedir()): string {
   return platform === 'win32' ? 'C:\\tools\\codegraph' : path.join(home, '.codegraph', 'bin');
+}
+
+/**
+ * True when an update may replace `dir` as a whole: it does not exist, it is empty, or it is a CodeGraph installation
+ * (a release archive and a source install both put codegraph-index.dll and codegraph-mcp.dll beside the executables).
+ * A folder on PATH such as ~/.local/bin or /usr/local/bin, holding other programs, is none of these.
+ */
+export function isInstallFolder(dir: string): boolean {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+  }
+  return entries.length === 0 || (entries.includes('codegraph-index.dll') && entries.includes('codegraph-mcp.dll'));
 }
 
 export function executable(name: 'codegraph-index' | 'codegraph-mcp', platform: NodeJS.Platform = process.platform): string {

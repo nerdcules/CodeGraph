@@ -10,8 +10,9 @@ import { Indexing } from './indexing';
 import { installRelease, latestTag } from './install';
 import { registerMcp } from './mcp';
 import { OverviewView } from './overview';
-import { compareVersions } from './platform';
+import { compareVersions, isInstallFolder } from './platform';
 import { StatusBar } from './statusBar';
+import { targetGlob } from './targets';
 import { GraphTree } from './tree';
 
 const clientChoices: { id: string; label: string; detail: string }[] = [
@@ -229,19 +230,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
       const tag = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: 'CodeGraph: checking GitHub' }, () => latestTag());
       info.latest = tag;
       await context.globalState.update('latestTag', tag);
-      const dir = cli.installed() ? cli.installDir() : cli.managedInstallDir();
+      const { dir, adopt } = cli.updateDir();
       const current = await cli.version();
       if (current && compareVersions(tag, current) <= 0) {
-        void vscode.window.showInformationMessage(`CodeGraph ${current} is the latest release (${dir}).`);
+        void vscode.window.showInformationMessage(`CodeGraph ${current} is the latest release (${cli.installDir()}).`);
         return;
+      }
+      if (!isInstallFolder(dir)) {
+        throw new Error(`${dir} holds files that are not a CodeGraph installation, so it is not replaced; set codegraph.installDir to a folder of its own`);
       }
       const verb = current ? `Update ${current} → ${tag.replace(/^v/, '')}` : `Install ${tag}`;
       const others = graphs.all().filter((g) => g.status?.daemon && !daemons!.isManaged(g));
-      const warning = others.length
-        ? ` ${others.length} daemon(s) started outside this window are running; stop them first${process.platform === 'win32' ? ' (Windows cannot replace a running program)' : ''}.`
-        : '';
+      const warning = process.platform === 'win32'
+        ? ' Windows cannot replace a running program: stop every CodeGraph MCP server and daemon started outside this window first' +
+          `${others.length ? ` (${others.length} daemon(s) are running)` : ''}; if one is still running, the update stops before changing anything.`
+        : others.length
+          ? ` ${others.length} daemon(s) started outside this window keep running the old version until they are restarted.`
+          : '';
+      const where = adopt ? ` (codegraph-index on PATH, ${cli.indexer()}, is not in a folder of its own; codegraph.installDir will point at the new folder)` : '';
       const confirm = await vscode.window.showInformationMessage(
-        `${verb} into ${dir}? The folder is emptied first, as install.sh and install.ps1 do.${warning}`,
+        `${verb} into ${dir}${where}? The release is unpacked beside it and swapped in, so the old installation stays whole if anything fails.${warning}`,
         { modal: true },
         current ? 'Update' : 'Install',
       );
@@ -250,10 +258,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
       }
       const restart = graphs.all().filter((g) => daemons!.isManaged(g));
       await daemons!.stopManaged();
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `CodeGraph ${tag}`, cancellable: true },
-        (progress, token) => installRelease(tag, dir, progress, token, (line) => output.info(line)),
-      );
+      try {
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: `CodeGraph ${tag}`, cancellable: true },
+          (progress, token) => installRelease(tag, dir, progress, token, (line) => output.info(line)),
+        );
+      } catch (error) {
+        // Nothing was replaced, so the daemons this window ran can run the old version again.
+        for (const graph of restart) {
+          await daemons!.start(graph).catch(() => undefined);
+        }
+        throw error;
+      }
+      if (adopt) {
+        await vscode.workspace.getConfiguration('codegraph').update('installDir', dir, vscode.ConfigurationTarget.Global);
+      }
       await refreshInstall();
       await graphs.discover();
       for (const graph of restart) {
@@ -274,7 +293,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
     }
   }, 750);
   const onTargets = debounce(() => void graphs.discover(), 2000);
-  const targetWatcher = vscode.workspace.createFileSystemWatcher('**/{*.sln,*.slnx,tsconfig.json,angular.json,pom.xml,go.mod,Cargo.toml,pyproject.toml}', false, true, false);
+  // Every marker discovery accepts, so a project added or removed after activation appears or goes without a Refresh.
+  const targetWatcher = vscode.workspace.createFileSystemWatcher(targetGlob, false, true, false);
   const poll = setInterval(() => {
     if (vscode.window.state.focused && graphs.all().length > 0) {
       void graphs.refreshAll();

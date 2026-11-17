@@ -19,12 +19,30 @@ export class Indexing implements vscode.Disposable {
     this.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => this.onSave(document)));
   }
 
-  /** Indexes targets of a graph (all of them when none is named), incrementally or in full, behind a progress notification. */
-  index(graph: Graph, options: { targets?: Target[]; full?: boolean; quiet?: boolean } = {}): Promise<boolean> {
-    const targets = options.targets ?? graph.targets;
+  /**
+   * Indexes targets of a graph, incrementally or in full, behind a progress notification. With none named it indexes
+   * the graph's own targets, one per language (Graphs.indexed). A named target whose language the graph holds from
+   * another target replaces that target's rows, so it asks first.
+   */
+  async index(graph: Graph, options: { targets?: Target[]; full?: boolean; quiet?: boolean } = {}): Promise<boolean> {
+    const targets = options.targets ?? this.graphs.indexed(graph);
     if (targets.length === 0) {
       void vscode.window.showWarningMessage(`CodeGraph: nothing to index in ${graph.name}; no solution, project or build file was found.`);
-      return Promise.resolve(false);
+      return false;
+    }
+    for (const target of targets) {
+      const replaced = this.graphs.replaces(graph, target);
+      if (replaced) {
+        const choice = await vscode.window.showWarningMessage(
+          `Index ${path.basename(target.file)} into ${graph.name}? Its ${target.kind} rows come from ${path.relative(graph.root, replaced.file) || replaced.file}, ` +
+            `and an index replaces all of a language's rows: one ${target.kind} target per graph.`,
+          { modal: true },
+          'Replace',
+        );
+        if (choice !== 'Replace') {
+          return false;
+        }
+      }
     }
     const title = `${options.full ? 'Rebuilding' : 'Indexing'} ${graph.name}`;
     return this.enqueue(graph, async () => {
@@ -122,7 +140,9 @@ export class Indexing implements vscode.Disposable {
     }
     const daemonTarget = this.graphs.daemonTarget(graph);
     const extension = path.extname(file).toLowerCase();
-    const target = graph.targets
+    // Only a target the graph is built from: a second workspace of the same language would replace the first's rows.
+    const target = this.graphs
+      .indexed(graph)
       .filter((t) => !(daemonTarget && samePath(t.file, daemonTarget.file)) && t.kind !== daemonTarget?.kind)
       .filter((t) => !t.missing && sourceExtensions[t.kind].includes(extension) && isInside(file, path.dirname(t.file)))
       .sort((a, b) => b.file.length - a.file.length)[0];

@@ -246,6 +246,12 @@ internal static class ExternalDaemon
                 return status;
             }
 
+            if (request.Method == "status")
+            {
+                // A poll (codegraph-index status, the VS Code extension): answered like ping, but not activity.
+                return await live.HandleAsync(new LiveRequest("ping"), cancellationToken);
+            }
+
             watch.Touch();
             return await live.HandleAsync(request, cancellationToken);
         }, log);

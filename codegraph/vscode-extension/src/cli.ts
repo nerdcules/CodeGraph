@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { defaultInstallDir, executable } from './platform';
+import { defaultInstallDir, executable, isInstallFolder } from './platform';
 import { parseStatus, StatusReport } from './status';
 
 export interface RunResult {
@@ -23,13 +23,26 @@ export class Cli {
       return expandHome(configured);
     }
     const onPath = findOnPath(executable('codegraph-index'));
-    return onPath ? path.dirname(onPath) : defaultInstallDir();
+    // A link on PATH (~/.local/bin/codegraph-index → ~/.codegraph/bin/codegraph-index) means the folder it points into.
+    return onPath ? path.dirname(realPath(onPath)) : defaultInstallDir();
   }
 
-  /** The folder installs and updates write to: the setting, else the installers' default (never a folder found on PATH). */
-  managedInstallDir(): string {
+  /**
+   * The folder an install or update writes to: the setting; else the folder the indexer on PATH runs from, when that
+   * is a CodeGraph installation of its own; else the installers' default. `adopt` is set when the default is chosen
+   * over an indexer found on PATH (a wrapper script in a shared folder), so the caller points the setting at it.
+   */
+  updateDir(): { dir: string; adopt: boolean } {
     const configured = vscode.workspace.getConfiguration('codegraph').get<string>('installDir')?.trim();
-    return configured ? expandHome(configured) : defaultInstallDir();
+    if (configured) {
+      return { dir: expandHome(configured), adopt: false };
+    }
+    const onPath = findOnPath(executable('codegraph-index'));
+    if (!onPath) {
+      return { dir: defaultInstallDir(), adopt: false };
+    }
+    const dir = path.dirname(realPath(onPath));
+    return isInstallFolder(dir) ? { dir, adopt: false } : { dir: defaultInstallDir(), adopt: true };
   }
 
   indexer(): string {
@@ -154,6 +167,14 @@ export function findOnPath(name: string): string | undefined {
     }
   }
   return undefined;
+}
+
+function realPath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
 }
 
 function expandHome(p: string): string {

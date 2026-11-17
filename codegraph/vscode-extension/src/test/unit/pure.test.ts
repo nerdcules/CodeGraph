@@ -1,11 +1,13 @@
 // Unit tests for the modules with no VS Code import. Run with `node --test out/test/unit/`.
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { ago, bytes, count, languageName, plural, shortCommit } from '../../format';
-import { assetName, checksumFor, compareVersions, defaultInstallDir, executable, runtimeId } from '../../platform';
+import { assetName, checksumFor, compareVersions, defaultInstallDir, executable, isInstallFolder, runtimeId } from '../../platform';
 import { daemonStateOf, healthOf, parseStatus, StatusReport } from '../../status';
-import { chooseTargets, classify, isInside } from '../../targets';
+import { chooseTargets, classify, indexedTargets, isInside, solutionProjects, sourceExtensions } from '../../targets';
 
 test('count writes thousands and compacts large numbers', () => {
   assert.equal(count(3276), '3,276');
@@ -78,7 +80,7 @@ test('classify knows every marker the indexer accepts', () => {
   assert.equal(classify('/r/package.json'), undefined);
 });
 
-test('chooseTargets keeps solutions over projects and the outermost marker of each language', () => {
+test('chooseTargets keeps solutions over the projects they list and the outermost marker of each language', () => {
   const r = path.resolve('/repo');
   const chosen = chooseTargets([
     path.join(r, 'src', 'Lib', 'Lib.csproj'),
@@ -88,7 +90,7 @@ test('chooseTargets keeps solutions over projects and the outermost marker of ea
     path.join(r, 'tools', 'tsconfig.json'),
     path.join(r, 'java', 'pom.xml'),
     path.join(r, 'java', 'module', 'pom.xml'),
-  ]);
+  ], () => [path.join(r, 'src', 'Lib', 'Lib.csproj')]);
   assert.deepEqual(
     chosen.map((t) => [t.kind, path.relative(r, t.file)]),
     [
@@ -100,9 +102,65 @@ test('chooseTargets keeps solutions over projects and the outermost marker of ea
   );
   // Without a solution, each project is its own target.
   assert.equal(chooseTargets([path.join(r, 'A.csproj'), path.join(r, 'b', 'B.csproj')]).length, 2);
+  // A project the solution does not list stays: another repository in the same folder, or one left out of it.
+  const other = path.resolve('/folder/other/Tool/Tool.csproj');
+  assert.deepEqual(
+    chooseTargets([path.join(r, 'App.sln'), path.join(r, 'Lib', 'Lib.csproj'), other], () => [path.join(r, 'Lib', 'Lib.csproj')]).map((t) => t.file),
+    [other, path.join(r, 'App.sln')].sort((a, b) => a.localeCompare(b)),
+  );
   assert.ok(isInside(path.join(r, 'a', 'b'), r));
   assert.ok(isInside(r, r));
   assert.ok(!isInside(path.resolve('/repository'), r));
+});
+
+test('solutionProjects reads the projects of a .sln and a .slnx', () => {
+  const r = path.resolve('/repo');
+  const sln = [
+    'Microsoft Visual Studio Solution File, Format Version 12.00',
+    'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App", "src\\App\\App.csproj", "{11111111-1111-1111-1111-111111111111}"',
+    'EndProject',
+    'Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{22222222-2222-2222-2222-222222222222}"',
+    'EndProject',
+  ].join('\r\n');
+  assert.deepEqual(solutionProjects(path.join(r, 'App.sln'), sln), [path.join(r, 'src', 'App', 'App.csproj')]);
+  const slnx = '<Solution>\n  <Folder Name="/src/">\n    <Project Path="src/Lib/Lib.csproj" />\n  </Folder>\n  <Project Path="Hello/Hello.csproj" Type="Classic C#" />\n</Solution>';
+  assert.deepEqual(solutionProjects(path.join(r, 'App.slnx'), slnx), [path.join(r, 'src', 'Lib', 'Lib.csproj'), path.join(r, 'Hello', 'Hello.csproj')]);
+});
+
+test('indexedTargets feeds a graph one target per kind: the one it holds, else the daemon\'s, else a solution', () => {
+  const r = path.resolve('/repo');
+  const web = { file: path.join(r, 'web', 'tsconfig.json'), kind: 'typescript' as const };
+  const tools = { file: path.join(r, 'tools', 'tsconfig.json'), kind: 'typescript' as const };
+  const sln = { file: path.join(r, 'App.sln'), kind: 'csharp' as const };
+  const project = { file: path.join(r, 'Tool', 'Tool.csproj'), kind: 'csharp' as const };
+  const targets = [project, sln, tools, web];
+  assert.deepEqual(indexedTargets(targets, () => undefined), [sln, tools]);
+  assert.deepEqual(indexedTargets(targets, (kind) => (kind === 'typescript' ? web.file : undefined)), [sln, web]);
+  assert.deepEqual(indexedTargets(targets, () => undefined, project), [project, tools]);
+  // A held target that is no longer found does not stop the kind from being indexed.
+  assert.deepEqual(indexedTargets([web], () => path.join(r, 'gone', 'tsconfig.json')), [web]);
+});
+
+test('isInstallFolder accepts only a missing, empty or CodeGraph folder', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-unit-'));
+  try {
+    assert.ok(isInstallFolder(path.join(dir, 'missing')));
+    assert.ok(isInstallFolder(dir));
+    fs.writeFileSync(path.join(dir, 'codegraph-index'), '');
+    fs.writeFileSync(path.join(dir, 'other-tool'), '');
+    assert.ok(!isInstallFolder(dir), 'a shared bin folder');
+    fs.writeFileSync(path.join(dir, 'codegraph-index.dll'), '');
+    fs.writeFileSync(path.join(dir, 'codegraph-mcp.dll'), '');
+    assert.ok(isInstallFolder(dir));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a save of an ES or CommonJS module re-indexes TypeScript, like TypeScriptExtractor.SourceExtensions', () => {
+  for (const extension of ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.html', '.json']) {
+    assert.ok(sourceExtensions.typescript.includes(extension), extension);
+  }
 });
 
 test('parseStatus accepts the indexer JSON and rejects anything else', () => {
