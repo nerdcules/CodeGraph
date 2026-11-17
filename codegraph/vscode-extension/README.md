@@ -167,13 +167,15 @@ The indexer and the MCP server run on your machine, and the graph stays in `.cod
   - CI run 43972862634 (commit `3ae5ace`, 16 November 2026) passed that commit's 9 unit tests and the 7 steps it had,
     on Linux, macOS and Windows.
   - CI run 44033732682 (commit `e3de08c`, 17 November 2026) passed all 13 unit tests and the same 7 steps on all three.
-  - All 8 steps, including the MCP step, passed on Linux (17 November 2026); not yet in CI.
+  - CI run 44035151104 (commit `9b623cf`, 17 November 2026) passed all 13 unit tests and all 8 steps, including
+    the MCP step, on all three.
 - **Install test** (`CODEGRAPH_TEST_INSTALL_RELEASE=1 npm run test:install`): installs the 1.2.0 release with the
   extension's own code (download, checksum, unpack, swap), then updates it while `codegraph-mcp` runs from the
   folder. On Windows the update must be refused with the folder unchanged. On macOS and Linux it must replace the
   folder under the running program. With the program stopped, a second update must go through everywhere. It
-  downloads the release archive (89 to 115 MB), so it runs only when asked. On Linux it passed (17 November 2026,
-  26.9 s); not yet in CI. A folder holding another program is refused (a unit test).
+  downloads the release archive (89 to 115 MB), so it runs only when asked. CI run 44035151104 (commit `9b623cf`)
+  passed it on all three systems. Windows took the refused path and macOS and Linux the replaced one; on Windows
+  the test took 21.0 s. A folder holding another program is refused (a unit test).
 - **Not tested yet:**
   - An update from a published release that carries the extension: the first release with it will be the first.
   - GitHub Copilot listing and calling the server; CI cannot sign in to Copilot. To check it by hand, open a
