@@ -31,6 +31,18 @@ if (args is ["usage", .. var usageArgs])
     return UsageCommand.Run(usageArgs, Console.Out, Console.Error);
 }
 
+// `codegraph-index status [--db PATH] [--json]` reports the graph, its freshness, its daemon and its usage in one call.
+if (args is ["status", .. var statusArgs])
+{
+    return await StatusCommand.RunAsync(statusArgs, Console.Out, Console.Error, IndexerVersion());
+}
+
+// `codegraph-index stop [--db PATH]` asks the daemon serving the graph to stop.
+if (args is ["stop", .. var stopArgs])
+{
+    return await StatusCommand.StopAsync(stopArgs, Console.Out, Console.Error);
+}
+
 // `codegraph-index init [solution|dir] [--client ...]` wires the repo to codegraph (each assistant's MCP config,
 // .gitignore) and then indexes.
 var init = args is ["init", ..];
@@ -128,6 +140,8 @@ if (usage || targetArg is null)
     Console.Error.WriteLine("       codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-code]");
     Console.Error.WriteLine("       codegraph-index init [solution|dir] [--client <names>] [--live] [--no-index] [index options]");
     Console.Error.WriteLine("       codegraph-index usage [--db <path>] [--days <n>]   what the graph did for its users");
+    Console.Error.WriteLine("       codegraph-index status [--db <path>] [--json]      the graph, its freshness, daemon and usage");
+    Console.Error.WriteLine("       codegraph-index stop [--db <path>]                 stop the daemon serving the graph");
     Console.Error.WriteLine("       default db: <git worktree root>/.codegraph/graph.db (solution dir outside a repo)");
     Console.Error.WriteLine("       re-walks only files whose hash changed, plus files that depend on them;");
     Console.Error.WriteLine("       --full rebuilds everything");
@@ -381,6 +395,20 @@ static async Task<int> WatchAsync(string target, string dbPath, bool forceFull, 
     var service = new LiveService(() => loop.Current, loop.Status, loop.FlushAsync);
     var live = new LiveServer(LivePipe.NameFor(dbPath), (request, cancellationToken) =>
     {
+        if (request.Method == "stop")
+        {
+            // Answer first, then stop: the cancel lands after the response is written.
+            Log("stop requested over the pipe");
+            stopping.CancelAfter(TimeSpan.FromMilliseconds(200));
+            return Task.FromResult(LiveResponse.Ok(loop.Status()));
+        }
+
+        if (request.Method == "status")
+        {
+            // A poll (codegraph-index status, the VS Code extension): answered like ping, but not activity.
+            return Task.FromResult(LiveResponse.Ok(loop.Status()));
+        }
+
         loop.Touch();
         return service.HandleAsync(request, cancellationToken);
     }, Log);
@@ -463,6 +491,8 @@ static string IndexerVersion() => typeof(RoslynIndexer).Assembly
 /// </summary>
 static async Task IndexOrRebuildAsync(Solution solution, string target, string dbPath, bool forceFull, CancellationToken cancellationToken)
 {
+    // One writer per graph across processes, from reading the indexed files to the swap (GraphFile.LockAsync).
+    using var writing = await GraphFile.LockAsync(dbPath, Log, cancellationToken);
     try
     {
         await IndexAsync(solution, target, dbPath, forceFull, cancellationToken);

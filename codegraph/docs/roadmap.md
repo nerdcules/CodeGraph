@@ -49,18 +49,26 @@ means here, and where it stands.
    the installer first, because a plugin's MCP command is a shell script.
 3. **The first answer still needs a graph and an SDK.** `init` builds the graph, but a C# repository on
    a machine without its SDK, or a Java repository without scip-java, indexes nothing, and the tools answer
-   "no code graph". The server could say which tool is missing and how to install it.
+   "no code graph". The [VS Code extension](../vscode-extension/README.md) names the missing tool for each target
+   and how to install it; the server still does not.
 4. **Nothing for teams.** The graph is per machine and `.mcp.json` is the only shared piece. A graph built
    in CI and downloaded by teammates, or a check that fails a pull request on `language_version_errors`,
    would be small work on top of `codegraph-index export` and `index_status`.
 5. **TypeScript and the SCIP languages re-index the whole workspace on each save.** C# re-walks the
    changed files and their dependents (10 files for a save to `Worktree.cs`, BENCHMARKS round 12). A full
    index of NestJS's 1,180 files takes 7.7 to 7.8 seconds (round 12).
-6. **One daemon per language.** In a repo with C# and Angular, `--watch` on the solution refreshes C# only;
-   the front end needs a second daemon or a re-run of `init`.
-7. **`data_flow` answers for C# only.** Java goes through scip-java, which tells calls and reads apart
+6. **One daemon per graph.** In a repo with C# and Angular, `--watch` on the solution refreshes C# only, and a
+   second `--watch` on the front end does not start, because one daemon serves each graph. The front end needs a
+   re-run of `codegraph-index` on it. The [VS Code extension](../vscode-extension/README.md) does that on each save;
+   other editors and terminals do not.
+7. **One target per language in a graph.** An import replaces every row of its language, so two TypeScript
+   workspaces (or two C# solutions) indexed into one graph keep only the last one's rows. `init` on a C# solution
+   indexes every front end it finds under the repository the same way, so with two front ends only the last stays.
+   The [VS Code extension](../vscode-extension/README.md) indexes one target of each language and marks the others
+   as not indexed. A fix is to index the workspaces of a language in one run, or to replace a language's rows per target.
+8. **`data_flow` answers for C# only.** Java goes through scip-java, which tells calls and reads apart
    by the target's kind only.
-8. **A recording of the install.** The [front page](../../README.md) opens with a real Claude Code session,
+9. **A recording of the install.** The [front page](../../README.md) opens with a real Claude Code session,
    replayed from its transcript, and a video of the same question with CodeGraph on and off. The install and the
    usage line a week later are still a picture of a terminal.
 

@@ -1,0 +1,212 @@
+/* The Overview view. Every colour comes from the editor's theme tokens, so it reads in light, dark and high contrast. */
+:root {
+  --cg-gap: 10px;
+  --cg-radius: 8px;
+  --cg-card: color-mix(in srgb, var(--vscode-foreground) 5%, transparent);
+  --cg-card-hover: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+  --cg-border: var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+  --cg-muted: var(--vscode-descriptionForeground);
+  --cg-green: var(--vscode-charts-green, #3fb950);
+  --cg-yellow: var(--vscode-charts-yellow, #d29922);
+  --cg-red: var(--vscode-charts-red, #f85149);
+  --cg-blue: var(--vscode-charts-blue, #4c8dff);
+  --cg-purple: var(--vscode-charts-purple, #a371f7);
+  --cg-orange: var(--vscode-charts-orange, #f0883e);
+  --cg-accent: var(--vscode-textLink-foreground, var(--cg-blue));
+}
+
+body {
+  margin: 0;
+  padding: 12px 14px 18px;
+  color: var(--vscode-foreground);
+  background: transparent;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  line-height: 1.45;
+}
+
+main { display: flex; flex-direction: column; gap: var(--cg-gap); }
+
+/* Cards */
+.card {
+  background: var(--cg-card);
+  border: 1px solid var(--cg-border);
+  border-radius: var(--cg-radius);
+  padding: 12px;
+}
+.card h2 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cg-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+/* Graph switcher */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab {
+  border: 1px solid var(--cg-border);
+  background: transparent;
+  color: var(--vscode-foreground);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab:hover { background: var(--cg-card-hover); }
+.tab[aria-selected="true"] {
+  background: var(--vscode-button-secondaryBackground, var(--cg-card-hover));
+  color: var(--vscode-button-secondaryForeground, inherit);
+  border-color: transparent;
+}
+
+/* Hero */
+.hero { position: relative; overflow: hidden; }
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--hero-tint, var(--cg-accent)) 18%, transparent), transparent 60%);
+  pointer-events: none;
+}
+.hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; position: relative; }
+.hero h1 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.25; word-break: break-word; }
+.hero .sub { margin-top: 4px; color: var(--cg-muted); font-size: 12px; position: relative; }
+.hero .sub code { font-family: var(--vscode-editor-font-family); font-size: 11.5px; }
+.logo { width: 34px; height: 34px; flex: none; }
+
+/* Pills and dots */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+  color: var(--tone);
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
+}
+.tone-green { --tone: var(--cg-green); }
+.tone-yellow { --tone: var(--cg-yellow); }
+.tone-red { --tone: var(--cg-red); }
+.tone-blue { --tone: var(--cg-blue); }
+.tone-muted { --tone: var(--cg-muted); }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone, currentColor); flex: none; }
+.dot.pulse { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 60%, transparent); animation: pulse 2s infinite; }
+.dot.spin {
+  background: transparent;
+  border: 2px solid color-mix(in srgb, var(--tone) 30%, transparent);
+  border-top-color: var(--tone);
+  width: 10px; height: 10px;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .dot.pulse, .dot.spin, .skeleton { animation: none; }
+}
+
+/* Stat tiles */
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; position: relative; }
+.stat {
+  border-radius: 6px;
+  padding: 8px 9px 7px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 55%, transparent);
+  border: 1px solid var(--cg-border);
+  min-width: 0;
+}
+.stat .value { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stat .label { font-size: 11px; color: var(--cg-muted); }
+
+/* Language bar */
+.bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--cg-card-hover); gap: 2px; }
+.bar > span { display: block; height: 100%; min-width: 3px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 12px; }
+.legend .item { display: inline-flex; align-items: center; gap: 6px; }
+.legend .count { color: var(--cg-muted); font-variant-numeric: tabular-nums; }
+.warn-line { margin-top: 8px; font-size: 12px; color: var(--cg-yellow); }
+
+/* Daemon */
+.daemon { display: flex; align-items: center; gap: 10px; }
+.daemon .state { font-weight: 600; }
+.daemon .meta { color: var(--cg-muted); font-size: 12px; }
+.daemon .grow { flex: 1; min-width: 0; }
+
+/* Usage */
+.big { font-size: 24px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.big small { font-size: 12px; font-weight: 500; color: var(--cg-muted); margin-left: 4px; }
+.tools { margin-top: 10px; display: grid; grid-template-columns: auto 1fr auto; gap: 5px 8px; align-items: center; font-size: 12px; }
+.tools .name { font-family: var(--vscode-editor-font-family); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.tools .track { height: 6px; border-radius: 999px; background: var(--cg-card-hover); overflow: hidden; }
+.tools .fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--cg-blue), var(--cg-purple)); }
+.tools .n { color: var(--cg-muted); font-variant-numeric: tabular-nums; text-align: right; }
+.tools .name.plain { font-family: inherit; font-size: 12px; }
+.tools .fill.source { background: color-mix(in srgb, var(--cg-muted) 70%, transparent); }
+.tools .fill.result { background: var(--cg-green); }
+
+/* Stale list */
+.files { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; }
+.files li { display: flex; gap: 6px; align-items: baseline; padding: 1px 0; min-width: 0; }
+.files .path { color: var(--cg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Buttons */
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+button.btn {
+  font: inherit;
+  font-size: 12px;
+  border-radius: 4px;
+  padding: 4px 11px;
+  cursor: pointer;
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+button.btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
+button.btn.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+button.btn.primary:hover { background: var(--vscode-button-hoverBackground); }
+button.btn:disabled { opacity: 0.5; cursor: default; }
+button.btn:focus-visible, .tab:focus-visible, button.icon:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+button.icon {
+  border: none;
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  padding: 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+}
+button.icon:hover { background: var(--vscode-toolbar-hoverBackground, var(--cg-card-hover)); }
+button.icon svg { width: 16px; height: 16px; }
+
+/* Empty states */
+.empty { text-align: center; padding: 22px 12px; }
+.empty .logo { width: 56px; height: 56px; margin: 0 auto 10px; display: block; }
+.empty h1 { font-size: 15px; margin: 0 0 6px; }
+.empty p { color: var(--cg-muted); margin: 0 0 14px; font-size: 12.5px; }
+
+.footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--cg-muted); font-size: 11.5px; padding: 0 2px; }
+.footer a { color: var(--cg-accent); cursor: pointer; text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+
+.skeleton { height: 92px; border-radius: var(--cg-radius); background: var(--cg-card); animation: shimmer 1.4s ease-in-out infinite; }
+.skeleton.short { height: 48px; }
+@keyframes shimmer { 50% { opacity: 0.55; } }
+
+.muted { color: var(--cg-muted); }

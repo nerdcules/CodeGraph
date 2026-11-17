@@ -104,8 +104,9 @@ answer key covers it.
 ## Cut a release
 
 1. Add a section to [CHANGELOG.md](../CHANGELOG.md) headed `## <version>`.
-2. Set `Version` in `Directory.Build.props` and `version` in `plugin/.claude-plugin/plugin.json` to the
-   same number.
+2. Set `Version` in `Directory.Build.props`, `version` in `vscode-extension/package.json` and `version` in
+   `plugin/.claude-plugin/plugin.json` to the same number. For a pre-release, leave `plugin.json`: the plugin
+   installs the latest full release.
 3. Commit, then tag and push:
 
    ```bash
@@ -114,9 +115,15 @@ answer key covers it.
    ```
 
 The [release workflow](../../.github/workflows/release.yml) builds and tests on Linux, packages the six
-platforms on three runners (Linux, macOS and Windows, two architectures each) with `tools/release/package.sh`, writes `SHA256SUMS`, and publishes a
+platforms on three runners (Linux, macOS and Windows, two architectures each) with `tools/release/package.sh`, packs
+the VS Code extension as `codegraph-vscode.vsix` with the tag's version, writes `SHA256SUMS`, and publishes a
 GitHub Release whose notes are the CHANGELOG section plus the install one-liners. The installers download
-`releases/latest`, so a published release is live at once. To try the packaging locally:
+`releases/latest`, so a published release is live at once.
+
+A tag with a `-suffix`, such as `v1.3.0-beta.1`, is published as a pre-release. GitHub's latest release does not move
+to it, so the installers, the Claude Code plugin and `releases/latest/download/` links keep the last full release; its
+notes add `--version <tag>` to the install one-liners. The VS Code extension installs its own release while GitHub's
+latest is older. To try the packaging locally:
 
 ```bash
 CODEGRAPH_VERSION=v1.2.0 tools/release/package.sh linux-x64     # → dist/codegraph-linux-x64.tar.gz

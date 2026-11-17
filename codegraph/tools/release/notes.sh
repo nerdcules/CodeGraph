@@ -17,20 +17,31 @@ awk -v version="$version" '
     sed -E -e "s#\]\((\./)?([^)#:][^):]*)\)#](https://github.com/nerdcules/CodeGraph/blob/$tag/codegraph/\2)#g" \
            -e 's#/codegraph/\.\./#/#g'
 
+# A pre-release (a tag with a "-suffix") is not GitHub's latest release, and the installers install the latest one
+# unless told which: name the tag in the one-liners.
+sh_version="" ps_version="" prerelease=""
+if [[ "$tag" == *-* ]]; then
+    sh_version=" --version $tag" ps_version=" -Version $tag"
+    prerelease="This is a pre-release. The installers install the latest full release unless given a tag, so the commands
+below name this one. The Claude Code plugin installs the latest full release."
+fi
+
 cat <<MD
 
 ## Install
-
+${prerelease:+
+$prerelease
+}
 macOS / Linux:
 
 \`\`\`bash
-curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/YourApp --add-to-path
+curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/YourApp --add-to-path$sh_version
 \`\`\`
 
 Windows (PowerShell):
 
 \`\`\`powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\YourApp -AddToPath
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\YourApp -AddToPath$ps_version
 \`\`\`
 
 Or download the archive for your platform below, unpack it anywhere, and run \`codegraph-index init\` in a repository.

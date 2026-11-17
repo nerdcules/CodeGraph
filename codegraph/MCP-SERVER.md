@@ -2,7 +2,7 @@
 
 # MCP Server: codegraph
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [VS Code extension](vscode-extension/README.md)
 
 A read-only [Model Context Protocol](https://modelcontextprotocol.io) server that answers structural
 questions about a codebase from a compiler-built graph: who calls this, what breaks if it changes,
@@ -345,7 +345,9 @@ Lifecycle:
   SIGKILL leaves its socket file; the next daemon removes it, and meanwhile the server's probe spends one
   150 ms timeout on it and then remembers it as dead for 3 s.
 - **Idle exit.** `--idle-exit <minutes>` stops it after that long with no save and no live request. The server
-  pings before every tool call, so a session in use keeps its daemon. Daemons the server starts use 120 min.
+  pings before every tool call, so a session in use keeps its daemon. `codegraph-index status` asks with a
+  `status` request instead, which does not count, so a tool that polls it (the VS Code extension) never keeps an
+  unused daemon alive. Daemons the server starts use 120 min.
 - **Memory.** `live_status` shows the working set and managed heap; this repo's daemon uses about 405 MB ([BENCHMARKS round 13](BENCHMARKS.md#round-13-performance-and-resilience-after-the-client-work)).
 
 The server falls back to graph-only answers with `STALE` marks whenever no daemon is running.
@@ -371,7 +373,9 @@ instance loaded so a call's open costs 0.025 ms instead of 9.9 ms ([BENCHMARKS r
 go after 1.5 s without a call, after 10 s however busy the server is, and immediately when the daemon
 reports pending saves. A full rebuild writes a new file and swaps it in; the server notices the new file
 on its next call and reloads. `codegraph-index` (including `--watch`) therefore writes while Claude
-sessions are open, waiting at most a couple of seconds for the anchor. The freshness check reloads its
+sessions are open, waiting at most a couple of seconds for the anchor. Two writers on one graph take turns: each
+holds `graph.db.lock` from reading the old graph to swapping in the new one. Without it, the daemon re-indexing C#
+while an import rewrites the TypeScript rows could have dropped the other's rows. A writer waits up to 15 minutes. The freshness check reloads its
 file list whenever the database's mtime changes, regardless of its 3 s cache.
 
 ## Troubleshooting
@@ -391,4 +395,4 @@ file list whenever the database's mtime changes, regardless of its 3 s cache.
 
 ---
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · **MCP server** · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [VS Code extension](vscode-extension/README.md)

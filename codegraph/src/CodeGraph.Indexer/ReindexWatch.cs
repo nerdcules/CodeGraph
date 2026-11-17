@@ -235,10 +235,25 @@ internal static class ExternalDaemon
         };
         await using var live = new Lsp.LspLiveService(target, dbPath, language, root, server, watch, log);
         watch.Indexed += live.RefreshAsync;
-        var pipe = new LiveServer(LivePipe.NameFor(dbPath), (request, cancellationToken) =>
+        var pipe = new LiveServer(LivePipe.NameFor(dbPath), async (request, cancellationToken) =>
         {
+            if (request.Method == "stop")
+            {
+                // Answer with the status first, then stop: the cancel lands after the response is written.
+                log("stop requested over the pipe");
+                var status = await live.HandleAsync(new LiveRequest("ping"), cancellationToken);
+                stopping.CancelAfter(TimeSpan.FromMilliseconds(200));
+                return status;
+            }
+
+            if (request.Method == "status")
+            {
+                // A poll (codegraph-index status, the VS Code extension): answered like ping, but not activity.
+                return await live.HandleAsync(new LiveRequest("ping"), cancellationToken);
+            }
+
             watch.Touch();
-            return live.HandleAsync(request, cancellationToken);
+            return await live.HandleAsync(request, cancellationToken);
         }, log);
         var serving = pipe.RunAsync(stopping.Token);
         log($"live: answering on pipe {pipe.PipeName}{(server is null ? " (graph only: no language server for " + language + ")" : $" through {server.Display}")}");

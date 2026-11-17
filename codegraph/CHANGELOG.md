@@ -1,9 +1,70 @@
 # Changelog
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md) · [VS Code extension](vscode-extension/README.md)
 
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
+
+## 1.3.0-beta.1
+
+A pre-release, the first with the VS Code extension. GitHub's latest release stays 1.2.0, so the installers and the
+Claude Code plugin keep installing 1.2.0 unless given `--version v1.3.0-beta.1` (`-Version` on Windows).
+
+- A tag with a `-suffix` is published as a pre-release, and its release notes name the tag in the install commands.
+- The extension installs its own release while GitHub's latest is older, because 1.2.0 lacks `codegraph-index
+  status` and `stop`. It ranks a pre-release before its release (1.3.0-beta.1 < 1.3.0), so it offers 1.3.0 once
+  that is out.
+
+### VS Code extension
+
+- A VS Code extension ([vscode-extension/README.md](vscode-extension/README.md)) installs CodeGraph, sets
+  repositories up, and runs each graph's live daemon. It shows each graph's state in an Overview, a Graphs tree and
+  the status bar.
+  - It installs from the GitHub release after checking the archive against `SHA256SUMS`, and checks for a newer
+    release once a day. It unpacks the release beside the install folder and then swaps the two folders, so a
+    failed update leaves the old installation whole. It never replaces a folder that holds other programs (a
+    `codegraph-index` on `PATH` in `~/.local/bin` is followed to its own folder, or the default folder is used).
+  - A graph takes one target of each language, because an index replaces all of a language's rows. A second
+    TypeScript workspace or C# solution in the same repository shows as not indexed, and indexing it asks first.
+    A solution hides only the projects it lists.
+  - It starts a daemon with `--idle-exit` for each graph that exists, and stops the daemons it started when the
+    window closes.
+  - It re-indexes on save the targets the daemon does not watch, such as an Angular front end beside a C# solution.
+  - It offers `codegraph-mcp` to VS Code's chat clients, unless `.vscode/mcp.json` already names one.
+  - Each release carries it as `codegraph-vscode.vsix`. It is not on the Marketplace.
+- Tested: 13 unit tests, and an integration test that drives the extension inside VS Code 1.146.0 against the
+  indexer built from this repository. It runs 7 steps: find the solution, index it, see an edit go stale, start the
+  daemon and wait for it to index the edit, stop it, and rebuild. CI run 43972862634 (16 November 2026) passed the
+  9 unit tests of that commit and all 7 steps on Linux, macOS and Windows; after the review fixes, CI run
+  44033732682 (17 November 2026) passed all 13 unit tests and all 7 steps on all three.
+  - An 8th step checks the MCP server the extension offers. It starts the server with the offered arguments, calls
+    `graph_stats` and gets the graph's counts. It also checks that a `.vscode/mcp.json` entry withdraws the offer
+    and that removing the entry brings it back.
+  - An install test installs the 1.2.0 release with the extension's code, then updates it while `codegraph-mcp`
+    runs from the folder: refused with nothing changed on Windows, replaced on macOS and Linux.
+  - CI run 44035151104 (commit `9b623cf`, 17 November 2026) passed both on Linux, macOS and Windows, with all
+    13 unit tests and all 8 steps.
+- `codegraph-index status [--db PATH] [--json]` reports, in one call:
+  - the graph and how it compares with the working tree: edited and deleted files, and a moved HEAD;
+  - nodes and files for each language, with each language's compiler facts;
+  - the daemon serving the graph;
+  - the last 7 days of tool calls.
+
+  With `--json` it is for tools; the extension reads it.
+- A graph file that is not a DuckDB database fails to open at once. Before, `GraphStore.Open` retried it as if it
+  were locked, every 100 ms for the whole wait: `codegraph-index status` took 5 s to say the file was damaged, and
+  the test for that took 5.06 s and now takes 36 ms. On macOS CI the whole suite stalled the runner on this branch
+  until this changed; a macOS bisect passed the suite when that test was left out (and when either of two others
+  was), and three runs of the whole suite passed after the change.
+- Both daemons answer a `status` request like `ping`, but it does not reset the idle-exit clock;
+  `codegraph-index status` uses it, so the extension's poll every 15 s no longer keeps an unused daemon running.
+  A daemon from 1.2.0 or earlier does not know it and is asked with `ping`.
+- Index runs on one graph take turns across processes: each holds `graph.db.lock` from reading the old graph to
+  swapping in the new one. Before, the daemon re-indexing C# and an import of the TypeScript rows could overlap,
+  share `graph.db.tmp`, and drop rows the other had just written.
+- `codegraph-index stop [--db PATH]` asks the daemon serving a graph to stop and waits until its pipe is gone. Both
+  daemons, C# and the language-server one, answer a new `stop` request on the pipe. A daemon from 1.2.0 or earlier
+  does not know it: `stop` says so, names its process id, exits 1 and leaves it running.
 
 ## 1.2.0
 
@@ -212,4 +273,4 @@ The first packaged release. Everything below was built between August and Novemb
 
 ---
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · [Prompts](PROMPTS.md) · **Changelog** · [Claude Code plugin](plugin/README.md) · [VS Code extension](vscode-extension/README.md)

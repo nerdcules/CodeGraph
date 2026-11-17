@@ -1,6 +1,6 @@
 # Prompts that use the graph
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · **Prompts** · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · **Prompts** · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [VS Code extension](vscode-extension/README.md)
 
 With the `codegraph` MCP server connected, Claude can answer structural questions from a small
 graph query instead of reading whole files. You don't need to name the tools. Ask the question
@@ -146,4 +146,4 @@ and the full list of changed files.
 
 ---
 
-[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · **Prompts** · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md)
+[CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · [Benchmarks](BENCHMARKS.md) · **Prompts** · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [VS Code extension](vscode-extension/README.md)

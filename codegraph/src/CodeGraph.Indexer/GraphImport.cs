@@ -184,6 +184,8 @@ internal static class GraphImport
     /// </summary>
     public static async Task<(int Nodes, int Edges)> WriteAsync(GraphBatch batch, string dbPath, Action<string> log, CancellationToken cancellationToken)
     {
+        // One writer per graph across processes, from reading the old meta to the swap (GraphFile.LockAsync).
+        using var writing = await GraphFile.LockAsync(dbPath, log, cancellationToken);
         var stamps = batch.Files.Where(File.Exists).Select(FileStamp.Of).ToList();
         var languages = batch.Nodes.Select(n => n.Language).Append(batch.Language).Distinct(StringComparer.Ordinal).ToList();
         IReadOnlyDictionary<string, string> previousMeta = new Dictionary<string, string>();
