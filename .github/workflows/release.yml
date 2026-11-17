@@ -1,6 +1,6 @@
 # A tag v<version> builds, tests and packages codegraph-index and codegraph-mcp for six platforms, and publishes
 # them as a GitHub Release with checksums, beside the VS Code extension (codegraph-vscode.vsix). The version in the
-# executables and the extension comes from the tag.
+# executables and the extension comes from the tag; a tag with a "-suffix" is published as a pre-release.
 name: Release
 
 on:
@@ -102,7 +102,13 @@ jobs:
         run: sha256sum * > SHA256SUMS && cat SHA256SUMS
       - name: Release notes
         run: codegraph/tools/release/notes.sh "${{ github.ref_name }}" codegraph/CHANGELOG.md > notes.md && cat notes.md
+      # A tag with a "-suffix" (v1.3.0-beta.1) is published as a pre-release: GitHub's "latest" stays on the last
+      # release, so the installers, the Claude Code plugin and releases/latest/download/ links do not move to it.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/* --title "CodeGraph ${{ github.ref_name }}" --notes-file notes.md --verify-tag
+          TAG: ${{ github.ref_name }}
+        run: |
+          kind=()
+          if [[ "$TAG" == *-* ]]; then kind=(--prerelease --latest=false); fi
+          gh release create "$TAG" dist/* --title "CodeGraph $TAG" --notes-file notes.md --verify-tag "${kind[@]}"

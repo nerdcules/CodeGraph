@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { ago, bytes, count, languageName, plural, shortCommit } from '../../format';
-import { assetName, checksumFor, compareVersions, defaultInstallDir, executable, isInstallFolder, runtimeId } from '../../platform';
+import { assetName, checksumFor, compareVersions, defaultInstallDir, executable, isInstallFolder, releaseToInstall, runtimeId } from '../../platform';
 import { daemonStateOf, healthOf, parseStatus, StatusReport } from '../../status';
 import { chooseTargets, classify, indexedTargets, isInside, solutionProjects, sourceExtensions } from '../../targets';
 
@@ -64,7 +64,19 @@ test('compareVersions orders dotted versions numerically', () => {
   assert.equal(compareVersions('v1.10.0', '1.9.2'), 1);
   assert.equal(compareVersions('1.2.0', 'v1.2.0'), 0);
   assert.equal(compareVersions('1.2', '1.2.1'), -1);
-  assert.equal(compareVersions('1.3.0-rc1', '1.3.0'), 0);
+  assert.equal(compareVersions('1.3.0-rc1', '1.3.0'), -1);
+  assert.equal(compareVersions('v1.3.0', '1.3.0-beta.1'), 1);
+  assert.equal(compareVersions('1.3.0-beta.2', '1.3.0-beta.10'), -1);
+  assert.equal(compareVersions('1.3.0-beta.1', 'v1.3.0-beta.1'), 0);
+  assert.equal(compareVersions('1.3.0-beta.1', '1.2.0'), 1);
+  assert.equal(compareVersions('1.2.0+abc', '1.2.0'), 0);
+});
+
+test('releaseToInstall takes the extension\'s own release while GitHub\'s latest is older', () => {
+  assert.equal(releaseToInstall('1.3.0-beta.1', 'v1.2.0'), 'v1.3.0-beta.1');
+  assert.equal(releaseToInstall('1.3.0-beta.1', 'v1.3.0'), 'v1.3.0');
+  assert.equal(releaseToInstall('1.3.0', 'v1.3.0'), 'v1.3.0');
+  assert.equal(releaseToInstall('1.3.0', 'v1.4.0'), 'v1.4.0');
 });
 
 test('classify knows every marker the indexer accepts', () => {

@@ -2,7 +2,7 @@
   "name": "codegraph",
   "displayName": "CodeGraph",
   "description": "Build, watch and inspect CodeGraph indexes from VS Code: the compiler's answers for your AI coding assistant.",
-  "version": "1.2.0",
+  "version": "1.3.0-beta.1",
   "publisher": "nerdcules",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -73,7 +73,7 @@
     "viewsWelcome": [
       {
         "view": "codegraph.graphs",
-        "contents": "CodeGraph is not installed yet.\n[$(cloud-download) Install CodeGraph](command:codegraph.install)\nIt downloads the latest release from GitHub and checks it against the release's SHA256SUMS.",
+        "contents": "CodeGraph is not installed yet.\n[$(cloud-download) Install CodeGraph](command:codegraph.install)\nIt downloads the latest release from GitHub (or this extension's own release, while that is newer) and checks it against the release's SHA256SUMS.",
         "when": "codegraph.ready && !codegraph.installed"
       },
       {

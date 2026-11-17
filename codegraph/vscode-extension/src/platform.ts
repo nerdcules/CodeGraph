@@ -52,15 +52,37 @@ export function checksumFor(sums: string, file: string): string | undefined {
   return undefined;
 }
 
-/** Compares two dotted versions ("1.10.0" > "1.9.2"); a leading "v" and a "-suffix" are ignored. */
+/**
+ * Compares two dotted versions ("1.10.0" > "1.9.2"). A leading "v" and "+build" metadata are ignored; a pre-release
+ * ("1.3.0-beta.1") comes before its release ("1.3.0"), and two pre-releases of one version compare by their suffix.
+ */
 export function compareVersions(a: string, b: string): number {
-  const parts = (v: string) => v.replace(/^v/, '').split(/[-+]/)[0].split('.').map((p) => Number.parseInt(p, 10) || 0);
-  const [x, y] = [parts(a), parts(b)];
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    const d = (x[i] ?? 0) - (y[i] ?? 0);
+  const split = (v: string) => {
+    const [core, pre] = v.replace(/^v/, '').split('+')[0].split(/-(.*)/s);
+    return { parts: core.split('.').map((p) => Number.parseInt(p, 10) || 0), pre: pre ?? '' };
+  };
+  const [x, y] = [split(a), split(b)];
+  for (let i = 0; i < Math.max(x.parts.length, y.parts.length); i++) {
+    const d = (x.parts[i] ?? 0) - (y.parts[i] ?? 0);
     if (d !== 0) {
       return Math.sign(d);
     }
   }
-  return 0;
+  if (x.pre === y.pre) {
+    return 0;
+  }
+  if (!x.pre || !y.pre) {
+    return x.pre ? -1 : 1;
+  }
+  return Math.sign(x.pre.localeCompare(y.pre, 'en', { numeric: true }));
+}
+
+/**
+ * The release to install: the newest published one, unless this extension is newer than it. A pre-release of the
+ * extension is not "latest" on GitHub, and an older CodeGraph lacks the commands the extension calls, so the
+ * extension then installs the release it was built with.
+ */
+export function releaseToInstall(extensionVersion: string, latest: string): string {
+  const own = `v${extensionVersion.replace(/^v/, '')}`;
+  return compareVersions(own, latest) > 0 ? own : latest;
 }

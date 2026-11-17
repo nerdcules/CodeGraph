@@ -53,10 +53,11 @@ tokens of VS Code's Dark Modern and Light Modern themes.*
 ## Install
 
 The extension is not on the Visual Studio Marketplace or Open VSX yet. Releases after 1.2.0 carry it as
-`codegraph-vscode.vsix`; 1.2.0 and earlier do not have it:
+`codegraph-vscode.vsix`; 1.2.0 and earlier do not have it. The first is the pre-release 1.3.0-beta.1, which is not
+GitHub's latest release, so the link names its tag:
 
 ```bash
-curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/latest/download/codegraph-vscode.vsix
+curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/download/v1.3.0-beta.1/codegraph-vscode.vsix
 code --install-extension codegraph-vscode.vsix
 ```
 
@@ -122,7 +123,7 @@ one. Turn it off with `codegraph.registerMcpServer`.
 
 | Command | What it does |
 |---|---|
-| CodeGraph: Install or Update CodeGraph | Downloads and installs the latest release after checking it against `SHA256SUMS` |
+| CodeGraph: Install or Update CodeGraph | Downloads and installs the latest release after checking it against `SHA256SUMS`; while the extension is newer than that release, its own release instead |
 | CodeGraph: Set Up Repository… | `codegraph-index init <target> --client <your picks>` |
 | CodeGraph: Index Now | `codegraph-index <target>` for the graph's target of each language, only the files that changed |
 | CodeGraph: Rebuild Graph | The same with `--full` for C# |
@@ -148,7 +149,8 @@ one. Turn it off with `codegraph.registerMcpServer`.
 
 The extension makes these requests and no others:
 
-- the update check: one request a day to `api.github.com/repos/nerdcules/CodeGraph/releases/latest`;
+- the update check: one request a day to `api.github.com/repos/nerdcules/CodeGraph/releases/latest` (a pre-release
+  extension installs its own release while that one is older);
 - an install or update: the archive and `SHA256SUMS` from `github.com/nerdcules/CodeGraph/releases`.
 
 The indexer and the MCP server run on your machine, and the graph stays in `.codegraph/`.

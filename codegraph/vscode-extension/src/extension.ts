@@ -10,7 +10,7 @@ import { Indexing } from './indexing';
 import { installRelease, latestTag } from './install';
 import { McpOffer, registerMcp } from './mcp';
 import { OverviewView } from './overview';
-import { compareVersions, isInstallFolder } from './platform';
+import { compareVersions, isInstallFolder, releaseToInstall } from './platform';
 import { StatusBar } from './statusBar';
 import { targetGlob } from './targets';
 import { GraphTree } from './tree';
@@ -227,7 +227,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
     }),
 
     guard('codegraph.install', async () => {
-      const tag = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: 'CodeGraph: checking GitHub' }, () => latestTag());
+      const tag = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: 'CodeGraph: checking GitHub' }, () => wantedTag(context));
       info.latest = tag;
       await context.globalState.update('latestTag', tag);
       const { dir, adopt } = cli.updateDir();
@@ -346,16 +346,23 @@ async function pickTarget(graph: Graph, graphs: Graphs): Promise<Graph['targets'
   return choice?.target;
 }
 
+/** The release to install or update to: GitHub's latest, or this extension's own release while that is newer. */
+async function wantedTag(context: vscode.ExtensionContext): Promise<string> {
+  return releaseToInstall(String(context.extension.packageJSON.version), await latestTag());
+}
+
 async function checkForUpdate(context: vscode.ExtensionContext, info: { installed: boolean; version?: string; latest?: string }, changed: () => void): Promise<void> {
   if (!vscode.workspace.getConfiguration('codegraph').get<boolean>('checkForUpdates', true)) {
     return;
   }
   const last = context.globalState.get<number>('lastUpdateCheck', 0);
   if (Date.now() - last < 24 * 3600 * 1000 && info.latest) {
+    // The cached tag may come from an older version of this extension.
+    info.latest = releaseToInstall(String(context.extension.packageJSON.version), info.latest);
     changed();
   } else {
     try {
-      info.latest = await latestTag();
+      info.latest = await wantedTag(context);
       await context.globalState.update('latestTag', info.latest);
       await context.globalState.update('lastUpdateCheck', Date.now());
       changed();

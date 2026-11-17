@@ -5,7 +5,15 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased
+## 1.3.0-beta.1
+
+A pre-release, the first with the VS Code extension. GitHub's latest release stays 1.2.0, so the installers and the
+Claude Code plugin keep installing 1.2.0 unless given `--version v1.3.0-beta.1` (`-Version` on Windows).
+
+- A tag with a `-suffix` is published as a pre-release, and its release notes name the tag in the install commands.
+- The extension installs its own release while GitHub's latest is older, because 1.2.0 lacks `codegraph-index
+  status` and `stop`. It ranks a pre-release before its release (1.3.0-beta.1 < 1.3.0), so it offers 1.3.0 once
+  that is out.
 
 ### VS Code extension
 

@@ -361,12 +361,13 @@ The skill of the plugin still helps.
 ## Install the VS Code extension
 
 The VS Code extension installs CodeGraph for you, sets repositories up, and runs the live daemon.
-Releases after 1.2.0 carry it as `codegraph-vscode.vsix`.
+Releases after 1.2.0 carry it as `codegraph-vscode.vsix`. The first is the pre-release 1.3.0-beta.1, which is not
+GitHub's latest release, so the link names its tag.
 
 1. Download the extension and install it:
 
    ```bash
-   curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/latest/download/codegraph-vscode.vsix
+   curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/download/v1.3.0-beta.1/codegraph-vscode.vsix
    code --install-extension codegraph-vscode.vsix
    ```
 
