@@ -56,7 +56,7 @@ export const requirements: Record<TargetKind, Requirement> = {
 /** File extensions whose save should re-index a target of each kind (ScipIndexers.All, TypeScriptExtractor). */
 export const sourceExtensions: Record<TargetKind, string[]> = {
   csharp: ['.cs', '.csproj', '.props', '.targets'],
-  typescript: ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.html', '.json'],
+  typescript: ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs', '.html', '.json'],
   java: ['.java', '.kt', '.kts', '.scala', '.gradle', '.xml', '.sbt'],
   python: ['.py', '.toml', '.cfg'],
   go: ['.go', '.mod', '.work'],
