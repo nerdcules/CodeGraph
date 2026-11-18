@@ -49,7 +49,10 @@ The executables report their version with `--version`; the MCP server shows it t
     failed ("Cannot find an overload for ExtractToDirectory"), because 5.1 loaded `Microsoft.PowerShell.Archive`
     1.2.7 from PowerShell 7's folder instead of its own 1.0.1.0. Under Windows PowerShell 5.1, `install.ps1` and
     `uninstall.ps1` now drop PowerShell 7's module folders from `PSModulePath` for their own process before any module
-    loads, as pwsh does when it starts `powershell.exe`. Not yet run on Windows.
+    loads, as pwsh does when it starts `powershell.exe`.
+  - windows-report-8 (commit `5857063`): 20 of 20 cases passed, N5 included. windows-report-9 (commit `c919b87`,
+    which adds case U5: `uninstall.ps1` in 5.1 with the inherited path): 21 of 21 passed, in Windows PowerShell
+    5.1.26100 and PowerShell 7.7.0 on Windows 11, with the user PATH unchanged.
   - Not tested: macOS (bash 3.2), and `install.ps1 -FromSource`.
 
 ## 1.3.0-beta.1

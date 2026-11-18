@@ -108,7 +108,9 @@ On Linux on 18 November 2026 (commit `5f27e99`, release 1.3.0-beta.1, VS Code 1.
 the fold failed. On Windows 11 the same day (commit `12b8c14`), PowerShell 7.7.0 passed 9 of 9 and Windows
 PowerShell 5.1 passed 9 of 9 once the `PSModulePath` it inherited from pwsh was cleared; the harness now clears it
 for 5.1, and its case N5 runs 5.1 with the inherited path on purpose. At `b302cc9`, 19 of 20 passed: N5 failed at
-`Expand-Archive`, which the scripts now fix by dropping PowerShell 7's module folders when they run in 5.1.
+`Expand-Archive`, which the scripts now fix by dropping PowerShell 7's module folders when they run in 5.1. At
+`c919b87` all 21 cases passed on Windows 11 (windows-report-9), including U5, the uninstall in 5.1 with the inherited
+path.
 
 [Language versions](language-versions.md) tells how to check a new compiler or language version, and
 [BENCHMARKS.md](../BENCHMARKS.md) records a round per change that touched performance or coverage.
