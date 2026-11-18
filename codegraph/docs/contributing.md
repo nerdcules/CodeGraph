@@ -90,6 +90,23 @@ python3 tools/corpus/run.py --base <local image> --dialects modern,classic
 python3 tools/corpus/run.py --toolchains dotnet8,node20,jdk17,go121,rust170,python38
 ```
 
+Another layer tests the questions the install scripts ask, and is not part of CI either.
+[tests/install-questions.py](../tests/install-questions.py) runs `install.ps1` and `install.sh` in a pseudo-terminal
+(ConPTY on Windows), answers each question, reads the screen back, and checks what the script did: the list redraws
+and folds, a 14-row window, No to the plan, a running server, `-VSCode` / `--vscode`, a release without the
+extension, and uninstall. It downloads one release once and serves it from a folder, installs only under its work
+folder, and puts the extension in a VS Code extensions folder of its own. Run it after a change to either script:
+
+```bash
+uv run tests/install-questions.py                     # Windows: powershell (5.1) and pwsh; elsewhere: bash and pwsh
+uv run tests/install-questions.py --shells bash --work /tmp/cg-iq
+```
+
+It writes `results.md`, `results.json` and one screen per case in the work folder, and exits 1 when a case fails.
+On Linux on 18 November 2026 (commit `5f27e99`, release 1.3.0-beta.1, VS Code 1.146.0) all 19 cases passed in bash
+5.3.20 and PowerShell 7.7.0. With the line that folds the list removed from `install.sh`, the two cases that check
+the fold failed.
+
 [Language versions](language-versions.md) tells how to check a new compiler or language version, and
 [BENCHMARKS.md](../BENCHMARKS.md) records a round per change that touched performance or coverage.
 
