@@ -42,9 +42,7 @@ and whether to add the [VS Code extension](codegraph/vscode-extension/README.md)
 repository and ask what breaks if you change something.
 
 The VS Code extension installs CodeGraph, sets repositories up, runs each graph's live daemon, and shows each
-graph's state. It came in the [1.3.0-beta.1 pre-release](https://github.com/nerdcules/CodeGraph/releases/tag/v1.3.0-beta.1)
-(17 November 2026). GitHub's latest release is still 1.2.0, which does not carry it, so add `--version v1.3.0-beta.1`
-(`-Version v1.3.0-beta.1` on Windows) to get it now.
+graph's state. Release 1.3.0 is the first full release that carries it.
 
 To skip the questions, give the answers and `--yes` (`-Yes`):
 `curl ... | bash -s -- ~/dev/YourApp --add-to-path --yes`.

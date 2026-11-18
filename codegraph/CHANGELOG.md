@@ -5,7 +5,11 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased
+## 1.3.0
+
+The first full release with the [VS Code extension](vscode-extension/README.md). It came in the pre-release
+1.3.0-beta.1 (17 November 2026); that section of this changelog lists what it does. GitHub's latest release moves from 1.2.0 to 1.3.0, so the install one-liners and the Claude Code
+plugin now install 1.3.0, and the install scripts offer the extension without `--version`.
 
 ### Install scripts
 

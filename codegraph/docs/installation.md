@@ -103,7 +103,6 @@ In a terminal, the script asks for each thing that the command does not give:
 5. Whether to add the install folder to PATH.
 6. Whether to install the [VS Code extension](#install-the-vs-code-extension), when `code` is on PATH and the
    release carries the extension. If the extension is installed already, the question says which version.
-   The latest release, 1.2.0, does not carry it; add `--version v1.3.0-beta.1` (`-Version`) to get it now.
 
 Then it shows the plan and asks before it changes anything.
 With `--yes` (`-Yes`), with `CODEGRAPH_NONINTERACTIVE=1`, or with no terminal, it asks nothing:
@@ -401,20 +400,18 @@ The skill of the plugin still helps.
 ## Install the VS Code extension
 
 The VS Code extension installs CodeGraph for you, sets repositories up, and runs the live daemon.
-Releases after 1.2.0 carry it as `codegraph-vscode.vsix`. The first is the pre-release 1.3.0-beta.1, which is not
-GitHub's latest release, so the link names its tag.
+Releases from 1.3.0 on carry it as `codegraph-vscode.vsix` (the pre-release 1.3.0-beta.1 did too; 1.2.0 and earlier do not).
 
-1. Run the install script and answer yes to the extension, or give `--vscode` (`-VSCode` on Windows) with a
-   release that carries it:
+1. Run the install script and answer yes to the extension, or give `--vscode` (`-VSCode` on Windows):
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- --version v1.3.0-beta.1 --vscode
+   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- --vscode
    ```
 
    Or download the extension and install it yourself:
 
    ```bash
-   curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/download/v1.3.0-beta.1/codegraph-vscode.vsix
+   curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/latest/download/codegraph-vscode.vsix
    code --install-extension codegraph-vscode.vsix
    ```
 

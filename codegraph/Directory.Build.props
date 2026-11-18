@@ -8,6 +8,6 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <RoslynVersion>5.9.0</RoslynVersion>
     <!-- Shown by MCP clients as the server version; bump on release. -->
-    <Version>1.3.0-beta.1</Version>
+    <Version>1.3.0</Version>
   </PropertyGroup>
 </Project>

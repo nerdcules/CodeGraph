@@ -52,22 +52,21 @@ tokens of VS Code's Dark Modern and Light Modern themes.*
 
 ## Install
 
-The extension is not on the Visual Studio Marketplace or Open VSX yet. Releases after 1.2.0 carry it as
-`codegraph-vscode.vsix`; 1.2.0 and earlier do not have it. The first is the pre-release 1.3.0-beta.1, which is not
-GitHub's latest release, so the link names its tag:
+The extension is not on the Visual Studio Marketplace or Open VSX yet. Releases from 1.3.0 on carry it as
+`codegraph-vscode.vsix` (the pre-release 1.3.0-beta.1 did too); 1.2.0 and earlier do not have it.
 
 The install scripts offer it when `code` is on `PATH` and the release carries it, or install it with `--vscode`
 (`-VSCode` on Windows). They download it from the same release, check it against `SHA256SUMS`, and run
 `code --install-extension`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- --version v1.3.0-beta.1 --vscode
+curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- --vscode
 ```
 
 Or download it and install it yourself:
 
 ```bash
-curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/download/v1.3.0-beta.1/codegraph-vscode.vsix
+curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/latest/download/codegraph-vscode.vsix
 code --install-extension codegraph-vscode.vsix
 ```
 

@@ -58,8 +58,6 @@ Windows (PowerShell):
 | Add to PATH | yes |
 | The [VS Code extension](vscode-extension/README.md) | yes, when `code` is on PATH and the release carries the extension |
 
-The latest release, 1.2.0, does not carry the VS Code extension. To get it now, add `--version v1.3.0-beta.1`
-(`-Version v1.3.0-beta.1` on Windows) to install the pre-release.
 To skip the questions, give the answers and `--yes`: `... | bash -s -- ~/dev/YourApp --add-to-path --yes`.
 [Installation](docs/installation.md) has every option, the Claude Code plugin, upgrade and removal.
 
