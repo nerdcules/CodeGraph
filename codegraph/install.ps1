@@ -84,6 +84,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# A Windows PowerShell 5.1 started by a program that runs under PowerShell 7 (cmd, Python, an editor's terminal)
+# inherits 7's PSModulePath, finds 7's modules first, and loads ones that do not work in 5.1: Get-FileHash was not
+# found and Expand-Archive failed (windows-report-6 and -7). pwsh drops these folders when it starts powershell.exe
+# itself; this does the same for this process, before any module is loaded.
+if ($PSVersionTable.PSEdition -eq 'Desktop' -and $env:PSModulePath) {
+    $env:PSModulePath = (@($env:PSModulePath -split ';' | Where-Object {
+        $_ -and $_ -notmatch '\\PowerShell\\(7[^\\]*\\)?Modules\\?$' -and $_ -notmatch '\\WindowsApps\\Microsoft\.PowerShell_'
+    })) -join ';'
+}
 # $Repo takes the arguments no parameter matched, so a mistyped or removed option (-ObsidianVault) would land there
 # and the install would go ahead. Stop before downloading or writing anything, as install.sh does.
 $unknown = @($Repo | Where-Object { $_ -like '-*' })

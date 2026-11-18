@@ -44,7 +44,12 @@ The executables report their version with `--version`; the MCP server shows it t
     passed 9 of 9 cases. Windows PowerShell 5.1.26100 passed 2 of 9: run from the harness under pwsh, it inherited
     PowerShell 7's `PSModulePath` and stopped at `Get-FileHash` ("not recognized"); with `PSModulePath` cleared it
     passed 9 of 9. `install.ps1` now hashes with .NET instead of `Get-FileHash`, and the harness starts 5.1 with its
-    own `PSModulePath` and checks the inherited one in a case of its own (N5); neither change has run on Windows yet.
+    own `PSModulePath` and checks the inherited one in a case of its own (N5).
+  - windows-report-7 (commit `b302cc9`): 19 of 20 cases passed. N5 printed `checksum ok`, then `Expand-Archive`
+    failed ("Cannot find an overload for ExtractToDirectory"), because 5.1 loaded `Microsoft.PowerShell.Archive`
+    1.2.7 from PowerShell 7's folder instead of its own 1.0.1.0. Under Windows PowerShell 5.1, `install.ps1` and
+    `uninstall.ps1` now drop PowerShell 7's module folders from `PSModulePath` for their own process before any module
+    loads, as pwsh does when it starts `powershell.exe`. Not yet run on Windows.
   - Not tested: macOS (bash 3.2), and `install.ps1 -FromSource`.
 
 ## 1.3.0-beta.1
