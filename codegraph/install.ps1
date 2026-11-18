@@ -84,6 +84,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# A Windows PowerShell 5.1 started by a program that runs under PowerShell 7 (cmd, Python, an editor's terminal)
+# inherits 7's PSModulePath, finds 7's modules first, and loads ones that do not work in 5.1: Get-FileHash was not
+# found and Expand-Archive failed (windows-report-6 and -7). pwsh drops these folders when it starts powershell.exe
+# itself; this does the same for this process, before any module is loaded.
+if ($PSVersionTable.PSEdition -eq 'Desktop' -and $env:PSModulePath) {
+    $env:PSModulePath = (@($env:PSModulePath -split ';' | Where-Object {
+        $_ -and $_ -notmatch '\\PowerShell\\(7[^\\]*\\)?Modules\\?$' -and $_ -notmatch '\\WindowsApps\\Microsoft\.PowerShell_'
+    })) -join ';'
+}
 # $Repo takes the arguments no parameter matched, so a mistyped or removed option (-ObsidianVault) would land there
 # and the install would go ahead. Stop before downloading or writing anything, as install.sh does.
 $unknown = @($Repo | Where-Object { $_ -like '-*' })
@@ -260,7 +269,13 @@ function Test-Checksum([string] $file, [string] $sums) {
     $name = Split-Path -Leaf $file
     $expected = (Get-Content $sums | Where-Object { $_ -match "\s$([regex]::Escape($name))$" } | Select-Object -First 1) -split '\s+' | Select-Object -First 1
     if (-not $expected) { throw "no checksum for $name in SHA256SUMS" }
-    $actual = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant()
+    # .NET, not Get-FileHash. In Windows PowerShell 5.1, Get-FileHash is a function of the Microsoft.PowerShell.Utility
+    # module folder, and a 5.1 that inherited PowerShell 7's PSModulePath (started by cmd or Python under pwsh)
+    # finds 7's folder first and has no Get-FileHash (windows-report-6).
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($file)
+    try { $actual = -join ($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) }
+    finally { $stream.Dispose(); $sha.Dispose() }
     if ($actual -ne $expected.ToLowerInvariant()) { throw "checksum mismatch for $name" }
     Note 'checksum ok'
 }
