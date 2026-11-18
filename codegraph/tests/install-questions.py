@@ -350,6 +350,15 @@ def stop(proc):
 
 
 def run_shell(sh, work, version, env, template, have_code, have_vsix, timeout):
+    if sh.name == "powershell":
+        # A Windows PowerShell 5.1 window has its own PSModulePath. One started from a process that pwsh started
+        # (this harness under pwsh) inherits pwsh's, with PowerShell 7's module folders first, and 5.1 then loads
+        # the wrong Microsoft.PowerShell.Utility (windows-report-6). pwsh clears it when it starts powershell.exe
+        # itself; the harness does the same, so 5.1 runs as it does for a user.
+        inherited = next((v for k, v in env.items() if k.upper() == "PSMODULEPATH"), None)
+        env = {k: v for k, v in env.items() if k.upper() != "PSMODULEPATH"}
+    else:
+        inherited = None
     base = work / sh.name
     if base.exists():
         shutil.rmtree(base, ignore_errors=True)
@@ -394,6 +403,24 @@ def run_shell(sh, work, version, env, template, have_code, have_vsix, timeout):
     case.check("? " not in "\n".join(l[:2] for l in out.splitlines()), "no question was printed")
     case.check((r1 / ".mcp.json").exists(), ".mcp.json written in the repository")
     case.check((d1 / ("codegraph-index.exe" if WINDOWS else "codegraph-index")).exists(), "codegraph-index installed")
+
+    # N5: Windows PowerShell 5.1 with pwsh's PSModulePath, as when cmd or Python under pwsh starts it. install.ps1
+    # must not depend on a module that this path hides (Get-FileHash did, windows-report-6).
+    if sh.name == "powershell":
+        case = Case(sh.name, "N5", "5.1 started with PowerShell 7's PSModulePath")
+        if not inherited or "powershell_7" not in inherited.lower() and "\\powershell\\7" not in inherited.lower() \
+                and "program files\\powershell\\modules" not in inherited.lower():
+            cases.append(case)
+            case.skip("this harness did not inherit a PowerShell 7 PSModulePath (run it from pwsh to test this)")
+        else:
+            d5, r5 = base / "n5" / "bin", fresh_repo(template, base / "n5-repo", env)
+            r = run(sh.argv("install", sh.opt("install-dir", d5) + sh.opt("version", version) + sh.opt("yes") + [str(r5)]),
+                    cwd=r5, env={**env, "PSModulePath": inherited}, stdin=subprocess.DEVNULL, timeout=timeout)
+            (screens / f"{sh.name}-N5.txt").write_text(r.stdout + r.stderr, encoding="utf-8")
+            cases.append(case)
+            case.check(r.returncode == 0, f"exit code 0 (was {r.returncode})")
+            case.check("checksum ok" in r.stdout, "the checksum was checked")
+            case.check((r5 / ".mcp.json").exists(), ".mcp.json written in the repository")
 
     # N2: -VSCode with no terminal.
     case = Case(sh.name, "N2", "no terminal, -VSCode -Yes")

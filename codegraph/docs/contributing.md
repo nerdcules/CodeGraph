@@ -105,7 +105,9 @@ uv run tests/install-questions.py --shells bash --work /tmp/cg-iq
 It writes `results.md`, `results.json` and one screen per case in the work folder, and exits 1 when a case fails.
 On Linux on 18 November 2026 (commit `5f27e99`, release 1.3.0-beta.1, VS Code 1.146.0) all 19 cases passed in bash
 5.3.20 and PowerShell 7.7.0. With the line that folds the list removed from `install.sh`, the two cases that check
-the fold failed.
+the fold failed. On Windows 11 the same day (commit `12b8c14`), PowerShell 7.7.0 passed 9 of 9 and Windows
+PowerShell 5.1 passed 9 of 9 once the `PSModulePath` it inherited from pwsh was cleared; the harness now clears it
+for 5.1, and its case N5 runs 5.1 with the inherited path on purpose.
 
 [Language versions](language-versions.md) tells how to check a new compiler or language version, and
 [BENCHMARKS.md](../BENCHMARKS.md) records a round per change that touched performance or coverage.

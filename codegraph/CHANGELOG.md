@@ -39,7 +39,13 @@ The executables report their version with `--version`; the MCP server shows it t
     `--from-source --skip-tests --vscode --yes` (built the extension and installed it).
   - `install.ps1` in PowerShell 7.7.0: the questions end to end; `-Yes -VSCode` with a repository.
   - `uninstall.sh --yes` and `uninstall.ps1 -Yes`: each uninstalled the extension.
-  - Not tested: Windows PowerShell 5.1, Windows, macOS (bash 3.2), and `install.ps1 -FromSource`.
+  - On Windows 11 (windows-report-6, 18 November 2026, commit `12b8c14`), with
+    [tests/install-questions.py](tests/install-questions.py) driving the scripts through ConPTY: PowerShell 7.7.0
+    passed 9 of 9 cases. Windows PowerShell 5.1.26100 passed 2 of 9: run from the harness under pwsh, it inherited
+    PowerShell 7's `PSModulePath` and stopped at `Get-FileHash` ("not recognized"); with `PSModulePath` cleared it
+    passed 9 of 9. `install.ps1` now hashes with .NET instead of `Get-FileHash`, and the harness starts 5.1 with its
+    own `PSModulePath` and checks the inherited one in a case of its own (N5); neither change has run on Windows yet.
+  - Not tested: macOS (bash 3.2), and `install.ps1 -FromSource`.
 
 ## 1.3.0-beta.1
 

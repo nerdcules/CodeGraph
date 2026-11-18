@@ -260,7 +260,13 @@ function Test-Checksum([string] $file, [string] $sums) {
     $name = Split-Path -Leaf $file
     $expected = (Get-Content $sums | Where-Object { $_ -match "\s$([regex]::Escape($name))$" } | Select-Object -First 1) -split '\s+' | Select-Object -First 1
     if (-not $expected) { throw "no checksum for $name in SHA256SUMS" }
-    $actual = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant()
+    # .NET, not Get-FileHash. In Windows PowerShell 5.1, Get-FileHash is a function of the Microsoft.PowerShell.Utility
+    # module folder, and a 5.1 that inherited PowerShell 7's PSModulePath (started by cmd or Python under pwsh)
+    # finds 7's folder first and has no Get-FileHash (windows-report-6).
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($file)
+    try { $actual = -join ($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) }
+    finally { $stream.Dispose(); $sha.Dispose() }
     if ($actual -ne $expected.ToLowerInvariant()) { throw "checksum mismatch for $name" }
     Note 'checksum ok'
 }
