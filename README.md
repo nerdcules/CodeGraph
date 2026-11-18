@@ -38,6 +38,12 @@ Then start your assistant in that repository and ask what breaks if you change s
 sets the repository up for Claude Code and the Copilot CLI; add `--client copilot,cursor,codex` and so on (or
 `all`) for the others.
 
+In VS Code, the [CodeGraph extension](codegraph/vscode-extension/README.md) does the same from the editor: it
+installs CodeGraph, sets repositories up and runs each graph's live daemon, and shows each graph's state. It came in
+the [1.3.0-beta.1 pre-release](https://github.com/nerdcules/CodeGraph/releases/tag/v1.3.0-beta.1) (17 November
+2026). GitHub's latest release stays 1.2.0, so the commands above install 1.2.0 unless given
+`--version v1.3.0-beta.1` (`-Version` on Windows).
+
 The project lives in [codegraph/](codegraph/). Its [README](codegraph/README.md) shows the first five
 minutes, the questions you can ask, and where to go next depending on who you are; the
 [docs](codegraph/docs/README.md) have the rest, including [the story](codegraph/docs/story.md) of
