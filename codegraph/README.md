@@ -33,23 +33,44 @@ Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the Typ
 Kotlin, Scala, Go, Rust and Python through their SCIP indexers. One graph can hold several, such as a .NET
 API and its Angular front end.
 
+## Install
+
+One command. It asks what it needs, shows the plan, and changes nothing until you say yes.
+
+macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1)))
+```
+
+| It asks for | Default |
+|---|---|
+| The install folder | `~/.codegraph/bin`, or `C:\tools\codegraph` on Windows |
+| The repositories to set up | the git repository you run it in |
+| The assistants for each repository | Claude Code; also Cursor, the Gemini CLI and Codex when it finds them |
+| The live daemon | no |
+| Add to PATH | yes |
+| The [VS Code extension](vscode-extension/README.md) | yes, when `code` is on PATH and the release carries the extension |
+
+The latest release, 1.2.0, does not carry the VS Code extension. To get it now, add `--version v1.3.0-beta.1`
+(`-Version v1.3.0-beta.1` on Windows) to install the pre-release.
+To skip the questions, give the answers and `--yes`: `... | bash -s -- ~/dev/YourApp --add-to-path --yes`.
+[Installation](docs/installation.md) has every option, the Claude Code plugin, upgrade and removal.
+
 ## Your first five minutes
 
 ![Install with one line, ask one question, see the answer, and a week later see what it saved](docs/images/first-five-minutes.svg)
 
-**1. Install.** The script downloads the release for your platform, checks its checksum, and sets up the
-repository you name: it writes the `codegraph` server into the repo's `.mcp.json`, ignores `.codegraph/`,
-and builds the first graph. `.mcp.json` is what Claude Code and the Copilot CLI read; add
-`--client copilot,cursor,codex,roo` and so on (or `all`) for other assistants
-([installation](docs/installation.md#use-another-assistant)).
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/YourApp --add-to-path
-```
-
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\YourApp -AddToPath
-```
+**1. Install** with the command [above](#install). The script downloads the release for your platform and
+checks its checksum. For each repository you pick, it writes the `codegraph` server into the config of each
+assistant you pick (`.mcp.json` for Claude Code and the Copilot CLI), ignores `.codegraph/`, and builds the first
+graph ([other assistants](docs/installation.md#use-another-assistant)).
 
 C# repositories also need the .NET SDK the project builds with, no newer than 10, because the graph comes
 from a real compile. TypeScript needs Node.js 22.22.3 or later on 22, or 24.15 or later (what the extractor's

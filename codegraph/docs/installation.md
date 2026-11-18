@@ -52,38 +52,75 @@ For Alpine Linux (musl), [build from source](#build-from-source).
 
 ### On macOS or Linux
 
-1. Open a terminal.
-2. Run the install command with the path of your repository:
+1. Open a terminal in your repository.
+2. Run the install command:
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/App --add-to-path
+   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash
    ```
 
-3. Open a new terminal, so that the new PATH is active.
+3. Answer [the questions](#the-questions). Say yes to PATH.
+4. Open a new terminal, so that the new PATH is active.
 
-The script installs the executables in `~/.codegraph/bin`.
+The script installs the executables in `~/.codegraph/bin`, unless you choose another folder.
+To give the answers on the command line instead, name the repository and the options, and add `--yes`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/App --add-to-path --yes
+```
 
 ### On Windows
 
-1. Open PowerShell.
-2. Run the install command with the path of your repository:
+1. Open PowerShell in your repository.
+2. Run the install command:
 
    ```powershell
-   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\App -AddToPath
+   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1)))
    ```
 
-3. Open a new PowerShell window, so that the new PATH is active.
+3. Answer [the questions](#the-questions). Say yes to PATH.
+4. Open a new PowerShell window, so that the new PATH is active.
 
-The script installs the executables in `C:\tools\codegraph`.
+The script installs the executables in `C:\tools\codegraph`, unless you choose another folder.
+To give the answers on the command line instead:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\App -AddToPath -Yes
+```
+
 PowerShell 7 can also run `install.ps1` on macOS and Linux.
+
+### The questions
+
+In a terminal, the script asks for each thing that the command does not give:
+
+1. The install folder.
+2. The repositories to set up. If you run it inside a git repository, it offers that one first.
+3. The assistants to set each repository up for, as a list. Claude Code is selected, and so are Cursor, the Gemini
+   CLI and Codex when the script finds their programs. Use the arrow keys (or `j` and `k`) to move, space to select,
+   `a` for all, and Enter to accept.
+4. Whether the MCP server starts the live daemon on its first call.
+5. Whether to add the install folder to PATH.
+6. Whether to install the [VS Code extension](#install-the-vs-code-extension), when `code` is on PATH and the
+   release carries the extension. If the extension is installed already, the question says which version.
+   The latest release, 1.2.0, does not carry it; add `--version v1.3.0-beta.1` (`-Version`) to get it now.
+
+Then it shows the plan and asks before it changes anything.
+With `--yes` (`-Yes`), with `CODEGRAPH_NONINTERACTIVE=1`, or with no terminal, it asks nothing:
+it uses the options that you give and the defaults for the rest, and it installs the extension only with `--vscode`.
+In a terminal without cursor control (`TERM=dumb`), the list becomes a numbered list, and you type the numbers.
 
 ### What the script does
 
-1. It finds your platform and downloads the archive for it from the [latest release](https://github.com/nerdcules/CodeGraph/releases/latest).
-2. It checks the SHA-256 checksum of the archive against `SHA256SUMS` from the same release.
+1. It finds your platform and downloads `SHA256SUMS` from the [latest release](https://github.com/nerdcules/CodeGraph/releases/latest).
+   If the release does not exist, it stops here, before it asks anything.
+2. It downloads the archive for your platform and checks its SHA-256 checksum against `SHA256SUMS`.
 3. It unpacks the archive into the install folder.
 4. It makes sure that both executables start.
-5. It runs `codegraph-index init` on each repository that you give.
+5. It runs `codegraph-index init` on each repository.
+6. If you chose the extension, it downloads `codegraph-vscode.vsix` from the same release, checks it, and installs
+   it with `code --install-extension`.
+7. It lists what it did, with a mark for each part that failed.
 
 ### Script options
 
@@ -95,6 +132,9 @@ PowerShell 7 can also run `install.ps1` on macOS and Linux.
 | `--add-to-path` | `-AddToPath` | Add the install folder to the user PATH. |
 | `--live` | `-Live` | Let the server start the live daemon itself. |
 | `--client NAMES` | `-Client NAMES` | Set up the repositories for these assistants. See [Use another assistant](#use-another-assistant). |
+| `--vscode` | `-VSCode` | Install the VS Code extension from the same release. The script stops before it installs anything if it cannot. |
+| `--no-vscode` | `-NoVSCode` | Do not install the VS Code extension, and do not ask. |
+| `--yes` | `-Yes` | Ask nothing. |
 | `--from-source` | `-FromSource` | Build a checkout instead of downloading. See [Build from source](#build-from-source). |
 | `--force` | `-Force` | Stop running `codegraph-mcp` and `codegraph-index` processes before the copy. |
 
@@ -364,7 +404,14 @@ The VS Code extension installs CodeGraph for you, sets repositories up, and runs
 Releases after 1.2.0 carry it as `codegraph-vscode.vsix`. The first is the pre-release 1.3.0-beta.1, which is not
 GitHub's latest release, so the link names its tag.
 
-1. Download the extension and install it:
+1. Run the install script and answer yes to the extension, or give `--vscode` (`-VSCode` on Windows) with a
+   release that carries it:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- --version v1.3.0-beta.1 --vscode
+   ```
+
+   Or download the extension and install it yourself:
 
    ```bash
    curl -fsSLO https://github.com/nerdcules/CodeGraph/releases/download/v1.3.0-beta.1/codegraph-vscode.vsix
@@ -395,8 +442,8 @@ GitHub's latest release, so the link names its tag.
 2. Run the install command again.
 
 > **CAUTION:** A running `codegraph-mcp` holds its files open.
-> The script stops if the server runs.
-> Close the sessions, or give `--force` to stop the server.
+> If the server runs, the script asks whether to stop it. With no terminal to ask on, it ends without changing anything.
+> Close the sessions, or give `--force` to stop the server without a question.
 
 The plugin updates with `/plugin update codegraph@codegraph`.
 
@@ -434,6 +481,7 @@ The script builds with warnings as errors, runs the tests, and publishes the exe
 The script removes the install folder and the PATH entry.
 For each repository that you give, it removes the `codegraph` entry from `.mcp.json` and from the files of the other assistants that `init` sets up.
 If Codex has a `codegraph` entry, it removes that entry too.
+If `code` or `code-insiders` lists the CodeGraph extension, it uninstalls the extension.
 It also removes the `.codegraph/` folder of that repository.
 It asks before each removal.
 Give `--yes` or `-Yes` to remove without questions.
