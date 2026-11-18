@@ -5,6 +5,7 @@
 .DESCRIPTION
     Deletes the install folder, takes it out of the user PATH if install.ps1 -AddToPath put it there, and
     optionally removes the `codegraph` server entry from a repo's MCP configs and that repo's .codegraph/ graph.
+    The CodeGraph VS Code extension, when `code` or `code-insiders` lists it, is uninstalled too.
     Running codegraph processes keep the executables locked; the script refuses unless -Force stops them.
 
 .PARAMETER InstallDir
@@ -210,6 +211,23 @@ if (Get-Command codex -ErrorAction SilentlyContinue) {
         Step 'Codex'
         if (Confirm-Step "Remove the codegraph server from Codex's global config?") {
             & codex mcp remove codegraph
+        }
+    }
+}
+
+# ---- VS Code extension ------------------------------------------------------------------------------------
+# install.ps1 -VSCode installs it with each VS Code command line it finds.
+foreach ($name in 'code', 'code-insiders') {
+    $editor = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $editor) { continue }
+    # Windows PowerShell 5.1 turns redirected stderr lines into errors, which 'Stop' would end the script on.
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $listed = @(& $editor.Source --list-extensions 2>$null) } finally { $ErrorActionPreference = $saved }
+    if ($listed -contains 'nerdcules.codegraph') {
+        Step "VS Code extension ($name)"
+        if (Confirm-Step "Uninstall the CodeGraph extension from $name?") {
+            & $editor.Source --uninstall-extension nerdcules.codegraph
         }
     }
 }

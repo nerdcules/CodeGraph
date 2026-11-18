@@ -9,7 +9,8 @@
 #   --force        stop running codegraph-mcp / codegraph-index processes first
 #   --yes          do not ask before deleting
 #
-# The PATH lines install.sh --add-to-path appended to ~/.bashrc and ~/.zshrc are removed too.
+# The PATH lines install.sh --add-to-path appended to ~/.bashrc and ~/.zshrc are removed too, and so is the
+# CodeGraph VS Code extension when `code` or `code-insiders` lists it.
 set -euo pipefail
 
 install_dir="$HOME/.codegraph/bin"
@@ -23,7 +24,7 @@ while [ $# -gt 0 ]; do
         --repo)        repos+=("$2"); shift 2 ;;
         --force)       force=true; shift ;;
         --yes|-y)      yes=true; shift ;;
-        -h|--help)     sed -n '2,12p' "$0"; exit 0 ;;
+        -h|--help)     sed -n '2,13p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -144,5 +145,17 @@ if command -v codex >/dev/null && codex mcp get codegraph >/dev/null 2>&1; then
         codex mcp remove codegraph
     fi
 fi
+
+# ---- VS Code extension ------------------------------------------------------------------------------------
+# install.sh --vscode installs it with each VS Code command line it finds.
+for editor in code code-insiders; do
+    command -v "$editor" >/dev/null || continue
+    if "$editor" --list-extensions 2>/dev/null | grep -qix 'nerdcules.codegraph'; then
+        step "VS Code extension ($editor)"
+        if confirm "Uninstall the CodeGraph extension from $editor?"; then
+            "$editor" --uninstall-extension nerdcules.codegraph
+        fi
+    fi
+done
 
 printf '\nDone.\n'

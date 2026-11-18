@@ -41,7 +41,10 @@ API and its Angular front end.
 repository you name: it writes the `codegraph` server into the repo's `.mcp.json`, ignores `.codegraph/`,
 and builds the first graph. `.mcp.json` is what Claude Code and the Copilot CLI read; add
 `--client copilot,cursor,codex,roo` and so on (or `all`) for other assistants
-([installation](docs/installation.md#use-another-assistant)).
+([installation](docs/installation.md#use-another-assistant)). In a terminal the script asks for what the command
+leaves out, with a list to pick the assistants from and an offer of the [VS Code extension](vscode-extension/README.md),
+and shows the plan before it changes anything; `--yes` asks nothing
+([the questions](docs/installation.md#the-questions)).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/YourApp --add-to-path

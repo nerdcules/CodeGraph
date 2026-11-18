@@ -5,6 +5,42 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+### Install scripts
+
+- In a terminal, `install.sh` and `install.ps1` ask for what the command leaves out: the install folder, the
+  repositories (the git repository you are in first), the assistants, the live daemon, PATH and the VS Code
+  extension. The assistants are a list: arrow keys or `j`/`k` move, space selects, `a` selects all, Enter accepts.
+  Claude Code is selected, and Cursor, the Gemini CLI and Codex are when their programs are found. Then the script
+  shows the plan and changes nothing unless you say yes. In a terminal without cursor control (`TERM=dumb`) the
+  list is numbered and you type the numbers.
+  - This also asks when a repository is given on the command line, as the README one-liner does. `--yes` / `-Yes`
+    asks nothing, as before; so does `CODEGRAPH_NONINTERACTIVE=1` or no terminal.
+- `--vscode` / `-VSCode` installs the VS Code extension: `codegraph-vscode.vsix` from the same release, checked
+  against `SHA256SUMS`, with `code --install-extension` (and `code-insiders` when it is there). With
+  `--from-source` it builds the extension from the checkout. The questions offer it when `code` is found and the
+  release carries it, and name the installed version. `--no-vscode` / `-NoVSCode` skips the question. A release
+  without the extension (1.2.0 and earlier) stops `--vscode` before anything is installed.
+- `SHA256SUMS` is downloaded first, so a wrong `--version` fails before any question.
+- A running `codegraph-mcp` is offered to be stopped in a terminal, instead of only refused.
+- `--add-to-path` also writes the rc file of the login shell when it does not exist yet (a new Mac has no `~/.zshrc`);
+  before, nothing was written and nothing said so.
+- The script ends with a list of what it did, with a mark for each part that failed.
+- `CODEGRAPH_RELEASE_URL` replaces `https://github.com/nerdcules/CodeGraph/releases`, for a mirror with the same layout.
+- `install.ps1` under PowerShell 7 off Windows resolved a `dotnet` link to an absolute path as a relative one
+  (`/usr/bin/usr/share/dotnet/dotnet`) and stopped after the archive was unpacked.
+- `uninstall.sh` and `uninstall.ps1` uninstall the extension when `code` or `code-insiders` lists it, asking first.
+- Tested on Linux (18 November 2026), release 1.3.0-beta.1 served from a local mirror, the assistant answers typed
+  into a pseudo-terminal, VS Code 1.146.0 with its own extensions folder:
+  - `install.sh`: the questions end to end, with the repository set up and the extension installed; declining the
+    plan (nothing created); a running `codegraph-mcp` declined and then stopped; `latest` without the extension
+    (not offered; `--vscode` stops); piped into `bash -s` with a repository given; `TERM=dumb`; no terminal;
+    `--from-source --skip-tests --vscode --yes` (built the extension and installed it).
+  - `install.ps1` in PowerShell 7.7.0: the questions end to end; `-Yes -VSCode` with a repository.
+  - `uninstall.sh --yes` and `uninstall.ps1 -Yes`: each uninstalled the extension.
+  - Not tested: Windows PowerShell 5.1, Windows, macOS (bash 3.2), and `install.ps1 -FromSource`.
+
 ## 1.3.0-beta.1
 
 A pre-release, the first with the VS Code extension. GitHub's latest release stays 1.2.0, so the installers and the

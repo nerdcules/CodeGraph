@@ -35,12 +35,14 @@ curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/
 The script downloads the release archive for the platform (the executables carry their own .NET
 runtime), verifies its checksum, and runs `codegraph-index init` on the repo: that writes the
 configuration below with the real path, adds `.codegraph/` to `.gitignore`, and builds the first
-graph. Set up another repo later with `codegraph-index init` from inside it. See
+graph. In a terminal it asks for what the command leaves out (repos, assistants, PATH, the VS Code
+extension) and shows the plan first; `--yes` / `-Yes` asks nothing. Set up another repo later with
+`codegraph-index init` from inside it. See
 [docs/installation.md](docs/installation.md) for options, the Claude Code plugin, and building
 from source (`--from-source`).
 
 `uninstall.ps1` / `uninstall.sh` reverses the install: folder, PATH entry, and with `-Repo` /
-`--repo` a repo's MCP config entries and `.codegraph/` graph, and Codex's global entry.
+`--repo` a repo's MCP config entries and `.codegraph/` graph, Codex's global entry, and the VS Code extension.
 
 Languages: C# through Roslyn, TypeScript and Angular through the bundled Node extractor (needs Node.js), and
 Java, Kotlin, Scala, Python, Go and Rust through their SCIP indexers. [EXTRACTORS.md](EXTRACTORS.md) lists
