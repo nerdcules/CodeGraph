@@ -422,6 +422,18 @@ def run_shell(sh, work, version, env, template, have_code, have_vsix, timeout):
             case.check("checksum ok" in r.stdout, "the checksum was checked")
             case.check((r5 / ".mcp.json").exists(), ".mcp.json written in the repository")
 
+            # U5: uninstall.ps1 in the same 5.1, on what N5 installed.
+            case = Case(sh.name, "U5", "uninstall in 5.1 started with PowerShell 7's PSModulePath")
+            cases.append(case)
+            r = run(sh.argv("uninstall", sh.opt("install-dir", d5) + sh.opt("repo", r5) + sh.opt("yes")), cwd=base,
+                    env={**env, "PSModulePath": inherited}, stdin=subprocess.DEVNULL, timeout=timeout)
+            (screens / f"{sh.name}-U5.txt").write_text(r.stdout + r.stderr, encoding="utf-8")
+            case.check(r.returncode == 0, f"exit code 0 (was {r.returncode})")
+            case.check(not d5.exists(), "the install folder was deleted")
+            mcp = r5 / ".mcp.json"
+            case.check(mcp.exists() and "codegraph" not in json.loads(mcp.read_text() or "{}").get("mcpServers", {}),
+                       "the codegraph entry is gone from .mcp.json, and the file is still valid JSON")
+
     # N2: -VSCode with no terminal.
     case = Case(sh.name, "N2", "no terminal, -VSCode -Yes")
     if not have_code:
