@@ -24,25 +24,31 @@ what it finds as a graph, and serves that graph to your assistant as MCP tools. 
 assistant answered with four codegraph calls in 42 seconds; without CodeGraph it ran eight shell commands, took
 87 seconds and estimated "about 40" tests.
 
-Install, with the path of a repository to set up:
+## Install
+
+One command. Run it in your repository; it asks what it needs and shows the plan before it changes anything.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/YourApp --add-to-path
+curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\YourApp -AddToPath
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1)))
 ```
 
-Then start your assistant in that repository and ask what breaks if you change something. The script
-sets the repository up for Claude Code and the Copilot CLI; add `--client copilot,cursor,codex` and so on (or
-`all`) for the others.
+It asks for the install folder, the repositories to set up, the assistants to set them up for (a list:
+Claude Code is picked, and so are Cursor, the Gemini CLI and Codex when it finds them), the live daemon, PATH,
+and whether to add the [VS Code extension](codegraph/vscode-extension/README.md). Then start your assistant in the
+repository and ask what breaks if you change something.
 
-In VS Code, the [CodeGraph extension](codegraph/vscode-extension/README.md) does the same from the editor: it
-installs CodeGraph, sets repositories up and runs each graph's live daemon, and shows each graph's state. It came in
-the [1.3.0-beta.1 pre-release](https://github.com/nerdcules/CodeGraph/releases/tag/v1.3.0-beta.1) (17 November
-2026). GitHub's latest release stays 1.2.0, so the commands above install 1.2.0 unless given
-`--version v1.3.0-beta.1` (`-Version` on Windows).
+The VS Code extension installs CodeGraph, sets repositories up, runs each graph's live daemon, and shows each
+graph's state. It came in the [1.3.0-beta.1 pre-release](https://github.com/nerdcules/CodeGraph/releases/tag/v1.3.0-beta.1)
+(17 November 2026). GitHub's latest release is still 1.2.0, which does not carry it, so add `--version v1.3.0-beta.1`
+(`-Version v1.3.0-beta.1` on Windows) to get it now.
+
+To skip the questions, give the answers and `--yes` (`-Yes`):
+`curl ... | bash -s -- ~/dev/YourApp --add-to-path --yes`.
+[Installation](codegraph/docs/installation.md) has every option, upgrade and removal.
 
 The project lives in [codegraph/](codegraph/). Its [README](codegraph/README.md) shows the first five
 minutes, the questions you can ask, and where to go next depending on who you are; the

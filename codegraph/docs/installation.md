@@ -52,32 +52,42 @@ For Alpine Linux (musl), [build from source](#build-from-source).
 
 ### On macOS or Linux
 
-1. Open a terminal.
-2. Run the install command with the path of your repository:
+1. Open a terminal in your repository.
+2. Run the install command:
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/App --add-to-path
+   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash
    ```
 
-3. Open a new terminal, so that the new PATH is active.
+3. Answer [the questions](#the-questions). Say yes to PATH.
+4. Open a new terminal, so that the new PATH is active.
 
-The script installs the executables in `~/.codegraph/bin`.
-Without a repository, the script asks for one, so `curl -fsSL .../install.sh | bash` is enough.
-See [The questions](#the-questions).
+The script installs the executables in `~/.codegraph/bin`, unless you choose another folder.
+To give the answers on the command line instead, name the repository and the options, and add `--yes`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash -s -- ~/dev/App --add-to-path --yes
+```
 
 ### On Windows
 
-1. Open PowerShell.
-2. Run the install command with the path of your repository:
+1. Open PowerShell in your repository.
+2. Run the install command:
 
    ```powershell
-   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\App -AddToPath
+   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1)))
    ```
 
-3. Open a new PowerShell window, so that the new PATH is active.
+3. Answer [the questions](#the-questions). Say yes to PATH.
+4. Open a new PowerShell window, so that the new PATH is active.
 
-The script installs the executables in `C:\tools\codegraph`.
-Without a repository, the script asks for one.
+The script installs the executables in `C:\tools\codegraph`, unless you choose another folder.
+To give the answers on the command line instead:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.ps1))) C:\dev\App -AddToPath -Yes
+```
+
 PowerShell 7 can also run `install.ps1` on macOS and Linux.
 
 ### The questions
@@ -93,6 +103,7 @@ In a terminal, the script asks for each thing that the command does not give:
 5. Whether to add the install folder to PATH.
 6. Whether to install the [VS Code extension](#install-the-vs-code-extension), when `code` is on PATH and the
    release carries the extension. If the extension is installed already, the question says which version.
+   The latest release, 1.2.0, does not carry it; add `--version v1.3.0-beta.1` (`-Version`) to get it now.
 
 Then it shows the plan and asks before it changes anything.
 With `--yes` (`-Yes`), with `CODEGRAPH_NONINTERACTIVE=1`, or with no terminal, it asks nothing:

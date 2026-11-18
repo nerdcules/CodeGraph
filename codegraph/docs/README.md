@@ -26,7 +26,7 @@ The MCP server answers questions from that file, for Claude Code, GitHub Copilot
 
 | Page | Read it to |
 |---|---|
-| [Installation](installation.md) | Install a release, connect a repository to your assistant, upgrade, remove. |
+| [Installation](installation.md) | Install with one command that asks what it needs (and offers the VS Code extension), connect a repository to your assistant, upgrade, remove. |
 | [Client tests](client-tests/README.md) | See how each AI coding assistant was tested: its configuration, its tool calls and its answer. |
 | [Usage](usage.md) | Build a graph, keep it current, use the tools, see what they did for you. |
 | [Use cases](use-cases.md) | Find the tool for a question about your code. |
