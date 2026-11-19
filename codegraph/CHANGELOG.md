@@ -5,7 +5,10 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased
+## 1.4.0
+
+`codegraph-index compare` measures a question with the graph and without it, usage figures are sizes only, and
+the docs report four public repositories measured that way.
 
 - `find_symbol` with `nameMatch: "Exact"` finds a qualified tail after the `/` or `:` that ends a package path,
   as well as after a `.`. Go, Python and TypeScript full names put the package before the type that way
