@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · **Usage** · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
+[Home](README.md) · [Installation](installation.md) · **Usage** · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Measured results](measured-results.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -187,7 +187,7 @@ A typical turn uses three tools:
 In [BENCHMARKS round 12](../BENCHMARKS.md#round-12-the-docs-re-measured), the three answers for `GraphStore.Replace` used about 5,500 tokens.
 The 15 files that the answers name use about 65,000 tokens.
 The 25 files that contain `.Replace(` use about 123,000 tokens.
-[Why it saves tokens](why-it-saves-tokens.md) shows a measured example.
+[Measured results](measured-results.md) shows a measured example.
 
 ## The tools
 
@@ -279,7 +279,7 @@ live_status       1       0        1         159           0
 "Answer tok" is the size of the answers. "Files tok" is the size of the files they name, each file counted once
 per call. Both are estimates at 4 characters a token; no tokenizer is used. They are sizes, not a saving: without
 the graph an assistant searches and reads parts of files, and how much it reads is not recorded here.
-[Why it saves tokens](why-it-saves-tokens.md#in-a-real-session) has a measured session with and without.
+[Measured results](measured-results.md#in-a-real-session) has a measured session with and without.
 Give `--days 30` for a longer period.
 After a one-shot C# index, the indexer prints the first line with `(codegraph-index usage for details)` at the end.
 It does this only when the server has recorded tool calls.
@@ -353,6 +353,10 @@ configuration, so that is what its tool definitions and instructions added to th
 less with the graph both times, and the input tokens were higher with it both times. Model calls, wall time,
 output tokens and cost went one way in the first run and the other way in the second, which is why one run of
 each says little and compare runs three rounds by default.
+
+With three rounds on each of four public repositories (Go, Python, TypeScript, C#; Opus 5.5, 19 November 2026),
+the sessions with the graph answered sooner on all four and made fewer model calls in all 12 rounds, at a higher
+median token cost on all four: see [Four public repositories](measured-results.md#four-public-repositories).
 
 | Option | Function |
 |---|---|

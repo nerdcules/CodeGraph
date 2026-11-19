@@ -7,11 +7,17 @@ The executables report their version with `--version`; the MCP server shows it t
 
 ## Unreleased
 
+- The page "Why it saves tokens" is now [Measured results](docs/measured-results.md) (`docs/measured-results.md`):
+  on the four public repositories, Claude Code with CodeGraph saved time and model calls, not tokens. Every link and
+  nav bar points to the new name.
 - [With and without](tools/eval/README.md#four-public-repositories-19-november-2026) adds 24 compare sessions on
   four public repositories (Cobra, HTTPX, Hono, Jellyfin), with a run-time list of the tests that execute each
-  method. With the graph, Claude Code was faster on all four and used more input tokens and cost more on all four;
-  the graph's test counts were reach, not execution (HTTPX: 225 listed, 46 run it). The README and
-  [Why it saves tokens](docs/why-it-saves-tokens.md#four-public-repositories) say so.
+  method. With the graph, Claude Code answered sooner on all four (median 5.5 to 20.0 seconds), made fewer model
+  calls in all 12 rounds and gave a test total in all 12 answers. Each session started 8,681 tokens larger, so
+  input tokens and cost were higher on all four. The graph's test totals are reach, not execution: its list held
+  every test that runs the method on Cobra and Jellyfin, and on HTTPX listed 225 where 46 run it. The README,
+  [Measured results](docs/measured-results.md#four-public-repositories) and
+  [What is missing](docs/roadmap.md) say so.
 - `codegraph-index compare "<prompt>"` asks Claude Code the same question with the codegraph server and without
   it, three rounds by default, and reports what each session's own log says: wall time, model calls, input tokens
   with cache reads, output tokens, cost, the context at the first and last model call, and tool calls, with the
@@ -25,7 +31,7 @@ The executables report their version with `--version`; the MCP server shows it t
   `usage_stats` tool and the extension's Usage item no longer say how many tokens "stayed out of the context" or
   were "saved", and the `saved tok` column is gone; the status JSON drops `tokensSaved`. That figure was the size
   of every file an answer names minus the answer, which assumes a session without the graph reads those files
-  whole. The measured pair in [Why it saves tokens](docs/why-it-saves-tokens.md#in-a-real-session) did not: the
+  whole. The measured pair in [Measured results](docs/measured-results.md#in-a-real-session) did not: the
   context grew 18,460 tokens with CodeGraph and 21,579 without. The line now reads "answers N tokens, the files
   they name M tokens (estimated at 4 characters a token)"; the table's columns are `answer tok` and `files tok`.
 
@@ -235,7 +241,7 @@ Claude Code plugin keep installing 1.2.0 unless given `--version v1.3.0-beta.1` 
   With CodeGraph 7 of 12 answers gave a test total (each 42, the graph's count; 44 tests execute the method);
   without it none did. Claude Code was faster and cheaper with it; Codex and the Copilot CLI were not, and
   Cursor's runs varied too much to call. Summary in
-  [Why it saves tokens](docs/why-it-saves-tokens.md#four-assistants-with-and-without).
+  [Measured results](docs/measured-results.md#four-assistants-with-and-without).
 - The server accepts an id with the brackets its answers print around ids (`[M:App.Run]`): a Cursor agent
   copied them and got "no node with id". The server's instructions now say to drop them.
 - `find_symbol` with `nameMatch: Exact` also takes a qualified tail of the full name without its parameter list:
@@ -249,7 +255,7 @@ Claude Code plugin keep installing 1.2.0 unless given `--version v1.3.0-beta.1` 
 - The promo video (118.6 s) says "your AI coding assistant", and a new card lists the assistants it was tested with.
   The on/off sessions are still Claude Code. Its token figures are now the two measured sessions (180,134 against
   459,907 input tokens), not the README's example week or the size of the matching files.
-- [Why it saves tokens](docs/why-it-saves-tokens.md#in-a-real-session) adds the measured sessions: 42 s against
+- [Measured results](docs/measured-results.md#in-a-real-session) adds the measured sessions: 42 s against
   87 s, 4 model calls against 9, and a context that grew by about the same amount. The README no longer says "one
   tool call instead of twenty file reads".
 

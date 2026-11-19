@@ -19,13 +19,13 @@ In every session below, the `impact_of` call returned 12 dependents and 37 guard
 reported the 37 tests. Some answers also repeat the 12 dependents; the excerpts show each one's own words.
 
 37 is what that build's graph found. At run time, 44 tests execute `GraphStore.Replace`, and the 37 are all among
-them ([why it saves tokens](../why-it-saves-tokens.md)). A later change on the branch counts the tests that call it
+them ([measured results](../measured-results.md)). A later change on the branch counts the tests that call it
 from their test class's constructor or setup, and the same question now answers 42 guarding tests (see the
 [changelog](../../CHANGELOG.md)). The two still missed run the indexer as a separate process.
 
 These pages show that each assistant can use the graph. They do not compare time or tokens: for runs with and
 without CodeGraph in four of these assistants, see
-[four assistants, with and without](../why-it-saves-tokens.md#four-assistants-with-and-without).
+[four assistants, with and without](../measured-results.md#four-assistants-with-and-without).
 
 | Assistant | Version | Time to answer |
 |---|---|---|

@@ -1,8 +1,8 @@
-# Why it saves tokens
+# Measured results
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · **Why it saves tokens** · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · **Measured results** · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -118,21 +118,33 @@ are in the repository.
 Medians of three sessions; wall time for Cobra and HTTPX was measured while the answer-key test suites ran on the
 same machine.
 
-- **Faster, with fewer model calls, on all four.**
-- **More input tokens and a higher cost on all four.** This is the opposite of the 14 November run on this
-  repository. Each session with the graph started 8,681 tokens larger (the median first call), the server's tool
-  definitions and instructions, and its context grew more on all four: median growth 24,054 to 55,311 tokens with
-  the graph, 13,434 to 24,286 without.
-- **A total from the graph, and the graph's total is reach, not execution.** Every answer with the graph gave a test
-  count; no answer without it did on Cobra, HTTPX or Hono. The count was the tests that can reach the method through
-  calls: 18 more than run it on Cobra, 9 fewer on Hono, 179 more on HTTPX. On Jellyfin the graph listed 17 and all
-  three answers worked out that only 2 run it; the answers without the graph named the same 2.
+- **Faster on all four, in fewer model calls.** The median session with the graph answered 5.5 to 20.0 seconds
+  sooner (Jellyfin 5.5, HTTPX 11.9, Hono 17.4, Cobra 20.0), and the session with the graph was the faster one in 11
+  of the 12 rounds. It made fewer model calls in all 12 rounds, and wrote fewer output tokens on all four
+  repositories (medians 2,754 to 4,223 with the graph, 3,843 to 5,929 without).
+- **A test total in every answer.** Every one of the 12 answers with the graph said how many tests cover the
+  method; no answer without it gave a total on Cobra, HTTPX or Hono. On Cobra the graph's list held all 208 tests
+  that run the method, and on Jellyfin both. On Jellyfin, all three answers with the graph went a step further and
+  said that 2 of the 17 tests it lists run the method, which is what the run-time check found; the answers without
+  the graph named the same 2.
+- **What the total counts.** The graph's total (from `covered_by`, or from `impact_of` in three answers) is the
+  tests that can reach the method through calls, which is not always the tests that execute it. At depth
+  10, `covered_by` listed 18 more tests than run the method on Cobra, 15 more on Jellyfin, 179 more on
+  HTTPX (225 against 46), and 9 fewer on Hono. So the total is the set of tests to look at, and running them is
+  still the way to know which of them execute the code.
+- **What it costs.** The server's tool definitions and instructions make each session start 8,681 tokens larger
+  (the median first call), and every model call carries them. The context also grew more with the graph: median
+  growth 24,054 to 55,311 tokens with it, 13,434 to 24,286 without. So with fewer model calls, the sessions still
+  processed more input tokens, and the median cost was higher on all four repositories; the session with the graph
+  cost less in 4 of the 12 rounds. On this repository on 14 November, Claude Code was cheaper with the graph in
+  each of three rounds. [`codegraph-index compare`](usage.md#measure-it-with-and-without) measures the trade on
+  your own code.
 
 Four questions, three sessions each: a direction, not a general result.
 
 ## Where the savings come from
 
-The savings come from a few design choices:
+Small answers and fewer model calls come from a few design choices:
 
 - **Rows, not files.** An answer row is a full name, a file and a line range, and a node id for
   the next call. The model reads source only with `snippet`, for the members it will touch.

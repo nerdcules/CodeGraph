@@ -4,7 +4,7 @@
 
 Four AI coding assistants got the same question about this repository, three times with the codegraph server and
 three times without it, on 14 November 2026. This folder holds the answer key, the scripts, and one row for each
-of the 24 runs. [Why it saves tokens](../../docs/why-it-saves-tokens.md#four-assistants-with-and-without) has the
+of the 24 runs. [Measured results](../../docs/measured-results.md#four-assistants-with-and-without) has the
 summary. On 19 November, Claude Code got the same kind of question on four public repositories, in Go, Python,
 TypeScript and C#: see [Four public repositories](#four-public-repositories-19-november-2026).
 
@@ -145,10 +145,12 @@ Read by hand from each session's answer; the `stated_test_count` column of the C
 - All three Hono answers without the graph found copies of the method and their tests under `adapters/`, which the
   graph does not index; one answer with the graph mentioned those copies too.
 
-So on these four questions the graph made the sessions faster and gave every answer a number, but the number was
-the call graph's reach: 18 above the run-time count on Cobra, 9 below on Hono, 179 above on HTTPX and 15 above on
-Jellyfin, where all three answers said only 2 of the 17 run it. Without the graph the sessions cost less, and the
-Jellyfin answers were as right.
+So on these four questions the graph made the sessions faster (the median on all four, and 11 of 12 rounds), with
+fewer model calls in every round, and gave every answer a test total. On Cobra and Jellyfin its list held every test
+that runs the method, and on Jellyfin all three answers with it said that 2 of the 17 run it, as the key does. The
+total is the call graph's reach: 18 above the run-time count on Cobra, 9 below on Hono, 179 above on HTTPX and 15
+above on Jellyfin. The sessions without the graph cost less (the median on all four), and their Jellyfin answers
+were as right.
 
 ## Files
 

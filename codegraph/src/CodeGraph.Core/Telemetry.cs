@@ -21,7 +21,7 @@ public sealed record ToolCallRecord(
 
     /// <summary>
     /// The size of the files the answer names, each counted once per call. A size, not a measured saving: a session
-    /// without the graph reads parts of files, not all of them (docs/why-it-saves-tokens.md has a measured pair).
+    /// without the graph reads parts of files, not all of them (docs/measured-results.md has a measured pair).
     /// </summary>
     [JsonIgnore]
     public long SourceTokens => Tokens(SourceChars);

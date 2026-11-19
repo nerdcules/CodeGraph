@@ -17,12 +17,14 @@ Cursor.
 
 [![A real Claude Code session on 14 November 2026, replayed from its transcript: asked what breaks if GraphStore.Replace changes, Claude calls find_symbol, impact_of, tests_for and snippet, and answers that 37 tests guard it, in 42 seconds](codegraph/docs/images/promo-answer.gif)](codegraph-promo.mp4)
 
-*A real session, replayed from its transcript. Click for the video with sound: the same question with CodeGraph on (42 s, "37 tests guard it") and off (87 s, "about 40"). A later run-time check found 44 tests that execute the method ([why](codegraph/docs/why-it-saves-tokens.md#in-a-real-session)).*
+*A real session, replayed from its transcript. Click for the video with sound: the same question with CodeGraph on (42 s, "37 tests guard it") and off (87 s, "about 40"). A later run-time check found 44 tests that execute the method ([why](codegraph/docs/measured-results.md#in-a-real-session)).*
 
 It reads a codebase with its compiler (C#, TypeScript and Angular, Java, Go, Rust, Python), stores
 what it finds as a graph, and serves that graph to your assistant as MCP tools. In the session above, the
 assistant answered with four codegraph calls in 42 seconds; without CodeGraph it ran eight shell commands, took
-87 seconds and estimated "about 40" tests.
+87 seconds and estimated "about 40" tests. On four public repositories in Go, Python, TypeScript and C#, Claude
+Code answered sooner with CodeGraph on all four, in fewer model calls, at a higher token cost
+([measured](codegraph/docs/measured-results.md#four-public-repositories)).
 
 ## Install
 

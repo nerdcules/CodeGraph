@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · **What is missing** · [Contributing](contributing.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Measured results](measured-results.md) · [The story](story.md) · **What is missing** · [Contributing](contributing.md)
 
 ---
 
@@ -71,6 +71,21 @@ means here, and where it stands.
 9. **A recording of the install.** The [front page](../../README.md) opens with a real Claude Code session,
    replayed from its transcript, and a video of the same question with CodeGraph on and off. The install and the
    usage line a week later are still a picture of a terminal.
+10. **A smaller start for each session.** On four public repositories on 19 November 2026
+    ([measured](measured-results.md#four-public-repositories)), Claude Code answered sooner with the graph on all
+    four and made fewer model calls in all 12 rounds, but the server's tool definitions and instructions made each
+    session start 8,681 tokens larger, and every model call carries them. So the median input tokens and cost were
+    higher on all four. Shorter tool descriptions, or fewer tools offered at the start, would shrink that start;
+    how much has not been measured.
+11. **Say that a test total is reach.** `covered_by` lists the tests that can reach a member through calls, and its
+    answer opens "N test(s) transitively cover …". On Cobra, HTTPX and Hono, the answers with the graph in those
+    sessions reported that total as the tests that cover the method. Against a run-time check, the list held every
+    test that runs it on Cobra (208) and Jellyfin (2), but on HTTPX it listed 225 where 46 run it. The answer could
+    say that it counts tests that can reach the member.
+12. **`find_symbol` with an exact qualified name misses Go methods.** A Go full name such as
+    `github.com/spf13/cobra/Command.Find` has `/` before the type, and the exact match accepts a qualified tail only
+    after a `.`, so `find_symbol "Command.Find"` with `nameMatch: "Exact"` finds nothing. Found while building the
+    answer key on 19 November 2026.
 
 ## How to help
 

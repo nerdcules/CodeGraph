@@ -4,7 +4,7 @@
 
 Retired for now: the Obsidian plugin and export are not shipped or supported. The code stays in the repository; this page describes it as it was at commit 07bcb17.
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md) · **Obsidian (retired)**
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Measured results](measured-results.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md) · **Obsidian (retired)**
 
 ---
 
