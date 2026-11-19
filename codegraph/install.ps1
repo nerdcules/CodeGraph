@@ -327,6 +327,9 @@ function Set-InstallLink([string] $dir, [string] $target, [string] $versions) {
         return
     }
     if ($item.LinkType) {
+        # A junction that an upgrade stopped between its two steps left beside $dir; the link only, never its target.
+        Get-ChildItem -LiteralPath (Split-Path -Parent $dir) -Force -Filter ".$(Split-Path -Leaf $dir).next-*" -ErrorAction SilentlyContinue |
+            Where-Object { $_.LinkType } | ForEach-Object { $_.Delete() }
         $next = Join-Path (Split-Path -Parent $dir) ".$(Split-Path -Leaf $dir).next-$(New-Suffix)"
         New-Item -ItemType Junction -Path $next -Target $target | Out-Null
         $previous = @($item.Target)[0]
@@ -353,13 +356,16 @@ function Set-InstallLink([string] $dir, [string] $target, [string] $versions) {
 }
 
 # Deletes each folder in $versions except $current that nothing runs from. Windows does not rename a folder that a
-# running program uses, so a rename tests each folder first: a delete of a folder in use removes the files that are
-# not open and leaves the program without them. A folder in use stays for the next upgrade.
+# program uses, so a rename tests each folder first: a delete of a folder in use removes the files that are not open
+# and leaves the program without them. A folder in use stays for the next upgrade. A folder younger than an hour
+# stays too: another upgrade (the VS Code extension, a second run) can still unpack into it or have it ready to link.
+# CODEGRAPH_KEEP_RELEASE_MINUTES changes the hour, for a test.
 function Remove-OldReleases([string] $versions, [string] $current) {
+    $keepMinutes = 60
+    if ($env:CODEGRAPH_KEEP_RELEASE_MINUTES -match '^\d+$') { $keepMinutes = [int] $env:CODEGRAPH_KEEP_RELEASE_MINUTES }
     foreach ($folder in @(Get-ChildItem -LiteralPath $versions -Directory -Force -ErrorAction SilentlyContinue)) {
         if ($folder.FullName.TrimEnd('\').Equals($current.TrimEnd('\'), [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-        # Another upgrade (the VS Code extension, a second run) can still unpack into a new folder; one that old is left over.
-        if ($folder.Name.StartsWith('new-') -and $folder.LastWriteTime -gt (Get-Date).AddHours(-1)) { continue }
+        if (-not $folder.Name.StartsWith('.delete-') -and $folder.LastWriteTime -gt (Get-Date).AddMinutes(-$keepMinutes)) { continue }
         $doomed = Join-Path $versions ".delete-$(New-Suffix)"
         try { [System.IO.Directory]::Move($folder.FullName, $doomed) }
         catch { Note "kept $(Pretty $folder.FullName): a program still runs from it; the next upgrade deletes it"; continue }
@@ -469,6 +475,10 @@ try {
     $versions = Join-Path (Split-Path -Parent $InstallDir) ".$(Split-Path -Leaf $InstallDir).versions"
     $installItem = Get-Item -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue
     $firstMove = $linked -and $installItem -and -not $installItem.LinkType
+    if ($firstMove -and @(Get-ChildItem -LiteralPath $InstallDir -Force).Count -gt 0 -and
+        -not (Test-Path (Join-Path $InstallDir 'codegraph-index.dll')) -and -not (Test-Path (Join-Path $InstallDir 'codegraph-mcp.dll'))) {
+        throw "$InstallDir holds files that are not a codegraph install; choose an install folder of its own with -InstallDir"
+    }
     $userPath = if ($onWindows) { [Environment]::GetEnvironmentVariable('Path', 'User') } else { $null }
     $alreadyOnPath = if ($onWindows) { @($userPath -split ';' | Where-Object { $_ }) -contains $InstallDir } else { Test-OnPath $InstallDir }
 
@@ -624,7 +634,8 @@ try {
         $named = Join-Path $versions "$release-$(New-Suffix)"
         [System.IO.Directory]::Move($releaseDir, $named)
         $releaseDir = $named
-        Set-InstallLink $InstallDir $releaseDir $versions
+        try { Set-InstallLink $InstallDir $releaseDir $versions }
+        catch { Remove-Item -LiteralPath $releaseDir -Recurse -Force -ErrorAction SilentlyContinue; throw }
         Remove-OldReleases $versions $releaseDir
     }
 

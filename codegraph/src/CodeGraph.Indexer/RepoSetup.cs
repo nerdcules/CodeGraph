@@ -334,7 +334,7 @@ internal static class RepoSetup
     public static string? FindServer()
     {
         var exe = OperatingSystem.IsWindows() ? "codegraph-mcp.exe" : "codegraph-mcp";
-        var baseDir = AppContext.BaseDirectory;
+        var baseDir = ReleaseFolder.StableBaseDirectory(); // the junction, not one release's folder
         string[] candidates =
         [
             Path.Combine(baseDir, exe),

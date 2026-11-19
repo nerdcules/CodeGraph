@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { installArchive, isLinkedInstall, versionsFolder } from '../../install';
+import { installArchive, isLinkedInstall, setRecentMs, versionsFolder } from '../../install';
 import { followFileLinks, isInstallFolder } from '../../platform';
 
 const token = { isCancellationRequested: false };
@@ -28,6 +28,9 @@ function fakeRelease(root: string, version: string): string {
 }
 
 const version = (dir: string) => fs.readFileSync(path.join(dir, 'VERSION'), 'utf8').trim();
+
+// The releases these tests make are seconds old; the cleanup keeps a folder younger than an hour unless told not to.
+setRecentMs(0);
 
 test('the linked layout: install, update, old releases deleted, the path never changes', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-layout-'));
@@ -50,6 +53,17 @@ test('the linked layout: install, update, old releases deleted, the path never c
     assert.ok(!fs.existsSync(first), 'the old release is deleted when nothing runs from it');
     assert.deepEqual(fs.readdirSync(versions).length, 1);
     assert.deepEqual(fs.readdirSync(path.dirname(dir)).sort(), ['.codegraph.versions', 'codegraph'], 'no staging or link left beside it');
+
+    // A ".next-" link that a stopped update left goes at the next update; the release it points at stays.
+    const current = fs.realpathSync(dir);
+    fs.symlinkSync(current, path.join(path.dirname(dir), '.codegraph.next-dead'), 'junction');
+    // A release that another update unpacked a moment ago stays while it is younger than the limit.
+    setRecentMs(60 * 60 * 1000);
+    await installArchive(fakeRelease(root, '1.2.0'), dir, token, quiet, true);
+    setRecentMs(0);
+    assert.equal(version(dir), '1.2.0');
+    assert.ok(fs.existsSync(path.join(current, 'VERSION')), 'a recent release is kept');
+    assert.deepEqual(fs.readdirSync(path.dirname(dir)).sort(), ['.codegraph.versions', 'codegraph'], 'the stale link is gone');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -111,6 +125,14 @@ test('followFileLinks follows a link on the file, not a link on its folder', (t)
       return;
     }
     assert.equal(followFileLinks(link), plain, 'the link on the file is followed to the install folder, junction kept');
+
+    // A relative link counts from the real folder of the link, not from the folder it was reached through.
+    const deep = path.join(root, 'deep', 'realbin');
+    fs.mkdirSync(deep, { recursive: true });
+    fs.symlinkSync(path.join('..', '..', 'codegraph', 'codegraph-index'), path.join(deep, 'codegraph-index'), 'file');
+    const through = path.join(root, 'linkbin');
+    fs.symlinkSync(deep, through, 'junction');
+    assert.equal(followFileLinks(path.join(through, 'codegraph-index')), plain);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

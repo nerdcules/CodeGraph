@@ -137,11 +137,23 @@ if ($installItem) {
         } else {
             Remove-Item -Recurse -Force $InstallDir
         }
-        if (Test-Path -LiteralPath $versions) { Remove-Item -LiteralPath $versions -Recurse -Force }
         Write-Host "deleted $InstallDir"
     }
 } else {
     Write-Host "no install folder at $InstallDir"
+}
+# The release folders, also when the junction is already gone. A folder that a program still uses stays, and the
+# script goes on to the PATH and the repositories.
+if (Test-Path -LiteralPath $versions) {
+    Step "Release folders: $versions"
+    if (Confirm-Step "Delete $versions and everything in it?") {
+        try {
+            Remove-Item -LiteralPath $versions -Recurse -Force -ErrorAction Stop
+            Write-Host "deleted $versions"
+        } catch {
+            Write-Warning "could not delete all of $versions ($($_.Exception.Message)). A program still runs from it; stop it and delete the folder."
+        }
+    }
 }
 
 # ---- PATH ---------------------------------------------------------------------------------------------

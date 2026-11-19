@@ -2,11 +2,13 @@
 // release's SHA256SUMS like install.sh and install.ps1 do, unpacked beside the old folder and swapped in, so a failed
 // or refused update leaves the old installation whole.
 //
-// On Windows a folder cannot be renamed while a program runs from it, and an assistant session keeps codegraph-mcp
-// running for as long as it is open (issue #9). There the install folder is a junction to one folder per release, in
+// On Windows a folder cannot be renamed while a program runs from it, and codegraph-mcp runs for as long as an
+// assistant session is open (issue #9). There the install folder is a junction to one folder per release, in
 // `.<name>.versions` beside it. An update unpacks the new release into a new folder and points the junction at it.
 // Programs that run now keep the old folder until they stop; the next update deletes each old folder that nothing
 // runs from. The path of the install folder does not change, so PATH and the MCP configs that name it stay correct.
+// The executables start themselves again from the release folder (ReleaseFolder.cs), so a process that started
+// through the junction does not load files of a later release.
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -16,7 +18,7 @@ import { Readable, Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 import type { ReadableStream as WebReadableStream } from 'stream/web';
 import type * as vscode from 'vscode';
-import { assetName, checksumFor, isInstallFolder, repository, runtimeId } from './platform';
+import { assetName, checksumFor, isInstallFolder, repository, runtimeId, samePath } from './platform';
 
 const userAgent = 'codegraph-vscode-extension';
 
@@ -107,6 +109,7 @@ export async function installArchive(
     await fs.promises.mkdir(versions, { recursive: true });
   }
   let staging: string | undefined = await fs.promises.mkdtemp(linked ? path.join(versions, 'new-') : path.join(parent, `.${path.basename(dir)}.new-`));
+  let release: string | undefined;
   try {
     await unpack(archive, staging);
     if (token.isCancellationRequested) {
@@ -119,6 +122,7 @@ export async function installArchive(
       await fs.promises.rename(staging, named);
       staging = named;
       await pointAt(dir, staging, versions);
+      release = staging;
     } else {
       await swapIn(staging, dir, log);
     }
@@ -128,8 +132,8 @@ export async function installArchive(
       await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined);
     }
   }
-  if (linked) {
-    await removeOldVersions(dir, versions, log);
+  if (release) {
+    await removeOldVersions(release, versions, log);
   }
 }
 
@@ -181,6 +185,7 @@ async function pointAt(dir: string, target: string, versions: string): Promise<v
     return;
   }
   if (current.isSymbolicLink()) {
+    await removeStaleLinks(dir);
     const previous = await fs.promises.readlink(dir);
     const next = path.join(path.dirname(dir), `.${path.basename(dir)}.next-${crypto.randomBytes(4).toString('hex')}`);
     await fs.promises.symlink(target, next, 'junction');
@@ -220,12 +225,13 @@ async function pointAt(dir: string, target: string, versions: string): Promise<v
 }
 
 /**
- * Deletes each folder in `versions` that `dir` does not point at and that nothing runs from. On Windows a folder that
- * a running program uses cannot be renamed, so a rename tests each folder first: a delete of a folder in use removes
- * the files that are not open and leaves the program without them. A folder in use stays for the next update.
+ * Deletes each folder in `versions` except `current` (the release the junction now points at) that nothing runs
+ * from. On Windows a folder that a running program uses cannot be renamed, so a rename tests each folder first: a
+ * delete of a folder in use removes the files that are not open and leaves the program without them. A folder in
+ * use stays for the next update. A folder younger than an hour stays too: another update (a second window,
+ * install.ps1) can still unpack into it, or can have it ready to link.
  */
-async function removeOldVersions(dir: string, versions: string, log: (line: string) => void): Promise<void> {
-  const current = await fs.promises.realpath(dir).catch(() => undefined);
+async function removeOldVersions(current: string, versions: string, log: (line: string) => void): Promise<void> {
   let names: string[];
   try {
     names = await fs.promises.readdir(versions);
@@ -234,12 +240,11 @@ async function removeOldVersions(dir: string, versions: string, log: (line: stri
   }
   for (const name of names) {
     const folder = path.join(versions, name);
-    if (current && samePath(await fs.promises.realpath(folder).catch(() => folder), current)) {
+    if (samePath(folder, current)) {
       continue;
     }
-    // Another update (a second window, install.ps1) can still unpack into a new folder; one that old is left over.
     const changed = await fs.promises.stat(folder).then((s) => s.mtimeMs).catch(() => 0);
-    if (name.startsWith('new-') && Date.now() - changed < 60 * 60 * 1000) {
+    if (!name.startsWith('.delete-') && Date.now() - changed < recentMs) {
       continue;
     }
     const doomed = path.join(versions, `.delete-${crypto.randomBytes(4).toString('hex')}`);
@@ -255,9 +260,22 @@ async function removeOldVersions(dir: string, versions: string, log: (line: stri
   }
 }
 
-function samePath(a: string, b: string): boolean {
-  const clean = (p: string) => path.resolve(p).replace(/[\\/]+$/, '');
-  return process.platform === 'win32' ? clean(a).toLowerCase() === clean(b).toLowerCase() : clean(a) === clean(b);
+/** How long an unpacked release folder is safe from the cleanup of another update. A test can set it lower. */
+let recentMs = 60 * 60 * 1000;
+export function setRecentMs(ms: number): void {
+  recentMs = ms;
+}
+
+/** Removes `.<name>.next-*` junctions beside `dir` that an update stopped between its two steps left. */
+async function removeStaleLinks(dir: string): Promise<void> {
+  const prefix = `.${path.basename(dir)}.next-`;
+  const names = await fs.promises.readdir(path.dirname(dir)).catch(() => [] as string[]);
+  for (const name of names.filter((n) => n.startsWith(prefix))) {
+    const link = path.join(path.dirname(dir), name);
+    if (isLinkedInstall(link)) {
+      await fs.promises.unlink(link).catch(() => undefined); // the link only, never what it points at
+    }
+  }
 }
 
 /** Moves `dir` aside, `staging` into its place, then deletes the old folder; puts `dir` back when the second move fails. */

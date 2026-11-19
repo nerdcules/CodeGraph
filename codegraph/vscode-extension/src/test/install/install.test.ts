@@ -12,10 +12,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { installArchive, installRelease, isLinkedInstall, versionsFolder } from '../../install';
+import { installArchive, installRelease, isLinkedInstall, setRecentMs, versionsFolder } from '../../install';
 import { executable, isInstallFolder } from '../../platform';
 
 const enabled = process.env.CODEGRAPH_TEST_INSTALL_RELEASE === '1';
+// The releases this test makes are seconds old; the cleanup keeps a folder younger than an hour unless told not to.
+setRecentMs(0);
 const tag = process.env.CODEGRAPH_TEST_RELEASE || 'v1.2.0';
 const windows = process.platform === 'win32';
 const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) };

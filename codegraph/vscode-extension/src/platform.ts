@@ -49,12 +49,36 @@ export function followFileLinks(p: string): string {
       if (!fs.lstatSync(current).isSymbolicLink()) {
         return current;
       }
-      current = path.resolve(path.dirname(current), fs.readlinkSync(current));
+      const target = fs.readlinkSync(current);
+      // A relative target counts from the real folder of the link, as the OS reads it, not from its spelled path.
+      current = path.isAbsolute(target) ? target : path.resolve(fs.realpathSync(path.dirname(current)), target);
     } catch {
       return current;
     }
   }
   return current;
+}
+
+/**
+ * The file a command on PATH runs, for the folder an update writes to. On Windows the links of the file only
+ * (followFileLinks), so the junction of the install folder stays. Elsewhere every link, as before the junction
+ * layout: an install folder that is a link to a folder updates the folder it points at.
+ */
+export function installPathOf(file: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'win32') {
+    return followFileLinks(file);
+  }
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return file;
+  }
+}
+
+/** Whether two paths name the same file: case-sensitive on Linux only. */
+export function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => path.resolve(p).replace(/\\/g, '/').replace(/\/+$/, '');
+  return process.platform === 'linux' ? norm(a) === norm(b) : norm(a).toLowerCase() === norm(b).toLowerCase();
 }
 
 export function executable(name: 'codegraph-index' | 'codegraph-mcp', platform: NodeJS.Platform = process.platform): string {
