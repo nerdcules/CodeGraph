@@ -86,6 +86,40 @@ public sealed class NodeHandlesTests
         Assert.Equal("Service.Save", NodeIds.Normalize("Service.Save", handles));
     }
 
+    [Fact]
+    public void A_handle_resolves_through_the_last_snapshot_while_a_reload_runs()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
+        var dbPath = Path.Combine(directory, "graph.db");
+        try
+        {
+            using (var writer = new GraphStore(dbPath))
+            {
+                writer.Replace(full: true, [], Graph.Nodes, Graph.Edges, [], [], new Dictionary<string, string>());
+            }
+
+            using var cache = new GraphSnapshotCache(dbPath);
+            Assert.Null(cache.Last);
+            var loaded = cache.WaitForCurrent(TimeSpan.FromSeconds(30));
+            Assert.NotNull(loaded);
+            var handle = NodeHandles.For(loaded).Handle(Graph.Save);
+            Assert.Equal(Graph.Save, NodeIds.Normalize(handle, cache, TimeSpan.Zero));
+
+            // The file moves away: its stamp changes and no load can finish, as in a reload that takes a long time.
+            File.Move(dbPath, dbPath + ".away");
+            Assert.Null(cache.Current);
+            Assert.Same(loaded, cache.Last);
+
+            Assert.Equal(Graph.Save, NodeIds.Normalize($"[{handle}]", cache, TimeSpan.Zero));
+            Assert.Equal("aaaaaaaa", NodeIds.Normalize("aaaaaaaa", cache, TimeSpan.Zero));
+            Assert.Equal("Service.Save", NodeIds.Normalize(" Service.Save ", cache, TimeSpan.Zero));
+        }
+        finally
+        {
+            TempDb.TryDelete(directory);
+        }
+    }
+
     private static CodeGraphTools Tools(GraphStore store, string dbPath) =>
         new(store, new IndexFreshness(dbPath, TimeSpan.FromSeconds(3)), new Telemetry(null),
             new LiveClient(dbPath), new SemanticSearch(null), new GraphSnapshotCache(dbPath), new AnswerPaths(null));

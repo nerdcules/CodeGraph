@@ -172,15 +172,11 @@ void AddGraph(IServiceCollection services)
                 {
                     if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String && arguments[key].GetString() is { } raw)
                     {
-                        // A handle (8 characters, as rows print them while the graph is in memory) becomes its id. A
-                        // reload after a re-index leaves no snapshot for a moment, and a handle is worth a short wait.
-                        GraphSnapshot? snapshot = null;
-                        if (GraphSnapshotCache.Enabled)
-                        {
-                            snapshot = NodeHandles.LooksLikeHandle(NodeIds.Unwrap(raw)) ? snapshots.WaitForCurrent(TimeSpan.FromSeconds(2)) : snapshots.Current;
-                        }
-
-                        var id = NodeIds.Normalize(raw, snapshot is null ? null : NodeHandles.For(snapshot));
+                        // A handle (8 characters, as rows print them while the graph is in memory) becomes its id. While
+                        // a reload after a re-index runs, the last snapshot that loaded resolves it.
+                        var id = GraphSnapshotCache.Enabled
+                            ? NodeIds.Normalize(raw, snapshots, TimeSpan.FromSeconds(2))
+                            : NodeIds.Normalize(raw, null);
                         if (id != raw)
                         {
                             arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
