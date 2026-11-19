@@ -1001,7 +1001,12 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     /// handle back into the id), else the id itself. An id with no handle, such as a live symbol outside the graph or
     /// one of a colliding pair, prints in full.
     /// </summary>
-    private string Id(string id) => store.Snapshot is { } snapshot ? NodeHandles.For(snapshot).Handle(id) : id;
+    private string Id(string id) => Handles?.Handle(id) ?? id;
+
+    private NodeHandles? _handles;
+
+    /// <summary>The handles of the snapshot this call reads, looked up once per call; null while the graph is not in memory.</summary>
+    private NodeHandles? Handles => _handles ??= store.Snapshot is { } snapshot ? NodeHandles.For(snapshot) : null;
 
     /// <summary>
     /// The node an id argument names: the node with that id (a handle has already become its id in the call-tool
@@ -1024,10 +1029,17 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             return matches[0];
         }
 
-        answer = matches.Count == 0
-            ? $"no node has the id '{idOrName}' and no symbol has that exact name. Use find_symbol with a partial name; ids look like M:Namespace.Type.Method(System.String)"
-            : $"{(matches.Count > 20 ? "more than 20" : matches.Count.ToString(CultureInfo.InvariantCulture))} symbols are named {idOrName}; pass the id of one:\n"
-              + Format(matches.Take(20).Select(n => (n, n.Signature)));
+        answer = matches.Count switch
+        {
+            0 when NodeHandles.LooksLikeHandle(idOrName) =>
+                $"'{idOrName}' is not a handle of this graph: the graph was rebuilt, or is not in memory yet. Pass the name, or retry.",
+            0 => $"no node has the id '{idOrName}' and no symbol has that exact name. A re-index retires the id of a removed member; "
+                 + "use find_symbol with a partial name. Ids look like M:Namespace.Type.Method(System.String)",
+            > 20 => $"more than 20 symbols are named {idOrName}; pass the id of one, or use find_symbol with nameMatch Exact and offset to see the rest:\n"
+                    + Format(matches.Take(20).Select(n => (n, n.Signature))),
+            _ => $"{matches.Count.ToString(CultureInfo.InvariantCulture)} symbols are named {idOrName}; pass the id of one:\n"
+                 + Format(matches.Select(n => (n, n.Signature))),
+        };
         return null;
     }
 

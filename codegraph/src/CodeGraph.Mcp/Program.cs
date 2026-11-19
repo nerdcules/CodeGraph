@@ -172,14 +172,15 @@ void AddGraph(IServiceCollection services)
                 {
                     if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String && arguments[key].GetString() is { } raw)
                     {
-                        // A handle (8 characters, as rows print them while the graph is in memory) becomes its id.
-                        var id = NodeIds.Unwrap(raw);
-                        if (NodeHandles.LooksLikeHandle(id) && GraphSnapshotCache.Enabled && snapshots.Current is { } snapshot
-                            && NodeHandles.For(snapshot).Resolve(id) is { } full)
+                        // A handle (8 characters, as rows print them while the graph is in memory) becomes its id. A
+                        // reload after a re-index leaves no snapshot for a moment, and a handle is worth a short wait.
+                        GraphSnapshot? snapshot = null;
+                        if (GraphSnapshotCache.Enabled)
                         {
-                            id = full;
+                            snapshot = NodeHandles.LooksLikeHandle(NodeIds.Unwrap(raw)) ? snapshots.WaitForCurrent(TimeSpan.FromSeconds(2)) : snapshots.Current;
                         }
 
+                        var id = NodeIds.Normalize(raw, snapshot is null ? null : NodeHandles.For(snapshot));
                         if (id != raw)
                         {
                             arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
@@ -205,9 +206,15 @@ void AddGraph(IServiceCollection services)
             }
 
             // The root goes first, and the STALE warning before it, so the answer reads: warning, root, rows.
-            if (context.Services?.GetService<AnswerPaths>()?.Header is { } rootLine)
+            if (context.Services?.GetService<AnswerPaths>() is { } answerPaths)
             {
-                result.Content.Insert(0, new TextContentBlock { Text = rootLine });
+                if (answerPaths.Header is { } rootLine)
+                {
+                    result.Content.Insert(0, new TextContentBlock { Text = rootLine });
+                }
+
+                // A provider that does not scope requests hands the next call the same instance; it starts clean.
+                answerPaths.Reset();
             }
 
             if (freshness.Check().Warning() is { } warning)

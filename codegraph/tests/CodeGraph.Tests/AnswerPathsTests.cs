@@ -19,6 +19,10 @@ public sealed class AnswerPathsTests
         Assert.Equal("src/App/Service.cs", paths.Relative("/repo/src/App/Service.cs"));
         Assert.True(paths.Shortened);
         Assert.Equal("paths are relative to /repo", paths.Header);
+
+        paths.Reset();
+        Assert.False(paths.Shortened);
+        Assert.Null(paths.Header);
     }
 
     [Fact]

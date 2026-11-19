@@ -28,6 +28,9 @@ public sealed class AnswerPaths
     /// <summary>The line that names the root, or null when no path in this answer was shortened.</summary>
     public string? Header => Shortened ? $"paths are relative to {Root}" : null;
 
+    /// <summary>Forgets that a path was shortened, for the next answer.</summary>
+    public void Reset() => Shortened = false;
+
     /// <summary>The path relative to the root when it is under it, else the path as given. Separators are kept.</summary>
     [return: NotNullIfNotNull(nameof(path))]
     public string? Relative(string? path)

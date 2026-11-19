@@ -70,6 +70,7 @@ public sealed class NameResolutionTests
         var answer = Tools(db).TestsFor("Nope");
 
         Assert.StartsWith("no node has the id 'Nope' and no symbol has that exact name.", answer);
+        Assert.StartsWith("'zzzzzzzz' is not a handle of this graph", Tools(db).TestsFor("zzzzzzzz"));
     }
 
     [Fact]

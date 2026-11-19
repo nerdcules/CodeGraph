@@ -49,4 +49,14 @@ public static class NodeIds
         var trimmed = id.Trim();
         return trimmed.Length >= 2 && trimmed[0] == '[' && trimmed[^1] == ']' ? trimmed[1..^1].Trim() : trimmed;
     }
+
+    /// <summary>
+    /// The id an argument stands for: <see cref="Unwrap"/>, then a handle becomes its id when <paramref name="handles"/>
+    /// knows it. Anything else, a long id or a name, comes back as it was.
+    /// </summary>
+    public static string Normalize(string raw, NodeHandles? handles)
+    {
+        var id = Unwrap(raw);
+        return handles is not null && NodeHandles.LooksLikeHandle(id) && handles.Resolve(id) is { } full ? full : id;
+    }
 }

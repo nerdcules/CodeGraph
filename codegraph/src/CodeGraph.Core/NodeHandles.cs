@@ -80,7 +80,7 @@ public sealed class NodeHandles
 
     /// <summary>The handles of <paramref name="snapshot"/>'s nodes, made on first use and kept with the snapshot.</summary>
     public static NodeHandles For(GraphSnapshot snapshot) =>
-        PerSnapshot.GetValue(snapshot, s => new NodeHandles(s.AllNodes().Select(n => n.Id)));
+        PerSnapshot.GetValue(snapshot, s => new NodeHandles(s.Ids));
 
     /// <summary>The first 64 bits of the SHA-256 of the id's UTF-8 bytes; <see cref="Encode"/> uses the low 40.</summary>
     public static ulong Hash(string id) => BinaryPrimitives.ReadUInt64LittleEndian(SHA256.HashData(Encoding.UTF8.GetBytes(id)));

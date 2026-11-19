@@ -72,6 +72,20 @@ public sealed class NodeHandlesTests
         Assert.Equal(Graph.Save, NodeHandles.For(snapshot).Resolve(handle));
     }
 
+    [Fact]
+    public void An_argument_loses_its_brackets_and_a_known_handle_becomes_its_id()
+    {
+        var handles = new NodeHandles([Graph.Save, Graph.Handle]);
+        var handle = handles.Handle(Graph.Save);
+
+        Assert.Equal(Graph.Save, NodeIds.Normalize($"[{handle}]", handles));
+        Assert.Equal(Graph.Save, NodeIds.Normalize(handle, handles));
+        Assert.Equal(Graph.Save, NodeIds.Normalize($"[{Graph.Save}]", handles));
+        Assert.Equal("aaaaaaaa", NodeIds.Normalize("aaaaaaaa", handles));
+        Assert.Equal(handle, NodeIds.Normalize(handle, null));
+        Assert.Equal("Service.Save", NodeIds.Normalize("Service.Save", handles));
+    }
+
     private static CodeGraphTools Tools(GraphStore store, string dbPath) =>
         new(store, new IndexFreshness(dbPath, TimeSpan.FromSeconds(3)), new Telemetry(null),
             new LiveClient(dbPath), new SemanticSearch(null), new GraphSnapshotCache(dbPath), new AnswerPaths(null));
