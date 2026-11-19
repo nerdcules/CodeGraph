@@ -17,6 +17,10 @@ The executables report their version with `--version`; the MCP server shows it t
 - `covered_by` lists the nearest 50 tests by depth and then the count of the rest at each depth, as `impact_of`
   does for its tests; `impact_of` adds that count too. On HTTPX, 4 of 10 `covered_by` answers in the 19 November
   sessions were over Claude Code's 50,000-character limit and were saved to a file and read back in pieces.
+- Rows print an 8-character handle in place of the node id while the graph is in memory: 40 bits of the SHA-256 of
+  the id in base 32, made when the snapshot loads, the same in every answer and session. Every tool that takes an
+  id accepts the handle or the id; two ids whose handles collide print in full. A C# id repeated the full name with
+  every parameter type: `GraphStore.Replace`'s id is over 400 characters, on every row that names it.
 
 ## 1.4.0
 

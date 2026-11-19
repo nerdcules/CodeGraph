@@ -133,7 +133,7 @@ void AddGraph(IServiceCollection services)
                 codegraph answers structural questions about the indexed codebase from a compiler-built graph, so prefer
                 it to grepping or opening files. Typical turn: find_symbol (or search_code when you only know what the
                 code does) → impact_of / callers_of / references_to → snippet on the two or three declarations that matter.
-                Ids in [brackets] are opaque (Roslyn doc-comment ids for C#, ts:/scip: prefixes otherwise); pass them back verbatim, without the brackets.
+                Ids in [brackets] are opaque: an 8-character handle while the graph is in memory, else a Roslyn doc-comment id (C#) or a ts:/scip: id; pass them back verbatim, without the brackets.
                 File paths in rows are relative to the root named in the first line of the answer; join the two before you Read a file. An answer that starts with
                 "⚠ STALE INDEX" is from a graph older than the working tree; rows ending in STALE come from edited files.
                 Call impact_of before changing anything shared, and tests_for / covered_by to find the tests that guard it.
@@ -183,10 +183,20 @@ void AddGraph(IServiceCollection services)
                 NodeIds.NameTheId(context.Params.Name, arguments);
                 foreach (var key in arguments.Keys.Where(NodeIds.Arguments.Contains).ToList())
                 {
-                    if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String
-                        && arguments[key].GetString() is { } raw && NodeIds.Unwrap(raw) is var id && id != raw)
+                    if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String && arguments[key].GetString() is { } raw)
                     {
-                        arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
+                        // A handle (8 characters, as rows print them while the graph is in memory) becomes its id.
+                        var id = NodeIds.Unwrap(raw);
+                        if (NodeHandles.LooksLikeHandle(id) && GraphSnapshotCache.Enabled && snapshots.Current is { } snapshot
+                            && NodeHandles.For(snapshot).Resolve(id) is { } full)
+                        {
+                            id = full;
+                        }
+
+                        if (id != raw)
+                        {
+                            arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
+                        }
                     }
                 }
             }

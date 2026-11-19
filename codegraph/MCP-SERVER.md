@@ -137,12 +137,17 @@ kind  full name  [extra]  file:start-end  [id]  [STALE]
 
 ```
 paths are relative to C:\dev\GymX
-method  GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout, System.Threading.CancellationToken)  depth 1  src\GymX.Core\WorkoutService.cs:41-67  [M:GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout,System.Threading.CancellationToken)]
+method  GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout, System.Threading.CancellationToken)  depth 1  src\GymX.Core\WorkoutService.cs:41-67  [k7m2qa4z]
 ```
 
 File paths are relative to the repository root: the git worktree that holds the graph, else the folder that holds
 `.codegraph`. An answer that has such a path names the root once, in its first line (after the `STALE` warning, if
 any). A path outside the root stays absolute. Join the root and the path before opening a file.
+
+While the graph is in memory (the normal case once the server has loaded it), rows print an 8-character handle in
+place of the id, such as `[k7m2qa4z]`: 40 bits of the SHA-256 of the id in base 32, so the handle is the same in
+every answer and every session for as long as the id exists. Every tool that takes an id accepts the handle or the
+id. Two ids whose handles collide print in full. Until the graph is in memory, rows print the id itself.
 
 For C#, the `[id]` is the Roslyn documentation-comment id; ids from the TypeScript extractor start with `ts:`,
 and ids from a SCIP indexer with `scip:`. Pass it back verbatim, without the brackets, to any tool that takes

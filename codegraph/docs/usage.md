@@ -218,10 +218,14 @@ Each row shows the kind, the name, the file and lines, and the node id:
 
 ```
 paths are relative to /repo
-method  App.Core.OrderService.Submit(App.Core.Order)  depth 1  src/App.Core/OrderService.cs:41-58  [M:App.Core.OrderService.Submit(App.Core.Order)]
+method  App.Core.OrderService.Submit(App.Core.Order)  depth 1  src/App.Core/OrderService.cs:41-58  [k7m2qa4z]
 ```
 
 Give the id in brackets to the next tool.
+While the graph is in memory, the brackets hold an 8-character handle.
+The handle is a hash of the full id, so it is the same in every answer.
+A tool takes the handle or the full id.
+Two ids with the same handle show the full id.
 
 File paths are relative to the repository root.
 The first line of an answer with paths names the root.

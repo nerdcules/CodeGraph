@@ -48,10 +48,10 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             var sb = new StringBuilder();
             sb.Append(s.Kind.ToLowerInvariant()).Append("  ").Append(s.Display);
             if (s.File is not null) sb.Append("  ").Append(paths.Relative(s.File)).Append(':').Append(s.Line);
-            if (s.Id is not null) sb.Append("  [").Append(s.Id).Append(']');
+            if (s.Id is not null) sb.Append("  [").Append(Id(s.Id)).Append(']');
             sb.AppendLine(s.InSource ? "" : "  (metadata: not in the graph; use live_references to find its uses)");
             if (s.ExpressionType is not null) sb.AppendLine($"expression type: {s.ExpressionType}");
-            if (s.EnclosingMemberId is not null) sb.AppendLine($"inside: [{s.EnclosingMemberId}]");
+            if (s.EnclosingMemberId is not null) sb.AppendLine($"inside: [{Id(s.EnclosingMemberId)}]");
             return sb.ToString();
         }, cancellationToken);
 
@@ -71,7 +71,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             foreach (var reference in r.References)
             {
                 sb.Append("  ").Append(reference.EnclosingMember ?? "(file level)").Append("  ").Append(paths.Relative(reference.File)).Append(':').Append(reference.Line);
-                if (reference.EnclosingMemberId is not null) sb.Append("  [").Append(reference.EnclosingMemberId).Append(']');
+                if (reference.EnclosingMemberId is not null) sb.Append("  [").Append(Id(reference.EnclosingMemberId)).Append(']');
                 sb.AppendLine();
                 sb.Append("      ").AppendLine(reference.Text);
             }
@@ -154,7 +154,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         var analysed = 0;
         foreach (var d in declarations.OrderBy(d => d.Change switch { "removed" => 0, "signature" => 1, "body" => 2, _ => 3 }))
         {
-            sb.Append("  ").Append(d.Change).Append("  ").Append(d.Display).Append("  [").Append(d.Id).Append(']');
+            sb.Append("  ").Append(d.Change).Append("  ").Append(d.Display).Append("  [").Append(Id(d.Id)).Append(']');
             if (d.Change != "added" && analysed < MaxImpact && store.GetNode(d.Id) is not null)
             {
                 analysed++;
@@ -187,7 +187,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
                 {
                     sb.Append("  ").Append(flow.Line).Append(": ").Append(flow.Detail);
                     if (flow.Via is not null) sb.Append(" (via '").Append(flow.Via).Append("')");
-                    if (flow.TargetId is not null) sb.Append("  [").Append(flow.TargetId).Append(']');
+                    if (flow.TargetId is not null) sb.Append("  [").Append(Id(flow.TargetId)).Append(']');
                     sb.AppendLine();
                 }
             }
@@ -733,7 +733,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
                 sb.Append("  ").Append(paths.Relative(method.FilePath)).Append(':').Append(method.StartLine);
             }
 
-            sb.Append("  [").Append(method.Id).Append(']');
+            sb.Append("  [").Append(Id(method.Id)).Append(']');
             sb.AppendLine();
         }
 
@@ -787,7 +787,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         {
             sb.Append(m.Kind == NodeKind.External ? "external  " : "method  ").Append(m.FullName).Append("  ").Append(count).Append(" callers");
             if (m.FilePath is not null) sb.Append("  ").Append(paths.Relative(m.FilePath)).Append(':').Append(m.StartLine);
-            sb.Append("  [").Append(m.Id).Append(']');
+            sb.Append("  [").Append(Id(m.Id)).Append(']');
             sb.AppendLine();
         }
         return sb.ToString();
@@ -868,7 +868,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             foreach (var (kind, target) in from)
                 sb.Append("    ").Append(kind.ToString().ToLowerInvariant()).Append(" → ")
                   .Append(target.Kind.ToString().ToLowerInvariant()).Append("  ").Append(target.FullName)
-                  .Append("  [").Append(target.Id).Append(']').AppendLine();
+                  .Append("  [").Append(Id(target.Id)).Append(']').AppendLine();
         }
         if (to.Count > 0)
         {
@@ -876,7 +876,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             foreach (var (kind, source) in to)
                 sb.Append("    ").Append(kind.ToString().ToLowerInvariant()).Append(" ← ")
                   .Append(source.Kind.ToString().ToLowerInvariant()).Append("  ").Append(source.FullName)
-                  .Append("  [").Append(source.Id).Append(']').AppendLine();
+                  .Append("  [").Append(Id(source.Id)).Append(']').AppendLine();
         }
         return sb.ToString();
     }
@@ -999,6 +999,13 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     private static string NotFound(string id) =>
         $"no node with id '{id}'. Use find_symbol to look it up; ids look like M:Namespace.Type.Method(System.String)";
 
+    /// <summary>
+    /// The id as a row prints it: its 8-character handle while the graph is in memory (the call-tool filter turns the
+    /// handle back into the id), else the id itself. An id with no handle, such as a live symbol outside the graph or
+    /// one of a colliding pair, prints in full.
+    /// </summary>
+    private string Id(string id) => store.Snapshot is { } snapshot ? NodeHandles.For(snapshot).Handle(id) : id;
+
     private string Format(IEnumerable<(GraphNode Node, string? Extra)> rows)
     {
         var report = freshness.Check();
@@ -1020,7 +1027,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
                 sb.Append("  ").Append(paths.Relative(node.FilePath)).Append(':').Append(node.StartLine).Append('-').Append(node.EndLine);
             }
 
-            sb.Append("  [").Append(node.Id).Append(']');
+            sb.Append("  [").Append(Id(node.Id)).Append(']');
             if (report.IsDirty(node.FilePath))
             {
                 sb.Append("  STALE");
