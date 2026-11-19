@@ -96,6 +96,9 @@ var anchor = new GraphAnchor(dbPath);
 // re-index; until it lands, calls read through DuckDB as before. CODEGRAPH_SNAPSHOT=off turns it off.
 var snapshots = new GraphSnapshotCache(dbPath, anchor, poll: GraphSnapshotCache.Enabled ? TimeSpan.FromSeconds(1) : null);
 
+// The first tool call waits at most 2 s for that load, so its answer prints handles as the calls after it do.
+var firstCall = new FirstCallWait(snapshots, TimeSpan.FromSeconds(2));
+
 // CODEGRAPH_DAEMON=auto: the first tool call starts a daemon when none runs; once per server process.
 var autoStart = LiveLauncher.AutoStart ? 1 : 0;
 
@@ -162,6 +165,12 @@ void AddGraph(IServiceCollection services)
                 {
                     freshness.Invalidate();
                 }
+            }
+
+            // After the flush, so the snapshot it waits for is the one of the graph that this call reads.
+            if (GraphSnapshotCache.Enabled)
+            {
+                firstCall.Wait();
             }
 
             // Answers print ids in [brackets]; a model that copies the brackets along still gets its node.
