@@ -16,6 +16,11 @@ The executables report their version with `--version`; the MCP server shows it t
   - No call waits for the snapshot. The 2 s wait of the first tool call is gone. The 2 s wait for an argument with
     the shape of a handle is gone too; it also delayed a name of 8 lowercase letters such as `validate`.
   - `CODEGRAPH_SNAPSHOT=off` prints full ids, as in 1.5.0.
+- The VS Code extension's icons show the same picture as the CodeGraph logo ([assets/logo.svg](assets/logo.svg)).
+  The activity bar icon is now the logo itself as a one-colour mask: the same size, strokes, opacities and glow, with
+  no crop. Before, it was a cropped copy with thicker strokes. `media/icon.png` is a new 256 px render of the logo
+  in Chromium, the engine that VS Code uses, and is the same as that render in each pixel. `scripts/icons.js` makes
+  the icons from the logo, and a unit test fails if an icon and the logo do not agree.
 
 ## 1.5.0
 

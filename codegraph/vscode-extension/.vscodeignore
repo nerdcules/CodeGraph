@@ -8,3 +8,4 @@ node_modules/**
 .vscode-test/**
 media/icon.svg
 .gitignore
+scripts/**
