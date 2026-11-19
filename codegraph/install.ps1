@@ -317,6 +317,23 @@ function Get-ExtensionVersion([string] $editor) {
 
 function New-Suffix { [guid]::NewGuid().ToString('n').Substring(0, 8) }
 
+# Both installers use the same per-install Windows mutex for junction publication and release cleanup.
+function Enter-InstallLock([string] $dir) {
+    $key = [System.IO.Path]::GetFullPath($dir).TrimEnd('\').ToLowerInvariant()
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { $hash = -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($key)) | ForEach-Object { $_.ToString('x2') }) }
+    finally { $sha.Dispose() }
+    $mutex = [System.Threading.Mutex]::new($false, "Local\CodeGraphInstall-$hash")
+    try {
+        try { $null = $mutex.WaitOne() }
+        catch [System.Threading.AbandonedMutexException] { }
+        return $mutex
+    } catch {
+        $mutex.Dispose()
+        throw
+    }
+}
+
 # Windows: points the junction $dir at the release folder $target (issue #9). A junction to $target is made beside
 # $dir and renamed into its place, so a program that runs from the old release does not stop it. A real folder (an
 # install from before this layout) is moved into $versions first; a program that runs from it stops that move.
@@ -628,15 +645,21 @@ try {
     }
 
     if ($linked) {
-        # A name that says which release the folder holds, then the junction moves to it.
-        $release = (Get-Content -LiteralPath (Join-Path $releaseDir 'VERSION') -ErrorAction SilentlyContinue | Select-Object -First 1)
-        $release = if ($release) { $release.Trim() -replace '[^\w.+-]', '_' } else { 'source' }
-        $named = Join-Path $versions "$release-$(New-Suffix)"
-        [System.IO.Directory]::Move($releaseDir, $named)
-        $releaseDir = $named
-        try { Set-InstallLink $InstallDir $releaseDir $versions }
-        catch { Remove-Item -LiteralPath $releaseDir -Recurse -Force -ErrorAction SilentlyContinue; throw }
-        Remove-OldReleases $versions $releaseDir
+        $installLock = Enter-InstallLock $InstallDir
+        try {
+            # A name that says which release the folder holds, then the junction moves to it.
+            $release = (Get-Content -LiteralPath (Join-Path $releaseDir 'VERSION') -ErrorAction SilentlyContinue | Select-Object -First 1)
+            $release = if ($release) { $release.Trim() -replace '[^\w.+-]', '_' } else { 'source' }
+            $named = Join-Path $versions "$release-$(New-Suffix)"
+            [System.IO.Directory]::Move($releaseDir, $named)
+            $releaseDir = $named
+            try { Set-InstallLink $InstallDir $releaseDir $versions }
+            catch { Remove-Item -LiteralPath $releaseDir -Recurse -Force -ErrorAction SilentlyContinue; throw }
+            Remove-OldReleases $versions $releaseDir
+        } finally {
+            $installLock.ReleaseMutex()
+            $installLock.Dispose()
+        }
     }
 
     # A framework-dependent build finds .NET through DOTNET_ROOT or the machine-wide install, not through PATH. With a

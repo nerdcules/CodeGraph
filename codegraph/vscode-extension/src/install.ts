@@ -109,31 +109,37 @@ export async function installArchive(
     await fs.promises.mkdir(versions, { recursive: true });
   }
   let staging: string | undefined = await fs.promises.mkdtemp(linked ? path.join(versions, 'new-') : path.join(parent, `.${path.basename(dir)}.new-`));
-  let release: string | undefined;
   try {
     await unpack(archive, staging);
     if (token.isCancellationRequested) {
       throw new Error('the update was cancelled; the installation is unchanged');
     }
     if (linked) {
-      // A name that says which release the folder holds, for a person who looks into the versions folder.
-      const version = (await fs.promises.readFile(path.join(staging, 'VERSION'), 'utf8').catch(() => '')).trim().replace(/[^\w.+-]/g, '_') || 'release';
-      const named = path.join(versions, `${version}-${path.basename(staging).slice('new-'.length)}`);
-      await fs.promises.rename(staging, named);
-      staging = named;
-      await pointAt(dir, staging, versions);
-      release = staging;
+      await withInstallLock(dir, async () => {
+        try {
+          // A name that says which release the folder holds, for a person who looks into the versions folder.
+          const version = (await fs.promises.readFile(path.join(staging!, 'VERSION'), 'utf8').catch(() => '')).trim().replace(/[^\w.+-]/g, '_') || 'release';
+          const named = path.join(versions, `${version}-${path.basename(staging!).slice('new-'.length)}`);
+          await fs.promises.rename(staging!, named);
+          staging = named;
+          await pointAt(dir, staging, versions);
+          staging = undefined;
+          await removeOldVersions(named, versions, log);
+        } finally {
+          if (staging) {
+            await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined);
+            staging = undefined;
+          }
+        }
+      });
     } else {
       await swapIn(staging, dir, log);
+      staging = undefined;
     }
-    staging = undefined;
   } finally {
     if (staging) {
       await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined);
     }
-  }
-  if (release) {
-    await removeOldVersions(release, versions, log);
   }
 }
 
@@ -221,6 +227,63 @@ async function pointAt(dir: string, target: string, versions: string): Promise<v
   } catch (error) {
     await fs.promises.rename(legacy, dir);
     throw error;
+  }
+}
+
+/** Shares the junction publication lock with install.ps1; the helper releases the mutex when stdin closes. */
+async function withInstallLock<T>(dir: string, work: () => Promise<T>): Promise<T> {
+  if (process.platform !== 'win32') {
+    return work();
+  }
+  const key = path.resolve(dir).replace(/[\\/]+$/, '').toLowerCase();
+  const name = `Local\\CodeGraphInstall-${crypto.createHash('sha256').update(key).digest('hex')}`;
+  const command =
+    `$mutex = [System.Threading.Mutex]::new($false, '${name}'); ` +
+    `try { try { $null = $mutex.WaitOne() } catch [System.Threading.AbandonedMutexException] {}; ` +
+    `[Console]::Out.WriteLine('LOCKED'); [Console]::Out.Flush(); [Console]::In.ReadLine() | Out-Null } ` +
+    `finally { try { $mutex.ReleaseMutex() } catch {}; $mutex.Dispose() }`;
+  const child = cp.spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let output = '';
+  let stderr = '';
+  let closed = false;
+  let acquired = false;
+  let closeResolve!: () => void;
+  const close = new Promise<void>((resolve) => {
+    closeResolve = resolve;
+  });
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (text: string) => (stderr += text));
+  child.stdin.on('error', () => undefined);
+  child.on('close', () => {
+    closed = true;
+    closeResolve();
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', (code) => {
+        if (!acquired) {
+          reject(new Error(`could not acquire the install lock: ${stderr || `PowerShell exited ${code}`}`));
+        }
+      });
+      child.stdout.on('data', (text: string) => {
+        output += text;
+        if (!acquired && output.includes('LOCKED')) {
+          acquired = true;
+          resolve();
+        }
+      });
+    });
+    return await work();
+  } finally {
+    if (!closed) {
+      child.stdin.end();
+      await close;
+    }
   }
 }
 
