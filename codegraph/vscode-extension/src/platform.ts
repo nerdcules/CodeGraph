@@ -37,6 +37,26 @@ export function isInstallFolder(dir: string): boolean {
   return entries.length === 0 || (entries.includes('codegraph-index.dll') && entries.includes('codegraph-mcp.dll'));
 }
 
+/**
+ * The file that `p` is, after the links of the file itself: ~/.local/bin/codegraph-index → ~/.codegraph/bin/codegraph-index.
+ * A link on a folder stays as it is. On Windows the install folder is a junction to the folder of one release, and an
+ * update must write to the junction, not into the folder of that release.
+ */
+export function followFileLinks(p: string): string {
+  let current = p;
+  for (let hops = 0; hops < 32; hops++) {
+    try {
+      if (!fs.lstatSync(current).isSymbolicLink()) {
+        return current;
+      }
+      current = path.resolve(path.dirname(current), fs.readlinkSync(current));
+    } catch {
+      return current;
+    }
+  }
+  return current;
+}
+
 export function executable(name: 'codegraph-index' | 'codegraph-mcp', platform: NodeJS.Platform = process.platform): string {
   return platform === 'win32' ? `${name}.exe` : name;
 }

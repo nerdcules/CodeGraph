@@ -115,6 +115,10 @@ In a terminal without cursor control (`TERM=dumb`), the list becomes a numbered 
    If the release does not exist, it stops here, before it asks anything.
 2. It downloads the archive for your platform and checks its SHA-256 checksum against `SHA256SUMS`.
 3. It unpacks the archive into the install folder.
+   On Windows, the install folder is a junction to a folder for each release, in `.codegraph.versions` beside it.
+   An upgrade unpacks the new release into a new folder and points the junction at it.
+   A `codegraph-mcp` that runs keeps the old release until it restarts, and a later upgrade deletes the old folder.
+   The path of the install folder does not change, so `PATH` and the MCP configs stay correct.
 4. It makes sure that both executables start.
 5. It runs `codegraph-index init` on each repository.
 6. If you chose the extension, it downloads `codegraph-vscode.vsix` from the same release, checks it, and installs
@@ -492,7 +496,7 @@ Give `--yes` or `-Yes` to remove without questions.
 | The indexer reports hundreds of errors on a C# project. | The SDK that the project builds with is not installed, or the project is not restored. | Install that SDK, run `dotnet restore`, and index again. `index_status` shows the first error. |
 | The indexer says "its NuGet packages were not restored". | The repository was never restored, for example a fresh clone, so every call into a package is missing from the graph. | Run `dotnet restore` (or build once), then index again with `--full`. |
 | The indexer says it "cannot load the solution: it runs on .NET 10 and needs a .NET SDK no newer than 10". | Only a newer SDK, such as .NET 11, is installed. | Install the .NET 10 SDK beside it. A build from source can also run with `DOTNET_ROLL_FORWARD=LatestMajor`. |
-| The install script stops with "codegraph is running from ...". | `codegraph-mcp` or `codegraph-index` runs from the install folder. | Close the sessions, or give `--force`. |
+| The install script stops with "codegraph is running from ...". | `codegraph-mcp` or `codegraph-index` runs from the install folder. On Windows, this occurs only at the first upgrade of an install folder from before the junction layout. | Close the sessions, or give `--force`. |
 | macOS says the program is damaged or cannot be opened. | The archive came from a browser and is quarantined. | Run `xattr -dr com.apple.quarantine` on the install folder, or install with the script. |
 | The server does not start in the client after a source build. | The client cannot find .NET. | Run `codegraph-index init` again. It adds `DOTNET_ROOT` when necessary. A release build does not need .NET. |
 | An IDE says "no code graph at /.codegraph/graph.db" or a path in your home folder. | The IDE starts the server outside the project, and the entry has no `--root`. | Run `codegraph-index init --client` with the name of that IDE again. For Cline or Windsurf, add `--root` by hand. |

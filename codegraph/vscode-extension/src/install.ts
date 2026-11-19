@@ -1,6 +1,12 @@
 // Downloads a CodeGraph release into the install folder: the archive for this machine, checked against the
 // release's SHA256SUMS like install.sh and install.ps1 do, unpacked beside the old folder and swapped in, so a failed
 // or refused update leaves the old installation whole.
+//
+// On Windows a folder cannot be renamed while a program runs from it, and an assistant session keeps codegraph-mcp
+// running for as long as it is open (issue #9). There the install folder is a junction to one folder per release, in
+// `.<name>.versions` beside it. An update unpacks the new release into a new folder and points the junction at it.
+// Programs that run now keep the old folder until they stop; the next update deletes each old folder that nothing
+// runs from. The path of the install folder does not change, so PATH and the MCP configs that name it stay correct.
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -31,10 +37,11 @@ export async function latestTag(): Promise<string> {
 
 /**
  * Installs release `tag` into `dir`. Refuses a folder that holds anything but a CodeGraph installation (a shared
- * folder such as ~/.local/bin must never be replaced). The release is unpacked into a new folder beside `dir`, then
- * `dir` is moved aside and the new folder moved in; only then is the old one deleted. On Windows a folder with a
- * running program in it cannot be moved, so a CodeGraph program still running from `dir` (an MCP server, a daemon)
- * makes the update fail before anything changed.
+ * folder such as ~/.local/bin must never be replaced). On macOS and Linux the release is unpacked into a new folder
+ * beside `dir`, then `dir` is moved aside and the new folder moved in; only then is the old one deleted. On Windows
+ * `dir` is a junction to a folder per release (see the top of this file), so a program that runs from `dir` does not
+ * stop the update. Only the first update of a real folder (an installation made before the junction layout) must
+ * move it, and a running program stops that one, before anything changed.
  */
 export async function installRelease(
   tag: string,
@@ -78,39 +85,179 @@ export async function installRelease(
 }
 
 /**
- * Unpacks a release archive (already checked) into a new folder beside `dir` and swaps it in (see installRelease).
+ * Unpacks a release archive (already checked) and swaps it in (see installRelease). `linked` picks the junction
+ * layout, the default on Windows; a test can pass it on any OS, where the link is a symbolic link.
  * Exported for the install test, which updates from an archive of an installation instead of downloading again.
  */
-export async function installArchive(archive: string, dir: string, token: { isCancellationRequested: boolean }, log: (line: string) => void): Promise<void> {
+export async function installArchive(
+  archive: string,
+  dir: string,
+  token: { isCancellationRequested: boolean },
+  log: (line: string) => void,
+  linked: boolean = process.platform === 'win32',
+): Promise<void> {
   if (!isInstallFolder(dir)) {
     throw new Error(`${dir} holds files that are not a CodeGraph installation; set codegraph.installDir to a folder of its own`);
   }
-  // Beside the install folder, on the same disk, so the swap is two renames.
+  // Beside the install folder, on the same disk, so the swap is renames only.
   const parent = path.dirname(dir);
   await fs.promises.mkdir(parent, { recursive: true });
-  let staging: string | undefined = await fs.promises.mkdtemp(path.join(parent, `.${path.basename(dir)}.new-`));
+  const versions = versionsFolder(dir);
+  if (linked) {
+    await fs.promises.mkdir(versions, { recursive: true });
+  }
+  let staging: string | undefined = await fs.promises.mkdtemp(linked ? path.join(versions, 'new-') : path.join(parent, `.${path.basename(dir)}.new-`));
   try {
-    // tar unpacks both: a .tar.gz everywhere, and a .zip with the bsdtar Windows 10+ ships as tar.exe.
-    await exec('tar', ['-xf', archive, '-C', staging]);
-    if (process.platform !== 'win32') {
-      for (const name of ['codegraph-index', 'codegraph-mcp']) {
-        await fs.promises.chmod(path.join(staging, name), 0o755);
-      }
-    }
-    if (process.platform === 'darwin') {
-      // A browser download is quarantined on macOS; fetch's is not, but clearing the flag costs nothing (install.sh does too).
-      await exec('xattr', ['-dr', 'com.apple.quarantine', staging]).catch(() => undefined);
-    }
+    await unpack(archive, staging);
     if (token.isCancellationRequested) {
       throw new Error('the update was cancelled; the installation is unchanged');
     }
-    await swapIn(staging, dir, log);
+    if (linked) {
+      // A name that says which release the folder holds, for a person who looks into the versions folder.
+      const version = (await fs.promises.readFile(path.join(staging, 'VERSION'), 'utf8').catch(() => '')).trim().replace(/[^\w.+-]/g, '_') || 'release';
+      const named = path.join(versions, `${version}-${path.basename(staging).slice('new-'.length)}`);
+      await fs.promises.rename(staging, named);
+      staging = named;
+      await pointAt(dir, staging, versions);
+    } else {
+      await swapIn(staging, dir, log);
+    }
     staging = undefined;
   } finally {
     if (staging) {
       await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined);
     }
   }
+  if (linked) {
+    await removeOldVersions(dir, versions, log);
+  }
+}
+
+/** The folder that holds one folder per release when `dir` is a junction: `.<name>.versions` beside `dir`. */
+export function versionsFolder(dir: string): string {
+  return path.join(path.dirname(dir), `.${path.basename(dir)}.versions`);
+}
+
+/** True when `dir` is a junction or a symbolic link (the layout an update on Windows makes), not a real folder. */
+export function isLinkedInstall(dir: string): boolean {
+  try {
+    return fs.lstatSync(dir).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+// tar unpacks both: a .tar.gz everywhere, and a .zip with the bsdtar Windows 10+ ships as tar.exe.
+async function unpack(archive: string, folder: string): Promise<void> {
+  await exec('tar', ['-xf', archive, '-C', folder]);
+  if (process.platform !== 'win32') {
+    for (const name of ['codegraph-index', 'codegraph-mcp']) {
+      await fs.promises.chmod(path.join(folder, name), 0o755);
+    }
+  }
+  if (process.platform === 'darwin') {
+    // A browser download is quarantined on macOS; fetch's is not, but clearing the flag costs nothing (install.sh does too).
+    await exec('xattr', ['-dr', 'com.apple.quarantine', folder]).catch(() => undefined);
+  }
+}
+
+/**
+ * Points the junction `dir` at `target`. If `dir` is a junction, a new junction is made beside it and renamed into
+ * its place; a running program does not stop that. If `dir` is a real folder (an installation made before the
+ * junction layout), it is moved into the versions folder first, and a program that runs from it stops that move.
+ * A failure puts `dir` back as it was.
+ */
+async function pointAt(dir: string, target: string, versions: string): Promise<void> {
+  let current: fs.Stats | undefined;
+  try {
+    current = await fs.promises.lstat(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  if (!current) {
+    await fs.promises.symlink(target, dir, 'junction');
+    return;
+  }
+  if (current.isSymbolicLink()) {
+    const previous = await fs.promises.readlink(dir);
+    const next = path.join(path.dirname(dir), `.${path.basename(dir)}.next-${crypto.randomBytes(4).toString('hex')}`);
+    await fs.promises.symlink(target, next, 'junction');
+    try {
+      await fs.promises.unlink(dir);
+    } catch (error) {
+      await fs.promises.unlink(next).catch(() => undefined);
+      throw error;
+    }
+    try {
+      await fs.promises.rename(next, dir);
+    } catch (error) {
+      await fs.promises.symlink(previous, dir, 'junction').catch(() => undefined);
+      await fs.promises.unlink(next).catch(() => undefined);
+      throw error;
+    }
+    return;
+  }
+  const legacy = path.join(versions, `previous-${crypto.randomBytes(4).toString('hex')}`);
+  try {
+    await fs.promises.rename(dir, legacy);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? String(error);
+    throw new Error(
+      `could not move ${dir} aside (${code}). A program is still running from it: an MCP server an assistant started ` +
+        '(in VS Code: MCP: List Servers → Stop), a daemon started in a terminal, or a terminal whose folder it is. ' +
+        `Stop it and update again; nothing was changed. This occurs only once: after this update, ${dir} links to a ` +
+        'folder for each release, and an update does not wait for running programs.',
+    );
+  }
+  try {
+    await fs.promises.symlink(target, dir, 'junction');
+  } catch (error) {
+    await fs.promises.rename(legacy, dir);
+    throw error;
+  }
+}
+
+/**
+ * Deletes each folder in `versions` that `dir` does not point at and that nothing runs from. On Windows a folder that
+ * a running program uses cannot be renamed, so a rename tests each folder first: a delete of a folder in use removes
+ * the files that are not open and leaves the program without them. A folder in use stays for the next update.
+ */
+async function removeOldVersions(dir: string, versions: string, log: (line: string) => void): Promise<void> {
+  const current = await fs.promises.realpath(dir).catch(() => undefined);
+  let names: string[];
+  try {
+    names = await fs.promises.readdir(versions);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const folder = path.join(versions, name);
+    if (current && samePath(await fs.promises.realpath(folder).catch(() => folder), current)) {
+      continue;
+    }
+    // Another update (a second window, install.ps1) can still unpack into a new folder; one that old is left over.
+    const changed = await fs.promises.stat(folder).then((s) => s.mtimeMs).catch(() => 0);
+    if (name.startsWith('new-') && Date.now() - changed < 60 * 60 * 1000) {
+      continue;
+    }
+    const doomed = path.join(versions, `.delete-${crypto.randomBytes(4).toString('hex')}`);
+    try {
+      await fs.promises.rename(folder, doomed);
+    } catch (error) {
+      log(`kept ${folder}: a program still runs from it (${(error as NodeJS.ErrnoException).code ?? String(error)}); the next update deletes it`);
+      continue;
+    }
+    await fs.promises.rm(doomed, { recursive: true, force: true, maxRetries: 3 }).catch((error: unknown) =>
+      log(`could not delete ${doomed}: ${error instanceof Error ? error.message : String(error)}`),
+    );
+  }
+}
+
+function samePath(a: string, b: string): boolean {
+  const clean = (p: string) => path.resolve(p).replace(/[\\/]+$/, '');
+  return process.platform === 'win32' ? clean(a).toLowerCase() === clean(b).toLowerCase() : clean(a) === clean(b);
 }
 
 /** Moves `dir` aside, `staging` into its place, then deletes the old folder; puts `dir` back when the second move fails. */

@@ -16,6 +16,14 @@ The executables report their version with `--version`; the MCP server shows it t
   - No call waits for the snapshot. The 2 s wait of the first tool call is gone. The 2 s wait for an argument with
     the shape of a handle is gone too; it also delayed a name of 8 lowercase letters such as `validate`.
   - `CODEGRAPH_SNAPSHOT=off` prints full ids, as in 1.5.0.
+- **Windows: an update no longer waits for running servers** ([#9](https://github.com/nerdcules/CodeGraph/issues/9)).
+  An assistant session keeps `codegraph-mcp` running from the install folder, and Windows cannot move a folder that
+  a program runs from. Thus an update from the VS Code extension stopped with "could not move … aside (EPERM)".
+  Now the install folder is a junction to a folder for each release, in `.codegraph.versions` beside it. The
+  extension and `install.ps1` unpack a new release into a new folder and point the junction at it. Programs that run
+  keep the old release until they restart, and a later update deletes each old folder that nothing runs from. The
+  path of the install folder does not change, so `PATH` and the MCP configs that name it stay correct. Only the
+  first update of a real folder must move it, once. `uninstall.ps1` removes the junction and the release folders.
 
 ## 1.5.0
 
