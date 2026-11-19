@@ -549,7 +549,9 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
         if (tests.Count > 0)
         {
-            sb.AppendLine(tests.Count > MaxTestRows ? $"tests (nearest {MaxTestRows} of {tests.Count}):" : "tests:");
+            sb.AppendLine(tests.Count > MaxTestRows
+                ? $"tests (nearest {MaxTestRows} of {tests.Count}; the rest by depth: {ByDepth(tests.Skip(MaxTestRows))}):"
+                : "tests:");
             sb.Append(Format(tests.Take(MaxTestRows).Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
         }
         else
@@ -937,7 +939,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "covered_by", ReadOnly = true, Idempotent = true)]
-    [Description("Test methods that transitively reach this member via the call graph, following interface and virtual dispatch (a test that calls IRunner.Run reaches Runner.Run). Shows depth (hop count from test to target). This is static reach, not measured execution: a test can reach a member through a call it never makes at run time, so report the count as tests that can reach it. Complements tests_for, which only shows direct callers.")]
+    [Description("Test methods that transitively reach this member via the call graph, following interface and virtual dispatch (a test that calls IRunner.Run reaches Runner.Run). Shows depth (hop count from test to target); lists the nearest 50 by depth, then the count of the rest at each depth. This is static reach, not measured execution: a test can reach a member through a call it never makes at run time, so report the count as tests that can reach it. Complements tests_for, which only shows direct callers.")]
     public string CoveredBy(
         [Description("Node id from find_symbol")] string id,
         [Description("Max hops to search, 1-30, default 10")] int depth = 10)
@@ -951,7 +953,14 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
         var sb = new StringBuilder();
         sb.AppendLine($"{hits.Count} test(s) reach {node.FullName} through calls (static reach: a run may execute it in fewer):");
-        sb.Append(Format(hits.Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
+        if (hits.Count > MaxTestRows)
+        {
+            // On HTTPX one answer listed 225 tests: more than Claude Code shows a model in one piece. The nearest rows
+            // name the tests to run first; the count at each depth keeps the total and its shape.
+            sb.AppendLine($"nearest {MaxTestRows} by depth; the rest by depth: {ByDepth(hits.Skip(MaxTestRows))}");
+        }
+
+        sb.Append(Format(hits.Take(MaxTestRows).Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
         return sb.ToString();
     }
 

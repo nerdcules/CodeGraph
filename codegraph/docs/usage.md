@@ -230,7 +230,8 @@ A path outside the root stays absolute.
 
 A walk shows the nearest 200 rows.
 After 200 rows, it shows the count at each depth.
-`impact_of` shows up to 50 tests.
+`impact_of` and `covered_by` show the nearest 50 tests by depth.
+After 50 tests, they show the count of the rest at each depth.
 
 If a file changed after the last index, the answer starts with a warning.
 The rows from changed files show `STALE`.

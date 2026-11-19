@@ -14,6 +14,9 @@ The executables report their version with `--version`; the MCP server shows it t
   that holds `.codegraph`), and an answer with paths names the root once in its first line, after the `STALE`
   warning if there is one. Rows, `snippet` headers, `index_status` file lists and the live tools' locations all use
   it; a path outside the root stays absolute. The server instructions say to join the two before a Read.
+- `covered_by` lists the nearest 50 tests by depth and then the count of the rest at each depth, as `impact_of`
+  does for its tests; `impact_of` adds that count too. On HTTPX, 4 of 10 `covered_by` answers in the 19 November
+  sessions were over Claude Code's 50,000-character limit and were saved to a file and read back in pieces.
 
 ## 1.4.0
 

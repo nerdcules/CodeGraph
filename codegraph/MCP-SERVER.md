@@ -229,7 +229,7 @@ and override.
 | tool | arguments | answers |
 |---|---|---|
 | `tests_for` | `id` | Test methods that call or read this member directly, including through an interface or base member it implements. In C#, what the framework runs around a test counts as called by it: the test class's constructors and `Dispose`, `IAsyncLifetime`, and `[SetUp]` / `[TestInitialize]`-style methods. |
-| `covered_by` | `id`, `depth` (1–30, 10) | Tests that reach this member transitively, following interface and virtual dispatch, with hop count. This is static reach, and the answer says so: on four public repositories (19 November 2026) the list held every test that runs the method on Cobra and Jellyfin, and on HTTPX listed 225 where 46 run it ([measured](docs/measured-results.md#four-public-repositories)). |
+| `covered_by` | `id`, `depth` (1–30, 10) | Tests that reach this member transitively, following interface and virtual dispatch, with hop count: the nearest 50 by depth, then the count of the rest at each depth. This is static reach, and the answer says so: on four public repositories (19 November 2026) the list held every test that runs the method on Cobra and Jellyfin, and on HTTPX listed 225 where 46 run it ([measured](docs/measured-results.md#four-public-repositories)). |
 | `coverage_stats` | | Share of production methods reachable from any test through the call graph. Static reachability, not line coverage. |
 | `uncovered` | `file?`, `limit` (1–500, 100), `offset` | Production methods no test reaches. |
 
