@@ -196,6 +196,36 @@ public sealed class AnalysisTests
     }
 
     [Fact]
+    public void FindSymbol_exact_takes_a_qualified_tail_after_a_package_path_in_go_python_and_typescript_names()
+    {
+        using var db = new TempDb();
+        db.Store.Write(
+            [
+                Graph.Node("scip:go/Command#Find", NodeKind.Method, "Find", "github.com/spf13/cobra/Command.Find"),
+                Graph.Node("scip:py/URL#join", NodeKind.Method, "join", "httpx._urls/URL.join"),
+                Graph.Node("ts:src/context.ts#Context.header", NodeKind.Method, "header", "src/context:Context.header"),
+                Graph.Node("scip:go/MyCommand#Find", NodeKind.Method, "Find", "github.com/spf13/cobra/MyCommand.Find"),
+            ], []);
+        var memory = db.Store.LoadSnapshot();
+
+        foreach (var (query, id) in new[]
+                 {
+                     ("Command.Find", "scip:go/Command#Find"),
+                     ("cobra/Command.Find", "scip:go/Command#Find"),
+                     ("URL.join", "scip:py/URL#join"),
+                     ("_urls/URL.join", "scip:py/URL#join"),
+                     ("Context.header", "ts:src/context.ts#Context.header"),
+                 })
+        {
+            Assert.Equal([id], db.Store.FindSymbol(query, nameMatch: "Exact").Select(n => n.Id));
+            Assert.Equal([id], memory.FindSymbol(query, nameMatch: "Exact").Select(n => n.Id));
+        }
+
+        Assert.Empty(db.Store.FindSymbol("mand.Find", nameMatch: "Exact"));
+        Assert.Empty(memory.FindSymbol("mand.Find", nameMatch: "Exact"));
+    }
+
+    [Fact]
     public void Opening_a_missing_graph_read_only_fails_at_once_instead_of_waiting_out_the_lock_retry()
     {
         var path = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"), "graph.db");

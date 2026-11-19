@@ -357,7 +357,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "usage_stats", ReadOnly = true, Idempotent = true)]
-    [Description("How the graph is being used: calls per tool, latency, result size, and an estimate of the source tokens those answers saved the model from reading. Session and all-time.")]
+    [Description("How the graph is being used: calls per tool, latency, the size of the answers and the size of the files they name. Session and all-time. Sizes only; no saving is measured.")]
     public string UsageStats()
     {
         var session = telemetry.Session;
@@ -367,8 +367,9 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         sb.AppendLine(telemetry.LogPath is null
             ? "telemetry : in memory only (CODEGRAPH_TELEMETRY=off)"
             : $"telemetry : {telemetry.LogPath} (set CODEGRAPH_TELEMETRY=off to stop writing it)");
-        sb.AppendLine("tokens are estimated at 4 characters each; 'source tok' is the size of the files an answer pointed at,");
-        sb.AppendLine("which is what reading them instead would have cost; 'saved tok' is that minus the answer itself.");
+        sb.AppendLine("tokens are estimated at 4 characters each. 'answer tok' is the size of the answers; 'files tok' is the size");
+        sb.AppendLine("of the files they name, each file counted once per call. These are sizes, not a saving: a session without");
+        sb.AppendLine("the graph reads parts of files, and how much it reads is not measured here.");
         sb.AppendLine();
         sb.AppendLine(UsageSummary.LastDays(allTime.Count == 0 ? session : allTime, 7).Line("last 7 days"));
         sb.AppendLine();
@@ -380,7 +381,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         return sb.ToString();
 
         static string Totals(IReadOnlyList<ToolCallRecord> calls) =>
-            $"{calls.Count} call(s), {calls.Sum(c => c.ResultTokens)} result tokens, ~{calls.Sum(c => c.TokensSaved)} source tokens saved";
+            $"{calls.Count} call(s), answers {calls.Sum(c => c.ResultTokens)} tokens, files named {calls.Sum(c => c.SourceTokens)} tokens";
     }
 
     [McpServerTool(Name = "find_symbol", ReadOnly = true, Idempotent = true)]
@@ -518,7 +519,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         Traversal(id, store.Callees(id, Math.Clamp(depth, 1, 20), includeExternal), "callees");
 
     [McpServerTool(Name = "impact_of", ReadOnly = true, Idempotent = true)]
-    [Description("Everything that could break if this changes: transitive callers, overriders, implementers, subclasses, and for a type every member that references it — and which tests guard it. Call this before editing a shared member or type.")]
+    [Description("Everything that could break if this changes: transitive callers, overriders, implementers, subclasses, and for a type every member that references it — and which tests guard it (tests that reach it through calls; a run may execute it in fewer). Call this before editing a shared member or type.")]
     public string ImpactOf(
         [Description("Node id from find_symbol")] string id,
         [Description("Max hops, 1-20, default 5")] int depth = 5)
@@ -936,7 +937,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "covered_by", ReadOnly = true, Idempotent = true)]
-    [Description("Test methods that transitively reach this member via the call graph, following interface and virtual dispatch (a test that calls IRunner.Run reaches Runner.Run). Shows depth (hop count from test to target). Complements tests_for, which only shows direct callers.")]
+    [Description("Test methods that transitively reach this member via the call graph, following interface and virtual dispatch (a test that calls IRunner.Run reaches Runner.Run). Shows depth (hop count from test to target). This is static reach, not measured execution: a test can reach a member through a call it never makes at run time, so report the count as tests that can reach it. Complements tests_for, which only shows direct callers.")]
     public string CoveredBy(
         [Description("Node id from find_symbol")] string id,
         [Description("Max hops to search, 1-30, default 10")] int depth = 10)
@@ -949,7 +950,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             return $"{node.FullName}: not reached by any test within {Math.Clamp(depth, 1, 30)} hops — consider adding coverage";
 
         var sb = new StringBuilder();
-        sb.AppendLine($"{hits.Count} test(s) transitively cover {node.FullName}:");
+        sb.AppendLine($"{hits.Count} test(s) reach {node.FullName} through calls (static reach: a run may execute it in fewer):");
         sb.Append(Format(hits.Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
         return sb.ToString();
     }

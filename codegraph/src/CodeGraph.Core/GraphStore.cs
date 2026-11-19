@@ -1155,7 +1155,9 @@ public sealed class GraphStore : IDisposable
              SELECT {NodeColumns} FROM nodes
              WHERE (name ILIKE $pattern ESCAPE '\' OR full_name ILIKE $pattern ESCAPE '\'
                     OR ($qualified AND (split_part(full_name, '(', 1) ILIKE $pattern ESCAPE '\'
-                                        OR split_part(full_name, '(', 1) ILIKE $tail ESCAPE '\')))
+                                        OR split_part(full_name, '(', 1) ILIKE $tail ESCAPE '\'
+                                        OR split_part(full_name, '(', 1) ILIKE $path_tail ESCAPE '\'
+                                        OR split_part(full_name, '(', 1) ILIKE $module_tail ESCAPE '\')))
                AND ($kind IS NULL OR kind = $kind)
                AND ($type_kind IS NULL OR type_kind = $type_kind)
                AND ($accessibility IS NULL OR accessibility = $accessibility)
@@ -1176,6 +1178,9 @@ public sealed class GraphStore : IDisposable
         command.Parameters.Add(P("pattern", pattern));
         command.Parameters.Add(P("qualified", nameMatch.Equals("exact", StringComparison.OrdinalIgnoreCase)));
         command.Parameters.Add(P("tail", $"%.{literal}"));
+        // Go and Python full names put the package path before the type with '/', TypeScript's with ':'.
+        command.Parameters.Add(P("path_tail", $"%/{literal}"));
+        command.Parameters.Add(P("module_tail", $"%:{literal}"));
         command.Parameters.Add(P("exact", query));
         command.Parameters.Add(P("offset", Math.Max(0, offset)));
         command.Parameters.Add(P("kind", kind?.ToString()));

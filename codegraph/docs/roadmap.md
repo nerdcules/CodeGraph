@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · **What is missing** · [Contributing](contributing.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Measured results](measured-results.md) · [The story](story.md) · **What is missing** · [Contributing](contributing.md)
 
 ---
 
@@ -71,6 +71,12 @@ means here, and where it stands.
 9. **A recording of the install.** The [front page](../../README.md) opens with a real Claude Code session,
    replayed from its transcript, and a video of the same question with CodeGraph on and off. The install and the
    usage line a week later are still a picture of a terminal.
+10. **A smaller start for each session.** On four public repositories on 19 November 2026
+    ([measured](measured-results.md#four-public-repositories)), Claude Code answered sooner with the graph on all
+    four and made fewer model calls in all 12 rounds, but the server's tool definitions and instructions made each
+    session start 8,681 tokens larger, and every model call carries them. So the median input tokens and cost were
+    higher on all four. Shorter tool descriptions, or fewer tools offered at the start, would shrink that start;
+    how much has not been measured.
 
 ## How to help
 

@@ -23,10 +23,16 @@ are about 5,500 tokens, where the 25 files that match `.Replace(` are about 123,
 question three times with CodeGraph and three times without: with it, 7 of 12 answers said how many tests run
 the method; without it, none did. Claude Code was also faster and cheaper with it; Codex and the Copilot CLI
 were not, and Cursor's runs varied too much to call
-([measured](docs/why-it-saves-tokens.md#four-assistants-with-and-without)).
+([measured](docs/measured-results.md#four-assistants-with-and-without)). On four public repositories (Go,
+Python, TypeScript, C#) on 19 November, Claude Code with it answered sooner on all four (median 5.5 to 20.0
+seconds sooner), made fewer model calls in all 12 rounds, and gave a test total in all 12 answers, where the
+answers without it gave none on three of the four. The trade is tokens: the tool definitions add 8,681 tokens to
+each session's start, so input tokens and cost were higher on all four. The total is the tests that can reach the
+method, which can run above the tests that execute it: on Python's HTTPX, 225 listed where 46 run it
+([measured](docs/measured-results.md#four-public-repositories)).
 
 - Precision and recall of 100% on generated codebases in eight languages, on current toolchains and on 2023-era ones, bar one old rust-analyzer at 87% call recall ([benchmarks](BENCHMARKS.md))
-- 441 tests: in a local Linux run on 15 November 2026, 439 passed and 2 skipped (tests of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
+- 461 tests: in a local Linux run on 19 November 2026, 459 passed and 2 skipped (tests of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
 - Prebuilt for six platforms, nothing to compile ([releases](https://github.com/nerdcules/CodeGraph/releases/latest))
 
 Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the TypeScript compiler; Java,
@@ -63,7 +69,7 @@ To skip the questions, give the answers and `--yes`: `... | bash -s -- ~/dev/You
 
 ## Your first five minutes
 
-![Install with one line, ask one question, see the answer, and a week later see what it saved](docs/images/first-five-minutes.svg)
+![Install with one line, ask one question, see the answer, and a week later see how it was used](docs/images/first-five-minutes.svg)
 
 **1. Install** with the command [above](#install). The script downloads the release for your platform and
 checks its checksum. For each repository you pick, it writes the `codegraph` server into the config of each
@@ -103,14 +109,18 @@ The dependents at depth 2 and 3 reach `Replace` through other methods. A text se
 found them, and would have matched every `string.Replace` on the way. The assistant then opens only the
 members it is going to change, with `snippet`.
 
-**3. See what it did for you.** After a week, run `codegraph-index usage` in the repository. It prints a
-line like this one (the numbers are an example):
+**3. See how it was used.** After a week, run `codegraph-index usage` in the repository. It prints a line like
+this one, from this repository's own log on 19 November 2026:
 
 ```
-last 7 days: 143 tool calls answered; the files they pointed at come to about 1,230,000 tokens, the answers
-to 48,000, so about 1,180,000 tokens stayed out of the context; most used: find_symbol ×61, impact_of ×24, tests_for ×19
+last 7 days: 114 tool calls answered (1 failed); answers 175,547 tokens, the files they name 2,705,154 tokens
+(estimated at 4 characters a token); most used: find_symbol ×42, impact_of ×29, snippet ×26
 ```
 
+These are sizes, not a saving: a session without the graph reads parts of files, not every file an answer names.
+To measure a saving on your own code, `codegraph-index compare "<question>"` asks Claude Code the question in
+separate new sessions with and without the server and reports what each session's log says it cost
+([Measure it with and without](docs/usage.md#measure-it-with-and-without)).
 The indexer prints the same line after each run, and the `usage_stats` tool opens with it.
 
 ## What you can ask
@@ -139,7 +149,7 @@ applies a save in about 1 to 1.5 seconds (BENCHMARKS rounds 12 and 13), and answ
 | You are | Read |
 |---|---|
 | A developer who uses an AI coding assistant | [Installation](docs/installation.md), [Usage](docs/usage.md), [Prompts that use the graph](PROMPTS.md), [Use cases](docs/use-cases.md) |
-| Deciding whether to trust it | [Why it saves tokens](docs/why-it-saves-tokens.md), [How it works](docs/how-it-works.md), [Performance](docs/performance.md), [Benchmarks](BENCHMARKS.md), [Trust and privacy](#trust-and-privacy) |
+| Deciding whether to trust it | [Measured results](docs/measured-results.md), [How it works](docs/how-it-works.md), [Performance](docs/performance.md), [Benchmarks](BENCHMARKS.md), [Trust and privacy](#trust-and-privacy) |
 | Adding a language, or hacking on it | [Contributing](docs/contributing.md), [Architecture](docs/architecture.md), [The extractor contract](EXTRACTORS.md), [Language versions](docs/language-versions.md), [Every tool](MCP-SERVER.md) |
 | Curious where this came from | [The story](docs/story.md): a developer, Claude Code, and the thought that the compiler already knew the answer |
 | Wondering what is still missing | [What is missing](docs/roadmap.md), in order of what would matter most |

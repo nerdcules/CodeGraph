@@ -5,6 +5,45 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+- `find_symbol` with `nameMatch: "Exact"` finds a qualified tail after the `/` or `:` that ends a package path,
+  as well as after a `.`. Go, Python and TypeScript full names put the package before the type that way
+  (`github.com/spf13/cobra/Command.Find`, `httpx._urls/URL.join`, `src/context:Context.header`), so `Command.Find`,
+  `URL.join` and `Context.header` found nothing before. Found while building the answer keys for the four public
+  repositories.
+- `covered_by` opens "N test(s) reach X through calls (static reach: a run may execute it in fewer)" instead of
+  "N test(s) transitively cover X", and its description and `impact_of`'s say that the tests are the ones that can
+  reach the member. On HTTPX the list held 225 tests where 46 run the method, and the answers reported 213 or 225
+  as the tests that cover it.
+- The page "Why it saves tokens" is now [Measured results](docs/measured-results.md) (`docs/measured-results.md`):
+  on the four public repositories, Claude Code with CodeGraph saved time and model calls, not tokens. Every link and
+  nav bar points to the new name.
+- [With and without](tools/eval/README.md#four-public-repositories-19-november-2026) adds 24 compare sessions on
+  four public repositories (Cobra, HTTPX, Hono, Jellyfin), with a run-time list of the tests that execute each
+  method. With the graph, Claude Code answered sooner on all four (median 5.5 to 20.0 seconds), made fewer model
+  calls in all 12 rounds and gave a test total in all 12 answers. Each session started 8,681 tokens larger, so
+  input tokens and cost were higher on all four. The graph's test totals are reach, not execution: its list held
+  every test that runs the method on Cobra and Jellyfin, and on HTTPX listed 225 where 46 run it. The README,
+  [Measured results](docs/measured-results.md#four-public-repositories) and
+  [What is missing](docs/roadmap.md) say so.
+- `codegraph-index compare "<prompt>"` asks Claude Code the same question with the codegraph server and without
+  it, three rounds by default, and reports what each session's own log says: wall time, model calls, input tokens
+  with cache reads, output tokens, cost, the context at the first and last model call, and tool calls, with the
+  medians of each condition. Each run is a new `claude -p` session with no saved session, so no run sees another's
+  context; the rounds alternate which condition goes first. Both conditions get the same settings, CLAUDE.md,
+  memory and read-only tools (Claude Code's `dontAsk` mode), so no session can edit a file; a run whose server did
+  not connect, or during which the working tree changed, is reported and left out of the medians. The answers are
+  not scored. Tested with a stand-in `claude` in the unit tests, and twice for real on this repository (Claude Code
+  2.1.328, Haiku, one round each). See [Measure it with and without](docs/usage.md#measure-it-with-and-without).
+- The usage figures state sizes only. `codegraph-index usage`, the line the indexer prints after a run, the
+  `usage_stats` tool and the extension's Usage item no longer say how many tokens "stayed out of the context" or
+  were "saved", and the `saved tok` column is gone; the status JSON drops `tokensSaved`. That figure was the size
+  of every file an answer names minus the answer, which assumes a session without the graph reads those files
+  whole. The measured pair in [Measured results](docs/measured-results.md#in-a-real-session) did not: the
+  context grew 18,460 tokens with CodeGraph and 21,579 without. The line now reads "answers N tokens, the files
+  they name M tokens (estimated at 4 characters a token)"; the table's columns are `answer tok` and `files tok`.
+
 ## 1.3.1
 
 - The VS Code extension uses the CodeGraph logo ([assets/logo.svg](assets/logo.svg)): as its icon in the Extensions
@@ -211,7 +250,7 @@ Claude Code plugin keep installing 1.2.0 unless given `--version v1.3.0-beta.1` 
   With CodeGraph 7 of 12 answers gave a test total (each 42, the graph's count; 44 tests execute the method);
   without it none did. Claude Code was faster and cheaper with it; Codex and the Copilot CLI were not, and
   Cursor's runs varied too much to call. Summary in
-  [Why it saves tokens](docs/why-it-saves-tokens.md#four-assistants-with-and-without).
+  [Measured results](docs/measured-results.md#four-assistants-with-and-without).
 - The server accepts an id with the brackets its answers print around ids (`[M:App.Run]`): a Cursor agent
   copied them and got "no node with id". The server's instructions now say to drop them.
 - `find_symbol` with `nameMatch: Exact` also takes a qualified tail of the full name without its parameter list:
@@ -225,7 +264,7 @@ Claude Code plugin keep installing 1.2.0 unless given `--version v1.3.0-beta.1` 
 - The promo video (118.6 s) says "your AI coding assistant", and a new card lists the assistants it was tested with.
   The on/off sessions are still Claude Code. Its token figures are now the two measured sessions (180,134 against
   459,907 input tokens), not the README's example week or the size of the matching files.
-- [Why it saves tokens](docs/why-it-saves-tokens.md#in-a-real-session) adds the measured sessions: 42 s against
+- [Measured results](docs/measured-results.md#in-a-real-session) adds the measured sessions: 42 s against
   87 s, 4 model calls against 9, and a context that grew by about the same amount. The README no longer says "one
   tool call instead of twenty file reads".
 

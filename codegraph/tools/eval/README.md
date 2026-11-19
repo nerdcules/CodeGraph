@@ -4,8 +4,9 @@
 
 Four AI coding assistants got the same question about this repository, three times with the codegraph server and
 three times without it, on 14 November 2026. This folder holds the answer key, the scripts, and one row for each
-of the 24 runs. [Why it saves tokens](../../docs/why-it-saves-tokens.md#four-assistants-with-and-without) has the
-summary.
+of the 24 runs. [Measured results](../../docs/measured-results.md#four-assistants-with-and-without) has the
+summary. On 19 November, Claude Code got the same kind of question on four public repositories, in Go, Python,
+TypeScript and C#: see [Four public repositories](#four-public-repositories-19-november-2026).
 
 The question:
 
@@ -65,6 +66,92 @@ The rules were written before any run.
 [results/runs.csv](results/runs.csv) has one row for each run. The raw logs are not kept here, because they hold
 local paths.
 
+## Four public repositories, 19 November 2026
+
+The same kind of question on four public repositories, one language each, asked with
+[`codegraph-index compare`](../../docs/usage.md#measure-it-with-and-without): 3 rounds each way, Claude Code 2.1.328,
+`claude-opus-5-5` at effort high, the codegraph server built from commit `3ff9f83`. Each repository was cloned at the
+commit below and indexed with `codegraph-index init` (Jellyfin after `dotnet restore`, Hono after `pnpm install`).
+All 24 sessions counted: every "with" session had the server connected, and no working tree changed.
+[results/compare-2026-11-19.csv](results/compare-2026-11-19.csv) has one row per session.
+
+| Repository | Language | Commit | Question: "What breaks if I change …, and which tests cover it?" |
+|---|---|---|---|
+| spf13/cobra | Go | `adbc881` | `Command.Find` |
+| encode/httpx | Python | `7cff5f7` | `URL.copy_with` |
+| honojs/hono | TypeScript | `75ff8e3` | `encodeBase64` in `src/utils/encode.ts` |
+| jellyfin/jellyfin | C# | `df62c85` | `TmdbUtils.NormalizeLanguage` |
+
+### What the sessions cost
+
+Medians of 3 sessions each way, from the session logs; wall time measured by compare.
+
+| Repository | Wall s, with / without | Model calls | Input tokens, cache reads included | Cost USD as Claude Code reports it |
+|---|---|---|---|---|
+| Cobra | 40.5 / 60.5 | 7 / 9 | 192,608 / 158,018 | 0.3280 / 0.3124 |
+| HTTPX | 40.4 / 52.3 | 6 / 10 | 175,886 / 156,151 | 0.3372 / 0.2538 |
+| Hono | 35.0 / 52.4 | 5 / 8 | 218,574 / 130,045 | 0.5592 / 0.2348 |
+| Jellyfin | 34.6 / 40.1 | 6 / 7 | 218,172 / 155,706 | 0.3852 / 0.2810 |
+
+- On all four, the median "with" session took less wall time and fewer model calls, and processed more input tokens
+  at a higher reported cost.
+- The median first model call of the "with" sessions was 8,681 tokens larger on each repository (medians 16,541 to
+  16,604 against 7,860 to 7,923). The server is the only difference in the configuration, so that is what its tool
+  definitions and instructions add.
+- Wall time for Cobra and HTTPX was measured while the answer-key test suites below ran on the same machine.
+  Tokens, model calls and cost do not depend on that. Hono and Jellyfin ran with the machine otherwise idle, apart
+  from two short graph queries during the Hono runs.
+
+### Which tests run the method
+
+The key does not come from CodeGraph. In a separate copy of each repository, a probe at the top of the method appended
+the name of the running test to a file, and the test suite ran:
+
+- **Cobra:** each of the 279 tests and examples of both packages ran alone (`-test.run '^Name$'`); a test counts when
+  it wrote the file. 208 do.
+- **HTTPX:** the probe wrote `PYTEST_CURRENT_TEST`; one `pytest` run of 1,418 tests. 46 test functions (63 test cases
+  with their parameters) run it. One test, `test_download`, failed with and without the probe (a
+  `DeprecationWarning`).
+- **Hono:** the probe wrote vitest's `expect.getState().currentTestName`; the `main`, `jsx-runtime-default` and
+  `jsx-runtime-dom` projects, 6,204 tests. 133 run it. 5 type-declaration tests failed with and without the probe.
+  The Deno, Bun, Workerd and other runtime projects, and the separate packages under `adapters/`, were not run.
+- **Jellyfin:** the probe walked the stack to the method with `[Fact]` or `[Theory]`; all 17 test projects, 4,271
+  test cases. 2 test methods (7 cases) run it, both in `TmdbUtilsTests`.
+
+What the graph's `covered_by` (depth 10) lists, against that key:
+
+| Repository | Tests that run it | Graph lists | Of those, run it | Run it, not listed |
+|---|---|---|---|---|
+| Cobra | 208 | 226 | 208 | 0 |
+| HTTPX | 46 | 225 | 40 | 6 |
+| Hono | 133 | 124 | at least 85 | at most 48 |
+| Jellyfin | 2 | 17 | 2 | 0 |
+
+The graph lists the tests that can reach the method through calls, not the ones that execute it. It listed more than
+run it in three of the four; on HTTPX, 225 against 46. The Hono row matches by exact test name, so 85 is a
+lower bound: the graph holds a generated test under its source name (`base64 > encode` for the 21 cases of a
+`describe.each` in `encode.test.ts`, `JWT > ${tc.alg} sign & verify` in `jwt.test.ts`), while the run records each
+generated name. [answer-key/](answer-key/) has each list.
+
+### What the answers said
+
+Read by hand from each session's answer; the `stated_test_count` column of the CSV quotes it.
+
+- **With CodeGraph:** every answer gave a total, the graph's: 225 or 226 for Cobra, 213 or 225 for HTTPX (one also
+  said 29 tests call it directly), 124 for Hono, and for Jellyfin "the graph lists 17, 2 run it" in all three.
+- **Without:** Cobra, HTTPX and Hono answers named tests but gave no total (one Cobra answer counted 340 calls to
+  `Execute*` in the test files; two HTTPX answers said "about 20 tests" build URLs with it). Two Jellyfin answers
+  named the 2 test methods the key has; the third said "7 unit-test cases", the key's count of cases.
+- All three Hono answers without the graph found copies of the method and their tests under `adapters/`, which the
+  graph does not index; one answer with the graph mentioned those copies too.
+
+So on these four questions the graph made the sessions faster (the median on all four, and 11 of 12 rounds), with
+fewer model calls in every round, and gave every answer a test total. On Cobra and Jellyfin its list held every test
+that runs the method, and on Jellyfin all three answers with it said that 2 of the 17 run it, as the key does. The
+total is the call graph's reach: 18 above the run-time count on Cobra, 9 below on Hono, 179 above on HTTPX and 15
+above on Jellyfin. The sessions without the graph cost less (the median on all four), and their Jellyfin answers
+were as right.
+
 ## Files
 
 | File | What it does |
@@ -72,8 +159,9 @@ local paths.
 | [run.py](run.py) | One run: `run.py <claude\|codex\|copilot\|cursor> <on\|off> <n>`. Needs `CODEGRAPH_MCP`, the server to test. The 24 runs used an earlier copy of this script that read the server from config files (`cfg/*.json`) naming the Debug build of `codegraph-mcp`; the commands were otherwise the same. |
 | [batch.sh](batch.sh) | The 24 runs, in the order above. |
 | [analyze.py](analyze.py) | A table of the runs, and medians for each assistant and condition. `--answers` prints every answer. |
-| [answer-key/](answer-key/) | The 44 tests from the run-time check, and the graph's 37 and 42. |
-| [results/runs.csv](results/runs.csv) | The 24 runs, scored. |
+| [answer-key/](answer-key/) | The 44 tests from the run-time check, and the graph's 37 and 42. For 19 November, each repository's run-time list (`*-runtime-N.txt`) and the graph's `covered_by` list (`*-graph-N.txt`). |
+| [results/runs.csv](results/runs.csv) | The 24 runs of 14 November, scored. |
+| [results/compare-2026-11-19.csv](results/compare-2026-11-19.csv) | The 24 sessions on four public repositories, 19 November. |
 
 ## Limits
 

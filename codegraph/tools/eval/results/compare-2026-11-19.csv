@@ -1,0 +1,25 @@
+repository,language,commit,question,round,condition,wall_s,model_calls,input_tokens,cache_reads,output_tokens,cost_usd,first_context,last_context,codegraph_calls,other_tool_calls,counted,tests_that_run_it,stated_test_count
+spf13/cobra,Go,adbc881,"What breaks if I change Command.Find, and which tests cover it?",1,without,56.4,8,139374,114868,5744,0.3338,7900,29114,0,16,yes,208,
+spf13/cobra,Go,adbc881,"What breaks if I change Command.Find, and which tests cover it?",1,with,40.5,6,180261,139656,4223,0.4372,16541,40595,6,8,yes,208,226 (covered_by)
+spf13/cobra,Go,adbc881,"What breaks if I change Command.Find, and which tests cover it?",2,with,37.7,7,192608,172512,3540,0.266,16541,36623,7,5,yes,208,225 (impact_of)
+spf13/cobra,Go,adbc881,"What breaks if I change Command.Find, and which tests cover it?",2,without,60.5,9,164056,143409,5929,0.3124,7860,25253,0,16,yes,208,
+spf13/cobra,Go,adbc881,"What breaks if I change Command.Find, and which tests cover it?",3,without,63.1,9,158018,141731,6122,0.281,7860,24129,0,17,yes,208,
+spf13/cobra,Go,adbc881,"What breaks if I change Command.Find, and which tests cover it?",3,with,47,8,241081,216580,4438,0.328,16541,41151,8,8,yes,208,226 (covered_by)
+encode/httpx,Python,7cff5f7,"What breaks if I change URL.copy_with, and which tests cover it?",1,without,50.2,8,116050,101170,4635,0.2319,7860,19488,0,15,yes,46,
+encode/httpx,Python,7cff5f7,"What breaks if I change URL.copy_with, and which tests cover it?",1,with,40.4,6,175886,145672,3318,0.3372,16541,43092,7,3,yes,46,"213 within 5 hops, 225 within 10"
+encode/httpx,Python,7cff5f7,"What breaks if I change URL.copy_with, and which tests cover it?",2,with,42.6,7,230682,198968,3628,0.366,16541,48241,7,3,yes,46,29 call it directly; graph 213
+encode/httpx,Python,7cff5f7,"What breaks if I change URL.copy_with, and which tests cover it?",2,without,52.3,10,156151,140932,5195,0.2538,7860,23059,0,14,yes,46,
+encode/httpx,Python,7cff5f7,"What breaks if I change URL.copy_with, and which tests cover it?",3,without,65.1,11,202389,180514,6299,0.337,7860,29713,0,16,yes,46,
+encode/httpx,Python,7cff5f7,"What breaks if I change URL.copy_with, and which tests cover it?",3,with,36.6,6,173069,147571,3351,0.3005,16541,42027,6,2,yes,46,213 (impact_of)
+honojs/hono,TypeScript,75ff8e3,"What breaks if I change encodeBase64 in src/utils/encode.ts, and which tests cover it?",1,without,64,10,168769,151033,5982,0.2917,7880,22340,0,17,yes,133,
+honojs/hono,TypeScript,75ff8e3,"What breaks if I change encodeBase64 in src/utils/encode.ts, and which tests cover it?",1,with,35,5,218574,159542,2754,0.5592,16601,71912,6,1,yes,133,124 (covered_by)
+honojs/hono,TypeScript,75ff8e3,"What breaks if I change encodeBase64 in src/utils/encode.ts, and which tests cover it?",2,with,25.5,4,146362,100656,2144,0.4286,16561,58588,5,1,yes,133,124 (covered_by)
+honojs/hono,TypeScript,75ff8e3,"What breaks if I change encodeBase64 in src/utils/encode.ts, and which tests cover it?",2,without,42.2,6,87532,75757,4345,0.1962,7880,19643,0,12,yes,133,
+honojs/hono,TypeScript,75ff8e3,"What breaks if I change encodeBase64 in src/utils/encode.ts, and which tests cover it?",3,without,52.4,8,130045,116595,5196,0.2348,7880,21314,0,12,yes,133,
+honojs/hono,TypeScript,75ff8e3,"What breaks if I change encodeBase64 in src/utils/encode.ts, and which tests cover it?",3,with,43.2,6,308156,250767,3782,0.5849,16561,74313,6,4,yes,133,124 (covered_by)
+jellyfin/jellyfin,C#,df62c85,"What breaks if I change TmdbUtils.NormalizeLanguage, and which tests cover it?",1,without,58.7,8,235033,196152,5732,0.4649,7923,43489,0,13,yes,2,7 test cases
+jellyfin/jellyfin,C#,df62c85,"What breaks if I change TmdbUtils.NormalizeLanguage, and which tests cover it?",1,with,32.5,6,218172,182065,2997,0.3852,16604,48985,6,4,yes,2,graph 17; 2 run it
+jellyfin/jellyfin,C#,df62c85,"What breaks if I change TmdbUtils.NormalizeLanguage, and which tests cover it?",2,with,34.6,5,168503,159893,3408,0.169,16604,48159,6,4,yes,2,graph 17; 2 run it
+jellyfin/jellyfin,C#,df62c85,"What breaks if I change TmdbUtils.NormalizeLanguage, and which tests cover it?",2,without,37.4,6,125836,111617,3521,0.2064,7923,32110,0,7,yes,2,2 tests call it directly
+jellyfin/jellyfin,C#,df62c85,"What breaks if I change TmdbUtils.NormalizeLanguage, and which tests cover it?",3,without,40.1,7,155706,133515,3843,0.281,7923,32209,0,8,yes,2,2 tests (5 and 2 cases)
+jellyfin/jellyfin,C#,df62c85,"What breaks if I change TmdbUtils.NormalizeLanguage, and which tests cover it?",3,with,41.5,6,222601,188027,4089,0.3959,16604,51515,7,5,yes,2,graph 17; 2 run it

@@ -112,13 +112,14 @@ words it matched; with them, its rank by words and by meaning. Once a name is kn
 
 ### 9. Is the graph earning its keep?
 
-> How much has codegraph been used in this project, and how much reading did it save?
+> How much has codegraph been used in this project, and how big were its answers?
 
 **Tool:** `usage_stats`.
 
 Calls per tool, latency, answer size, and the size of the source files each answer pointed at,
-for this session and all time. Tokens are estimated; "saved" assumes the files would otherwise
-have been read in full.
+for this session and all time. Tokens are estimated at 4 characters a token. These are sizes, not a
+saving; to measure a question with and without the graph, run `codegraph-index compare "<question>"`
+([Measure it with and without](docs/usage.md#measure-it-with-and-without)).
 
 ---
 

@@ -1,8 +1,8 @@
-# Why it saves tokens
+# Measured results
 
 *Author: Alan Seunarayan*
 
-[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · **Why it saves tokens** · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
+[Home](README.md) · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · **Measured results** · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -100,9 +100,51 @@ What the runs show:
 
 These are three runs of one question on one repository. Read them as a direction.
 
+## Four public repositories
+
+On 19 November 2026, Claude Code (Opus 5.5, effort high) got the same kind of question on four public repositories,
+three times each way, through [`codegraph-index compare`](usage.md#measure-it-with-and-without): Cobra (Go), HTTPX
+(Python), Hono (TypeScript) and Jellyfin (C#). A probe in a copy of each repository recorded which tests execute the
+method. [The method, the keys and every session](../tools/eval/README.md#four-public-repositories-19-november-2026)
+are in the repository.
+
+| Repository | Wall s, with / without | Model calls | Input tokens | Cost USD | Tests that run it | Graph lists |
+|---|---|---|---|---|---|---|
+| Cobra | 40.5 / 60.5 | 7 / 9 | 192,608 / 158,018 | 0.3280 / 0.3124 | 208 | 226 |
+| HTTPX | 40.4 / 52.3 | 6 / 10 | 175,886 / 156,151 | 0.3372 / 0.2538 | 46 | 225 |
+| Hono | 35.0 / 52.4 | 5 / 8 | 218,574 / 130,045 | 0.5592 / 0.2348 | 133 | 124 |
+| Jellyfin | 34.6 / 40.1 | 6 / 7 | 218,172 / 155,706 | 0.3852 / 0.2810 | 2 | 17 |
+
+Medians of three sessions; wall time for Cobra and HTTPX was measured while the answer-key test suites ran on the
+same machine.
+
+- **Faster on all four, in fewer model calls.** The median session with the graph answered 5.5 to 20.0 seconds
+  sooner (Jellyfin 5.5, HTTPX 11.9, Hono 17.4, Cobra 20.0), and the session with the graph was the faster one in 11
+  of the 12 rounds. It made fewer model calls in all 12 rounds, and wrote fewer output tokens on all four
+  repositories (medians 2,754 to 4,223 with the graph, 3,843 to 5,929 without).
+- **A test total in every answer.** Every one of the 12 answers with the graph said how many tests cover the
+  method; no answer without it gave a total on Cobra, HTTPX or Hono. On Cobra the graph's list held all 208 tests
+  that run the method, and on Jellyfin both. On Jellyfin, all three answers with the graph went a step further and
+  said that 2 of the 17 tests it lists run the method, which is what the run-time check found; the answers without
+  the graph named the same 2.
+- **What the total counts.** The graph's total (from `covered_by`, or from `impact_of` in three answers) is the
+  tests that can reach the method through calls, which is not always the tests that execute it. At depth
+  10, `covered_by` listed 18 more tests than run the method on Cobra, 15 more on Jellyfin, 179 more on
+  HTTPX (225 against 46), and 9 fewer on Hono. So the total is the set of tests to look at, and running them is
+  still the way to know which of them execute the code.
+- **What it costs.** The server's tool definitions and instructions make each session start 8,681 tokens larger
+  (the median first call), and every model call carries them. The context also grew more with the graph: median
+  growth 24,054 to 55,311 tokens with it, 13,434 to 24,286 without. So with fewer model calls, the sessions still
+  processed more input tokens, and the median cost was higher on all four repositories; the session with the graph
+  cost less in 4 of the 12 rounds. On this repository on 14 November, Claude Code was cheaper with the graph in
+  each of three rounds. [`codegraph-index compare`](usage.md#measure-it-with-and-without) measures the trade on
+  your own code.
+
+Four questions, three sessions each: a direction, not a general result.
+
 ## Where the savings come from
 
-The savings come from a few design choices:
+Small answers and fewer model calls come from a few design choices:
 
 - **Rows, not files.** An answer row is a full name, a file and a line range, and a node id for
   the next call. The model reads source only with `snippet`, for the members it will touch.
@@ -113,8 +155,11 @@ The savings come from a few design choices:
   redoing the work. With the live daemon, `check_change` compiles a proposed edit and lists what
   it breaks, so the model doesn't need a build-and-read-the-errors loop to find out.
 
-`usage_stats` reports, for the current session and all time, the tokens each tool returned and
-an estimate of the source tokens those answers saved the model from reading.
+`usage_stats` reports, for the current session and all time, the size of each tool's answers and of the files
+they name. Those are sizes, not a saving; the session pair above is the measured comparison.
+`codegraph-index compare "<question>"` makes that comparison on your own repository: separate new Claude Code
+sessions with and without the server, alternating which goes first, with every figure read from the session logs
+([Measure it with and without](usage.md#measure-it-with-and-without)).
 
 
 ## Keeping the graph current
@@ -140,8 +185,8 @@ an estimate of the source tokens those answers saved the model from reading.
 ## See what it did for you
 
 Every tool call is one JSON line in `.codegraph/telemetry.jsonl`: the tool, the time it took, the size of
-the answer, and the size of the files the answer pointed at. That last number is what reading those files
-instead would have cost. `codegraph-index usage` sums the last seven days into one line, the indexer
+the answer, and the size of the files the answer names. The last is a size, not a cost: the session without
+the graph above read parts of files, not whole files. `codegraph-index usage` sums the last seven days into one line, the indexer
 prints the same line after each run, and the `usage_stats` tool opens with it and then lists every tool.
 
 ---

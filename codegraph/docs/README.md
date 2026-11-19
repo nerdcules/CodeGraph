@@ -2,7 +2,7 @@
 
 *Author: Alan Seunarayan*
 
-**Home** · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Why it saves tokens](why-it-saves-tokens.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
+**Home** · [Installation](installation.md) · [Usage](usage.md) · [Use cases](use-cases.md) · [How it works](how-it-works.md) · [Language versions](language-versions.md) · [Performance](performance.md) · [Architecture](architecture.md) · [Measured results](measured-results.md) · [The story](story.md) · [What is missing](roadmap.md) · [Contributing](contributing.md)
 
 ---
 
@@ -18,7 +18,7 @@ The MCP server answers questions from that file, for Claude Code, GitHub Copilot
 | You are | Start here | Then |
 |---|---|---|
 | A developer who uses an AI coding assistant | [Installation](installation.md) | [Usage](usage.md), [Use cases](use-cases.md), [Prompts](../PROMPTS.md) |
-| Deciding whether to trust it | [Why it saves tokens](why-it-saves-tokens.md) | [How it works](how-it-works.md), [Performance](performance.md), [Benchmarks](../BENCHMARKS.md) |
+| Deciding whether to trust it | [Measured results](measured-results.md) | [How it works](how-it-works.md), [Performance](performance.md), [Benchmarks](../BENCHMARKS.md) |
 | A contributor | [Contributing](contributing.md) | [Architecture](architecture.md), [Extractors](../EXTRACTORS.md), [Language versions](language-versions.md) |
 | Curious | [The story](story.md) | [What is missing](roadmap.md) |
 
@@ -30,7 +30,7 @@ The MCP server answers questions from that file, for Claude Code, GitHub Copilot
 | [Client tests](client-tests/README.md) | See how each AI coding assistant was tested: its configuration, its tool calls and its answer. |
 | [Usage](usage.md) | Build a graph, keep it current, use the tools, see what they did for you. |
 | [Use cases](use-cases.md) | Find the tool for a question about your code. |
-| [Why it saves tokens](why-it-saves-tokens.md) | See the measurement behind the claim, and how the graph stays current. |
+| [Measured results](measured-results.md) | See Claude Code and three other assistants measured with CodeGraph and without, and how the graph stays current. |
 | [How it works](how-it-works.md) | Learn how the indexer builds the graph and how the server answers. |
 | [Language versions](language-versions.md) | See which language versions each route reads, and how to check a new one. |
 | [Performance](performance.md) | See the measured times for indexing and for tool calls. |

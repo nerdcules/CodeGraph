@@ -1,0 +1,133 @@
+src/adapter/aws-lambda/handler.test.ts::EventProcessor.createResult with contentTypesAsBinary > Should encode as base64 when content-type is in contentTypesAsBinary array
+src/adapter/aws-lambda/handler.test.ts::EventProcessor.createResult with contentTypesAsBinary > Should use defaultIsContentTypeBinary when isContentTypeBinary is undefined with binary content
+src/adapter/lambda-edge/handler.test.ts::createBody > Should the request be a GET or HEAD, the Request must not include a Body
+src/adapter/lambda-edge/handler.test.ts::handle > Should base64 encode a compressed response with a textual content-type
+src/adapter/lambda-edge/handler.test.ts::handle > Should base64 encode a response with an unknown content-encoding
+src/adapter/lambda-edge/handler.test.ts::handle > Should keep an empty body in other bodyless results
+src/middleware/jwk/index.test.ts::JWK > Algorithm whitelist (options.alg) > Should authorize RS256 token when multiple algorithms are in whitelist
+src/middleware/jwk/index.test.ts::JWK > Algorithm whitelist (options.alg) > Should authorize RS256 token when RS256 is in whitelist
+src/middleware/jwk/index.test.ts::JWK > Algorithm whitelist (options.alg) > Should reject token when algorithm is not in whitelist
+src/middleware/jwk/index.test.ts::JWK > Credentials in a signed cookie > Should authorize prefixed signed cookie
+src/middleware/jwk/index.test.ts::JWK > Credentials in a signed cookie > Should authorize signed cookie
+src/middleware/jwk/index.test.ts::JWK > Credentials in a signed cookie > Should not authorize an unsigned cookie
+src/middleware/jwk/index.test.ts::JWK > Credentials in cookie > Should authorize cookie from a static array passed to options.keys
+src/middleware/jwk/index.test.ts::JWK > Credentials in cookie > Should authorize prefixed cookie from a static array passed to options.keys
+src/middleware/jwk/index.test.ts::JWK > Credentials in cookie > Should authorize unprefixed cookie from a static array passed to options.keys
+src/middleware/jwk/index.test.ts::JWK > Credentials in cookie > Should authorize with Unicode payload from a static array passed to options.keys
+src/middleware/jwk/index.test.ts::JWK > Credentials in custom header > Should authorize
+src/middleware/jwk/index.test.ts::JWK > Credentials in custom header > Should authorize with mixed-case Bearer scheme in custom header
+src/middleware/jwk/index.test.ts::JWK > Credentials in custom header > Should not authorize even if default authorization header present
+src/middleware/jwk/index.test.ts::JWK > Credentials in custom header > Should not authorize with non-Bearer scheme in custom header
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should authorize from a function passed to options.keys
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should authorize from a static array passed to options.keys (key 1)
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should authorize from a static array passed to options.keys (key 2)
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should authorize from keys and hard-coded and remotely fetched from options.jwks_uri
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should authorize from keys remotely fetched from options.jwks_uri
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should authorize requests with authorization in nested JWK middleware
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should authorize with mixed-case Bearer scheme
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should authorize with Unicode payload from a static array passed to options.keys
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should not authorize a token with invalid "kid" in header
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should not authorize a token with missing "kid" in header
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should not authorize a token without header
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should not authorize requests with non-Bearer scheme in header
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should return a server error if options.jwks_uri returns a 404
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should return a server error if the remotely fetched keys from options.jwks_uri are malformed
+src/middleware/jwk/index.test.ts::JWK > Credentials in header > Should return a server error if the remotely fetched keys from options.jwks_uri are missing
+src/middleware/jwk/index.test.ts::JWK > options.allow_anon = true > Should authorize if token is present
+src/middleware/jwk/index.test.ts::JWK > options.allow_anon = true > Should not authorize if a non-Bearer scheme is present
+src/middleware/jwk/index.test.ts::JWK > Verification of token attributes > Should reject iss when different
+src/middleware/jwk/index.test.ts::JWK > Verification of token attributes > Should reject missing iss when required
+src/middleware/jwk/index.test.ts::JWK > Verification of token attributes > Should validate exp and fail when bad
+src/middleware/jwk/index.test.ts::JWK > Verification of token attributes > Should validate exp/nbf/iat and pass when good by default
+src/middleware/jwk/index.test.ts::JWK > Verification of token attributes > Should validate iat and fail when bad
+src/middleware/jwk/index.test.ts::JWK > Verification of token attributes > Should validate iss when supplied
+src/middleware/jwk/index.test.ts::JWK > Verification of token attributes > Should validate nbf and fail when bad
+src/middleware/jwk/index.test.ts::JWK > verifyWithJwks > Should throw error on missing keys/jwks_uri options
+src/middleware/jwt/index.test.ts::JWT > typ of the token > rejects an access token by default and accepts it when its typ is expected
+src/middleware/secure-headers/index.test.ts::Secure Headers Middleware > CSP Setting (contentSecurityPolicy) > CSP nonce for script-src
+src/middleware/secure-headers/index.test.ts::Secure Headers Middleware > CSP Setting (contentSecurityPolicy) > CSP nonce for script-src and style-src
+src/middleware/secure-headers/index.test.ts::Secure Headers Middleware > CSP Setting (contentSecurityPolicyReportOnly) > CSP nonce for script-src
+src/middleware/secure-headers/index.test.ts::Secure Headers Middleware > CSP Setting (contentSecurityPolicyReportOnly) > CSP nonce for script-src and style-src
+src/middleware/secure-headers/index.test.ts::Secure Headers Middleware > CSP with combined modes > keeps the enforced policy when report-only uses a nonce
+src/middleware/secure-headers/index.test.ts::Secure Headers Middleware > CSP with combined modes > keeps the report-only policy when the enforced policy uses a nonce
+src/middleware/secure-headers/index.test.ts::Secure Headers Middleware > CSP with combined modes > supports nonces in both policies
+src/utils/encode.test.ts::base64 > 101,97,115,117,114,101,46, ZWFzdXJlLg== > encode
+src/utils/encode.test.ts::base64 > 102,111,111,98,97,114, Zm9vYmFy > encode
+src/utils/encode.test.ts::base64 > 102,111,111,98,97, Zm9vYmE= > encode
+src/utils/encode.test.ts::base64 > 102,111,111,98, Zm9vYg== > encode
+src/utils/encode.test.ts::base64 > 102,111,111, Zm9v > encode
+src/utils/encode.test.ts::base64 > 102,111, Zm8= > encode
+src/utils/encode.test.ts::base64 > 102, Zg== > encode
+src/utils/encode.test.ts::base64 > 104,116,116,112,58,47,47,103,105,116,104,117,98,46,99,111,109,47,104,111,110,111,106,115,47,104,111,110,111, aHR0cDovL2dpdGh1Yi5jb20vaG9ub2pzL2hvbm8= > encode
+src/utils/encode.test.ts::base64 > 108,101,97,115,117,114,101,46, bGVhc3VyZS4= > encode
+src/utils/encode.test.ts::base64 > 115,117,114,101,46, c3VyZS4= > encode
+src/utils/encode.test.ts::base64 > 115,117,114,101, c3VyZQ== > encode
+src/utils/encode.test.ts::base64 > 115,117,114, c3Vy > encode
+src/utils/encode.test.ts::base64 > 115,117, c3U= > encode
+src/utils/encode.test.ts::base64 > 20,251,156,3,217,126, FPucA9l+ > encode
+src/utils/encode.test.ts::base64 > 20,251,156,3,217, FPucA9k= > encode
+src/utils/encode.test.ts::base64 > 20,251,156,3, FPucAw== > encode
+src/utils/encode.test.ts::base64 > 231,130,142, 54KO > encode
+src/utils/encode.test.ts::base64 > 240,159,148,165, 8J+UpQ== > encode
+src/utils/encode.test.ts::base64 > 72,101,108,108,111,44,32,228,184,150,231,149,140, SGVsbG8sIOS4lueVjA== > encode
+src/utils/encode.test.ts::base64 > 97,115,117,114,101,46, YXN1cmUu > encode
+src/utils/encode.test.ts::base64 > ,  > encode
+src/utils/jwt/jwt.test.ts::JWT decode token format validation > decodeHeader should work for valid 3-part token
+src/utils/jwt/jwt.test.ts::JWT decode token format validation > decode should work for valid 3-part token
+src/utils/jwt/jwt.test.ts::JWT > EdDSA sign & verify
+src/utils/jwt/jwt.test.ts::JWT > EdDSA sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > ES256 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > ES256 sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > ES384 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > ES384 sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > ES512 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > ES512 sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > HS256 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > HS256 sign & verify & decode
+src/utils/jwt/jwt.test.ts::JWT > HS384 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > HS512 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > HS512 sign & verify & decode
+src/utils/jwt/jwt.test.ts::JWT > JwtAlgorithmNotImplemented
+src/utils/jwt/jwt.test.ts::JWT > JwtHeaderInvalid for a header with crit
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenExpired after Y2038
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenExpired with malformed exp claim > rejects token with exp = 0 (epoch zero)
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenExpired with malformed exp claim > rejects token with exp as a non-numeric string
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenExpired with malformed exp claim > rejects token with exp = Infinity (parsed from 1e400 in JSON)
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenInvalid for a signature containing whitespace
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenIssuedAt
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenIssuedAt with malformed iat claim > rejects token with iat as a non-numeric string
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenIssuedAt with malformed iat claim > rejects token with iat = Infinity (parsed from 1e400 in JSON)
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenNotBefore with malformed nbf claim > rejects token with nbf as a non-numeric string
+src/utils/jwt/jwt.test.ts::JWT > JwtTokenNotBefore with malformed nbf claim > rejects token with nbf = Infinity (parsed from 1e400 in JSON)
+src/utils/jwt/jwt.test.ts::JWT > PS256 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > PS256 sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > PS384 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > PS384 sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > PS512 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > PS512 sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > RS256 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > RS256 sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > RS384 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > RS384 sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > RS512 sign & verify
+src/utils/jwt/jwt.test.ts::JWT > RS512 sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test.ts::JWT > sign & verify & decode with a custom secret
+src/utils/jwt/jwt.test.ts::JWT > typ > JwtHeaderInvalid for an access token unless its typ is expected
+src/utils/jwt/jwt.test.ts::JWT > typ > JwtHeaderInvalid for a plain JWT when at+jwt is expected
+src/utils/jwt/jwt.test.ts::PEM parsing > should sign & verify with a normal private PEM key
+src/utils/jwt/jwt.test.ts::PEM parsing > should sign & verify with a single-line private PEM key
+src/utils/jwt/jwt.test.ts::Security: Algorithm Confusion Attack Prevention > Should prevent algorithm confusion attack (RS256 token verified with HS256 using public key)
+src/utils/jwt/jwt.test.ts::Security: Algorithm Confusion Attack Prevention > Should require explicit alg specification to prevent default fallback attack
+src/utils/jwt/jwt.test.ts::Security: Algorithm Confusion Attack Prevention > Should throw JwtAlgorithmMismatch when header.alg does not match options.alg
+src/utils/jwt/jwt.test.ts::Security: Algorithm Confusion Attack Prevention > Should throw JwtAlgorithmRequired error when alg is not specified in verify()
+src/utils/jwt/jwt.test.ts::Security: Algorithm Confusion Attack Prevention > Should throw JwtAlgorithmRequired error when alg is undefined in options object
+src/utils/jwt/jwt.test.ts::verifyWithJwks algorithm whitelist > Should accept algorithm in whitelist
+src/utils/jwt/jwt.test.ts::verifyWithJwks algorithm whitelist > Should reject algorithm not in whitelist
+src/utils/jwt/jwt.test.ts::verifyWithJwks algorithm whitelist > Should reject symmetric algorithm (HS256) in JWT header
+src/utils/jwt/jwt.test.ts::verifyWithJwks header.alg fallback > Should use header.alg as fallback when matchingKey.alg is missing
+src/utils/jwt/jwt.test.ts::verifyWithJwks security > Should allow asymmetric algorithm RS256 with matching alg
+src/utils/jwt/jwt.test.ts::verifyWithJwks security > Should reject algorithm confusion attack (HS256 with RSA public key)
+src/utils/jwt/jwt.test.ts::verifyWithJwks security > Should reject algorithm mismatch between JWK and JWT header
+src/utils/jwt/jwt.test.ts::verifyWithJwks security > Should reject symmetric algorithm HS256
+src/utils/jwt/jwt.test.ts::verifyWithJwks security > Should reject symmetric algorithm HS384
+src/utils/jwt/jwt.test.ts::verifyWithJwks security > Should reject symmetric algorithm HS512

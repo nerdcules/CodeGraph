@@ -31,7 +31,7 @@ public sealed class TelemetryTests
     }
 
     [Fact]
-    public void Counts_each_source_file_once_and_estimates_tokens_saved()
+    public void Counts_each_source_file_once_and_estimates_tokens()
     {
         var directory = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(directory);
@@ -49,7 +49,8 @@ public sealed class TelemetryTests
 
             var call = Assert.Single(telemetry.Session);
             Assert.Equal(4000, call.SourceChars);
-            Assert.Equal(1000 - 100, call.TokensSaved);
+            Assert.Equal(1000, call.SourceTokens);
+            Assert.Equal(100, call.ResultTokens);
             Assert.Empty(telemetry.AllTime());
         }
         finally
@@ -73,8 +74,12 @@ public sealed class TelemetryTests
         Assert.Equal(2, usage[0].Calls);
         Assert.Equal(1, usage[0].Errors);
         Assert.Equal(20, usage[0].AverageMilliseconds);
-        Assert.Equal(1800, usage[1].TokensSaved);
-        Assert.Contains("snippet", Telemetry.Table(usage));
+        Assert.Equal(200, usage[1].ResultTokens);
+        Assert.Equal(2000, usage[1].SourceTokens);
+        var table = Telemetry.Table(usage);
+        Assert.Contains("snippet", table);
+        Assert.Contains("answer tok   files tok", table);
+        Assert.DoesNotContain("saved", table);
     }
 }
 
@@ -101,10 +106,9 @@ public sealed class UsageSummaryTests
         Assert.Equal(1, week.Errors);
         Assert.Equal(700, week.ResultTokens);
         Assert.Equal(20_500, week.SourceTokens);
-        Assert.Equal(19_800, week.TokensSaved);
         Assert.Equal("find_symbol", week.Tools[0].Tool);
         Assert.Equal(
-            "last 7 days: 3 tool calls answered (1 failed); the files they pointed at come to about 20,500 tokens, the answers to 700, so about 19,800 tokens stayed out of the context; most used: find_symbol ×2, snippet ×1",
+            "last 7 days: 3 tool calls answered (1 failed); answers 700 tokens, the files they name 20,500 tokens (estimated at 4 characters a token); most used: find_symbol ×2, snippet ×1",
             week.Line("last 7 days"));
     }
 
