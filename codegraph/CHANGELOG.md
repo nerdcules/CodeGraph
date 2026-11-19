@@ -5,6 +5,12 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## 1.3.1
+
+- The VS Code extension uses the CodeGraph logo ([assets/logo.svg](assets/logo.svg)): as its icon in the Extensions
+  view (a 256 px PNG of the logo), in the Overview when CodeGraph is not installed or there is nothing to index, and,
+  in one colour, in the activity bar. The Marketplace banner colour is the logo's background.
+
 ## 1.3.0
 
 The first full release with the [VS Code extension](vscode-extension/README.md). It came in the pre-release
