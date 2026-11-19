@@ -6,5 +6,5 @@ test-fixtures/**
 tsconfig.json
 node_modules/**
 .vscode-test/**
-media/icon.svg
 .gitignore
+scripts/**

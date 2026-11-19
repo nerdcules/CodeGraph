@@ -30,6 +30,14 @@ The executables report their version with `--version`; the MCP server shows it t
   start themselves again from the release folder that the junction points at, and wait for that child. `init`
   still names the junction in the MCP configs.
 
+- The VS Code extension's icons show the same picture as the CodeGraph logo ([assets/logo.svg](assets/logo.svg)).
+  The activity bar icon is now the logo itself as a one-colour mask: the logo's shapes, strokes, opacities and
+  glow, in the square around its marks. Before, it was a copy with thicker strokes and larger nodes. VS Code draws
+  this icon in one theme colour only. `media/icon.png` is a new 256 px render of the logo in Chromium, the engine
+  that VS Code uses, and is the same as that render in each pixel. `scripts/icons.js` makes both icons from the
+  logo. A unit test fails if `activity.svg` or the Overview's logo does not agree with the logo, or if
+  `icon.png` records a different logo. The unused copy `media/icon.svg` is gone.
+
 ## 1.5.0
 
 Answers from the codegraph server are shorter, with the same facts: relative paths, 8-character handles in
