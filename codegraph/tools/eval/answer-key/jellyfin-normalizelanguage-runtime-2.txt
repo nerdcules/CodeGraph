@@ -1,0 +1,2 @@
+Jellyfin.Providers.Tests.Tmdb.TmdbUtilsTests.NormalizeLanguage_Invalid_Equal
+Jellyfin.Providers.Tests.Tmdb.TmdbUtilsTests.NormalizeLanguage_Valid_Success

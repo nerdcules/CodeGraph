@@ -1,0 +1,124 @@
+src/adapter/aws-lambda/handler.test:EventProcessor.createResult with contentTypesAsBinary > Should encode as base64 when content-type is in contentTypesAsBinary array
+src/adapter/aws-lambda/handler.test:EventProcessor.createResult with contentTypesAsBinary > Should not encode as base64 when content-type is not in isContentTypeBinary array
+src/adapter/aws-lambda/handler.test:EventProcessor.createResult with contentTypesAsBinary > Should use defaultIsContentTypeBinary when isContentTypeBinary is undefined with binary content
+src/adapter/aws-lambda/handler.test:EventProcessor.createResult with contentTypesAsBinary > Should use defaultIsContentTypeBinary when isContentTypeBinary is undefined with non-binary content
+src/adapter/aws-lambda/handler.test:handle > ALB single-header: emits the first Set-Cookie intact, never comma-joined
+src/adapter/aws-lambda/handler.test:handle > Lattice v2: emits multiple Set-Cookie as an array
+src/adapter/aws-lambda/handler.test:handle > Should enforce bodyLimit when the client understates Content-Length
+src/adapter/aws-lambda/handler.test:handle > Should return 400 when request contains invalid header names (v1)
+src/adapter/aws-lambda/handler.test:handle > Should return 400 when request contains invalid header names (v2)
+src/adapter/aws-lambda/handler.test:handle > Should route a V1 REST event by its path even when a base path mapping adds rawPath
+src/adapter/aws-lambda/handler.test:V2 request context authorizer > Should expose the claims and scopes of a JWT authorizer
+src/adapter/aws-lambda/handler.test:V2 request context authorizer > Should expose the context of a Lambda (REQUEST) authorizer
+src/adapter/lambda-edge/handler.test:createBody > Should the request be a GET or HEAD, the Request must not include a Body
+src/adapter/lambda-edge/handler.test:handle > Should base64 encode a compressed response with a textual content-type
+src/adapter/lambda-edge/handler.test:handle > Should base64 encode a response with an unknown content-encoding
+src/adapter/lambda-edge/handler.test:handle > Should enforce bodyLimit when the client understates Content-Length
+src/adapter/lambda-edge/handler.test:handle > Should expose async handler arity compatible with NODEJS_24_X
+src/adapter/lambda-edge/handler.test:handle > Should keep an empty body in other bodyless results
+src/adapter/lambda-edge/handler.test:handle > Should not base64 encode a response with the identity content-encoding
+src/adapter/lambda-edge/handler.test:handle > Should omit body in a 204 result
+src/adapter/lambda-edge/handler.test:handle > Should only honor the first callback invocation
+src/adapter/lambda-edge/handler.test:handle > Should preserve all values of a multi-value request header
+src/adapter/lambda-edge/handler.test:handle > Should preserve positional callback compatibility
+src/adapter/lambda-edge/handler.test:handle > Should reject when the callback is called with an error
+src/adapter/lambda-edge/handler.test:handle > Should resolve with the app response when the callback is not used
+src/adapter/lambda-edge/handler.test:handle > Should resolve with the request passed to the callback for origin forwarding
+src/adapter/lambda-edge/handler.test:handle > Should resolve with the result passed to the callback over the app response
+src/adapter/lambda-edge/handler.test:handle > Should support alternate domain names
+src/adapter/lambda-edge/handler.test:handle > Should support multiple cookies
+src/adapter/lambda-edge/handler.test:handle with a malformed event > Should fall back to the distribution domain name when the request has no headers
+src/adapter/lambda-edge/handler.test:handle with a malformed event > Should reject with a descriptive error when cf carries no request
+src/adapter/lambda-edge/handler.test:handle with a malformed event > Should reject with a descriptive error when Records holds no CloudFront record
+src/adapter/lambda-edge/handler.test:handle with a malformed event > Should reject with a descriptive error when Records is empty or absent
+src/middleware/jwk/index.test:JWK > Algorithm whitelist (options.alg) > Should authorize RS256 token when multiple algorithms are in whitelist
+src/middleware/jwk/index.test:JWK > Algorithm whitelist (options.alg) > Should authorize RS256 token when RS256 is in whitelist
+src/middleware/jwk/index.test:JWK > Algorithm whitelist (options.alg) > Should reject token when algorithm is not in whitelist
+src/middleware/jwk/index.test:JWK > Credentials in a signed cookie
+src/middleware/jwk/index.test:JWK > Credentials in a signed cookie > Should not authorize an unsigned cookie
+src/middleware/jwk/index.test:JWK > Credentials in cookie > Should authorize cookie from a static array passed to options.keys
+src/middleware/jwk/index.test:JWK > Credentials in cookie > Should authorize prefixed cookie from a static array passed to options.keys
+src/middleware/jwk/index.test:JWK > Credentials in cookie > Should authorize unprefixed cookie from a static array passed to options.keys
+src/middleware/jwk/index.test:JWK > Credentials in cookie > Should authorize with Unicode payload from a static array passed to options.keys
+src/middleware/jwk/index.test:JWK > Credentials in custom header > Should authorize
+src/middleware/jwk/index.test:JWK > Credentials in custom header > Should authorize with mixed-case Bearer scheme in custom header
+src/middleware/jwk/index.test:JWK > Credentials in custom header > Should not authorize even if default authorization header present
+src/middleware/jwk/index.test:JWK > Credentials in custom header > Should not authorize with non-Bearer scheme in custom header
+src/middleware/jwk/index.test:JWK > Credentials in header > Should authorize from a function passed to options.keys
+src/middleware/jwk/index.test:JWK > Credentials in header > Should authorize from a static array passed to options.keys (key 1)
+src/middleware/jwk/index.test:JWK > Credentials in header > Should authorize from a static array passed to options.keys (key 2)
+src/middleware/jwk/index.test:JWK > Credentials in header > Should authorize from keys and hard-coded and remotely fetched from options.jwks_uri
+src/middleware/jwk/index.test:JWK > Credentials in header > Should authorize from keys remotely fetched from options.jwks_uri
+src/middleware/jwk/index.test:JWK > Credentials in header > Should authorize requests with authorization in nested JWK middleware
+src/middleware/jwk/index.test:JWK > Credentials in header > Should authorize with mixed-case Bearer scheme
+src/middleware/jwk/index.test:JWK > Credentials in header > Should authorize with Unicode payload from a static array passed to options.keys
+src/middleware/jwk/index.test:JWK > Credentials in header > Should not authorize a token with invalid "kid" in header
+src/middleware/jwk/index.test:JWK > Credentials in header > Should not authorize a token with missing "kid" in header
+src/middleware/jwk/index.test:JWK > Credentials in header > Should not authorize a token without header
+src/middleware/jwk/index.test:JWK > Credentials in header > Should not authorize requests with non-Bearer scheme in header
+src/middleware/jwk/index.test:JWK > Credentials in header > Should return a server error if options.jwks_uri returns a 404
+src/middleware/jwk/index.test:JWK > Credentials in header > Should return a server error if the remotely fetched keys from options.jwks_uri are malformed
+src/middleware/jwk/index.test:JWK > Credentials in header > Should return a server error if the remotely fetched keys from options.jwks_uri are missing
+src/middleware/jwk/index.test:JWK > options.allow_anon = true > Should authorize if token is present
+src/middleware/jwk/index.test:JWK > options.allow_anon = true > Should not authorize if a non-Bearer scheme is present
+src/middleware/jwk/index.test:JWK > Verification of token attributes > Should reject iss when different
+src/middleware/jwk/index.test:JWK > Verification of token attributes > Should reject missing iss when required
+src/middleware/jwk/index.test:JWK > Verification of token attributes > Should validate exp and fail when bad
+src/middleware/jwk/index.test:JWK > Verification of token attributes > Should validate exp/nbf/iat and pass when good by default
+src/middleware/jwk/index.test:JWK > Verification of token attributes > Should validate iat and fail when bad
+src/middleware/jwk/index.test:JWK > Verification of token attributes > Should validate iss when supplied
+src/middleware/jwk/index.test:JWK > Verification of token attributes > Should validate nbf and fail when bad
+src/middleware/jwk/index.test:JWK > verifyWithJwks > Should throw error on missing keys/jwks_uri options
+src/middleware/jwt/index.test:JWT > typ of the token
+src/middleware/secure-headers/index.test:Secure Headers Middleware > CSP nonce for script-src
+src/middleware/secure-headers/index.test:Secure Headers Middleware > CSP nonce for script-src and style-src
+src/middleware/secure-headers/index.test:Secure Headers Middleware > CSP with combined modes > keeps the enforced policy when report-only uses a nonce
+src/middleware/secure-headers/index.test:Secure Headers Middleware > CSP with combined modes > keeps the report-only policy when the enforced policy uses a nonce
+src/middleware/secure-headers/index.test:Secure Headers Middleware > CSP with combined modes > supports nonces in both policies
+src/utils/encode.test:base64 > encode
+src/utils/jwt/jwt.test:JWT > ${tc.alg} sign & verify
+src/utils/jwt/jwt.test:JWT > ${tc.alg} sign & verify
+src/utils/jwt/jwt.test:JWT > ${tc.alg} sign & verify
+src/utils/jwt/jwt.test:JWT > ${tc.alg} sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test:JWT > ${tc.alg} sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test:JWT > ${tc.alg} sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test:JWT decode token format validation > decodeHeader should work for valid 3-part token
+src/utils/jwt/jwt.test:JWT decode token format validation > decode should work for valid 3-part token
+src/utils/jwt/jwt.test:JWT > EdDSA sign & verify
+src/utils/jwt/jwt.test:JWT > EdDSA sign & verify w/ CryptoKey
+src/utils/jwt/jwt.test:JWT > HS256 sign & verify
+src/utils/jwt/jwt.test:JWT > HS256 sign & verify & decode
+src/utils/jwt/jwt.test:JWT > HS384 sign & verify
+src/utils/jwt/jwt.test:JWT > HS512 sign & verify
+src/utils/jwt/jwt.test:JWT > HS512 sign & verify & decode
+src/utils/jwt/jwt.test:JWT > JwtAlgorithmNotImplemented
+src/utils/jwt/jwt.test:JWT > JwtHeaderInvalid for a header with crit
+src/utils/jwt/jwt.test:JWT > JwtTokenExpired after Y2038
+src/utils/jwt/jwt.test:JWT > JwtTokenExpired with malformed exp claim > rejects token with exp = 0 (epoch zero)
+src/utils/jwt/jwt.test:JWT > JwtTokenExpired with malformed exp claim > rejects token with exp as a non-numeric string
+src/utils/jwt/jwt.test:JWT > JwtTokenExpired with malformed exp claim > rejects token with exp = Infinity (parsed from 1e400 in JSON)
+src/utils/jwt/jwt.test:JWT > JwtTokenInvalid for a signature containing whitespace
+src/utils/jwt/jwt.test:JWT > JwtTokenIssuedAt
+src/utils/jwt/jwt.test:JWT > JwtTokenIssuedAt with malformed iat claim > rejects token with iat as a non-numeric string
+src/utils/jwt/jwt.test:JWT > JwtTokenIssuedAt with malformed iat claim > rejects token with iat = Infinity (parsed from 1e400 in JSON)
+src/utils/jwt/jwt.test:JWT > JwtTokenNotBefore with malformed nbf claim > rejects token with nbf as a non-numeric string
+src/utils/jwt/jwt.test:JWT > JwtTokenNotBefore with malformed nbf claim > rejects token with nbf = Infinity (parsed from 1e400 in JSON)
+src/utils/jwt/jwt.test:JWT > sign & verify & decode with a custom secret
+src/utils/jwt/jwt.test:JWT > typ
+src/utils/jwt/jwt.test:PEM parsing > should sign & verify with a normal private PEM key
+src/utils/jwt/jwt.test:PEM parsing > should sign & verify with a single-line private PEM key
+src/utils/jwt/jwt.test:Security: Algorithm Confusion Attack Prevention > Should prevent algorithm confusion attack (RS256 token verified with HS256 using public key)
+src/utils/jwt/jwt.test:Security: Algorithm Confusion Attack Prevention > Should require explicit alg specification to prevent default fallback attack
+src/utils/jwt/jwt.test:Security: Algorithm Confusion Attack Prevention > Should throw JwtAlgorithmMismatch when header.alg does not match options.alg
+src/utils/jwt/jwt.test:Security: Algorithm Confusion Attack Prevention > Should throw JwtAlgorithmRequired error when alg is not specified in verify()
+src/utils/jwt/jwt.test:Security: Algorithm Confusion Attack Prevention > Should throw JwtAlgorithmRequired error when alg is undefined in options object
+src/utils/jwt/jwt.test:verifyWithJwks algorithm whitelist > Should accept algorithm in whitelist
+src/utils/jwt/jwt.test:verifyWithJwks algorithm whitelist > Should reject algorithm not in whitelist
+src/utils/jwt/jwt.test:verifyWithJwks algorithm whitelist > Should reject symmetric algorithm (HS256) in JWT header
+src/utils/jwt/jwt.test:verifyWithJwks header.alg fallback > Should use header.alg as fallback when matchingKey.alg is missing
+src/utils/jwt/jwt.test:verifyWithJwks security > Should allow asymmetric algorithm RS256 with matching alg
+src/utils/jwt/jwt.test:verifyWithJwks security > Should reject algorithm confusion attack (HS256 with RSA public key)
+src/utils/jwt/jwt.test:verifyWithJwks security > Should reject algorithm mismatch between JWK and JWT header
+src/utils/jwt/jwt.test:verifyWithJwks security > Should reject symmetric algorithm HS256
+src/utils/jwt/jwt.test:verifyWithJwks security > Should reject symmetric algorithm HS384
+src/utils/jwt/jwt.test:verifyWithJwks security > Should reject symmetric algorithm HS512

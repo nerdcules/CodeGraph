@@ -23,10 +23,13 @@ are about 5,500 tokens, where the 25 files that match `.Replace(` are about 123,
 question three times with CodeGraph and three times without: with it, 7 of 12 answers said how many tests run
 the method; without it, none did. Claude Code was also faster and cheaper with it; Codex and the Copilot CLI
 were not, and Cursor's runs varied too much to call
-([measured](docs/why-it-saves-tokens.md#four-assistants-with-and-without)).
+([measured](docs/why-it-saves-tokens.md#four-assistants-with-and-without)). On four public repositories (Go,
+Python, TypeScript, C#) on 19 November, Claude Code with it was faster on all four but used more input tokens and
+cost more, and the test counts it gave were the tests that can reach the method, which on Python's HTTPX was 225
+where 46 run it ([measured](docs/why-it-saves-tokens.md#four-public-repositories)).
 
 - Precision and recall of 100% on generated codebases in eight languages, on current toolchains and on 2023-era ones, bar one old rust-analyzer at 87% call recall ([benchmarks](BENCHMARKS.md))
-- 441 tests: in a local Linux run on 15 November 2026, 439 passed and 2 skipped (tests of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
+- 460 tests: in a local Linux run on 19 November 2026, 458 passed and 2 skipped (tests of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
 - Prebuilt for six platforms, nothing to compile ([releases](https://github.com/nerdcules/CodeGraph/releases/latest))
 
 Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the TypeScript compiler; Java,

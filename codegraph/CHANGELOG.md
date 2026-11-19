@@ -7,6 +7,11 @@ The executables report their version with `--version`; the MCP server shows it t
 
 ## Unreleased
 
+- [With and without](tools/eval/README.md#four-public-repositories-19-november-2026) adds 24 compare sessions on
+  four public repositories (Cobra, HTTPX, Hono, Jellyfin), with a run-time list of the tests that execute each
+  method. With the graph, Claude Code was faster on all four and used more input tokens and cost more on all four;
+  the graph's test counts were reach, not execution (HTTPX: 225 listed, 46 run it). The README and
+  [Why it saves tokens](docs/why-it-saves-tokens.md#four-public-repositories) say so.
 - `codegraph-index compare "<prompt>"` asks Claude Code the same question with the codegraph server and without
   it, three rounds by default, and reports what each session's own log says: wall time, model calls, input tokens
   with cache reads, output tokens, cost, the context at the first and last model call, and tool calls, with the

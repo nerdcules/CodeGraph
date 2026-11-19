@@ -100,6 +100,36 @@ What the runs show:
 
 These are three runs of one question on one repository. Read them as a direction.
 
+## Four public repositories
+
+On 19 November 2026, Claude Code (Opus 5.5, effort high) got the same kind of question on four public repositories,
+three times each way, through [`codegraph-index compare`](usage.md#measure-it-with-and-without): Cobra (Go), HTTPX
+(Python), Hono (TypeScript) and Jellyfin (C#). A probe in a copy of each repository recorded which tests execute the
+method. [The method, the keys and every session](../tools/eval/README.md#four-public-repositories-19-november-2026)
+are in the repository.
+
+| Repository | Wall s, with / without | Model calls | Input tokens | Cost USD | Tests that run it | Graph lists |
+|---|---|---|---|---|---|---|
+| Cobra | 40.5 / 60.5 | 7 / 9 | 192,608 / 158,018 | 0.3280 / 0.3124 | 208 | 226 |
+| HTTPX | 40.4 / 52.3 | 6 / 10 | 175,886 / 156,151 | 0.3372 / 0.2538 | 46 | 225 |
+| Hono | 35.0 / 52.4 | 5 / 8 | 218,574 / 130,045 | 0.5592 / 0.2348 | 133 | 124 |
+| Jellyfin | 34.6 / 40.1 | 6 / 7 | 218,172 / 155,706 | 0.3852 / 0.2810 | 2 | 17 |
+
+Medians of three sessions; wall time for Cobra and HTTPX was measured while the answer-key test suites ran on the
+same machine.
+
+- **Faster, with fewer model calls, on all four.**
+- **More input tokens and a higher cost on all four.** This is the opposite of the 14 November run on this
+  repository. Each session with the graph started 8,681 tokens larger (the median first call), the server's tool
+  definitions and instructions, and its context grew more on all four: median growth 24,054 to 55,311 tokens with
+  the graph, 13,434 to 24,286 without.
+- **A total from the graph, and the graph's total is reach, not execution.** Every answer with the graph gave a test
+  count; no answer without it did on Cobra, HTTPX or Hono. The count was the tests that can reach the method through
+  calls: 18 more than run it on Cobra, 9 fewer on Hono, 179 more on HTTPX. On Jellyfin the graph listed 17 and all
+  three answers worked out that only 2 run it; the answers without the graph named the same 2.
+
+Four questions, three sessions each: a direction, not a general result.
+
 ## Where the savings come from
 
 The savings come from a few design choices:
