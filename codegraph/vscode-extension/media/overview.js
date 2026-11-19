@@ -82,9 +82,9 @@
       svgEl('g', { fill: '#00C9B1', stroke: '#0D1B2A', 'stroke-width': 2.5 },
         ring.map(([cx, cy]) => svgEl('circle', { cx, cy, r: 7 }))),
       svgEl('circle', { cx: 64, cy: 64, r: 11, fill: '#FFD166', stroke: '#0D1B2A', 'stroke-width': 2.5, filter: `url(#${id}-glow)` }),
-      svgEl('g', { stroke: '#FFD166', 'stroke-width': 3.5, 'stroke-linecap': 'round', fill: 'none', opacity: 0.9 }, [
+      svgEl('g', { stroke: '#FFD166', 'stroke-width': 3.5, 'stroke-linecap': 'round', opacity: 0.9 }, [
         svgEl('line', { x1: 96, y1: 64, x2: 108, y2: 64 }),
-        svgEl('polyline', { points: '102,58 108,64 102,70' }),
+        svgEl('polyline', { points: '102,58 108,64 102,70', fill: 'none' }),
       ]),
     ]);
   }
