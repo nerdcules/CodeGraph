@@ -49,51 +49,45 @@
     return h('button', { class: 'icon', title, 'aria-label': title, onclick }, svg);
   }
 
-  function logo() {
-    // The extension's mark: a small call graph, one node lit.
-    const svg = document.createElementNS(svgNs, 'svg');
-    svg.setAttribute('viewBox', '0 0 64 64');
-    svg.setAttribute('class', 'logo');
-    svg.setAttribute('aria-hidden', 'true');
-    const defs = document.createElementNS(svgNs, 'defs');
-    const gradient = document.createElementNS(svgNs, 'linearGradient');
-    gradient.setAttribute('id', 'cg-g');
-    gradient.setAttribute('x1', '0');
-    gradient.setAttribute('y1', '0');
-    gradient.setAttribute('x2', '1');
-    gradient.setAttribute('y2', '1');
-    for (const [offset, color] of [['0', 'var(--cg-blue)'], ['1', 'var(--cg-purple)']]) {
-      const stop = document.createElementNS(svgNs, 'stop');
-      stop.setAttribute('offset', offset);
-      stop.style.setProperty('stop-color', color);
-      gradient.append(stop);
-    }
-    defs.append(gradient);
-    svg.append(defs);
-    const lines = [[16, 18, 34, 32], [34, 32, 50, 16], [34, 32, 22, 48], [34, 32, 48, 46], [16, 18, 22, 48]];
-    for (const [x1, y1, x2, y2] of lines) {
-      const line = document.createElementNS(svgNs, 'line');
-      for (const [k, v] of Object.entries({ x1, y1, x2, y2 })) line.setAttribute(k, String(v));
-      line.setAttribute('stroke', 'url(#cg-g)');
-      line.setAttribute('stroke-width', '3.5');
-      line.setAttribute('stroke-linecap', 'round');
-      line.style.setProperty('opacity', '0.75');
-      svg.append(line);
-    }
-    for (const [cx, cy, r, lit] of [[16, 18, 6, 0], [50, 16, 6, 0], [22, 48, 6, 0], [48, 46, 6, 0], [34, 32, 8.5, 1]]) {
-      const circle = document.createElementNS(svgNs, 'circle');
-      circle.setAttribute('cx', String(cx));
-      circle.setAttribute('cy', String(cy));
-      circle.setAttribute('r', String(r));
-      // var() is not allowed in a presentation attribute; through the CSSOM it is.
-      circle.style.setProperty('fill', lit ? 'url(#cg-g)' : 'var(--vscode-editor-background)');
-      circle.setAttribute('stroke', 'url(#cg-g)');
-      circle.setAttribute('stroke-width', '3.5');
-      svg.append(circle);
-    }
-    return svg;
+  /** @param {string} tag @param {Record<string, string | number>} attrs @param {Element[]} [children] */
+  function svgEl(tag, attrs, children = []) {
+    const el = document.createElementNS(svgNs, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+    el.append(...children);
+    return el;
   }
 
+  let logoCount = 0;
+  function logo() {
+    // The CodeGraph logo (assets/logo.svg, also the extension's icon): a ring of five linked nodes open on the right,
+    // around the lit node under change. It keeps its own colours and tile, so it reads the same in every theme.
+    const ring = [[84, 29.4], [44, 29.4], [24, 64], [44, 98.6], [84, 98.6]];
+    const id = `cg-logo-${++logoCount}`;
+    return svgEl('svg', { viewBox: '0 0 128 128', class: 'logo', 'aria-hidden': 'true' }, [
+      svgEl('defs', {}, [
+        svgEl('linearGradient', { id: `${id}-bg`, x1: 0, y1: 0, x2: 1, y2: 1 }, [
+          svgEl('stop', { offset: 0, 'stop-color': '#14263B' }),
+          svgEl('stop', { offset: 1, 'stop-color': '#0D1B2A' }),
+        ]),
+        svgEl('filter', { id: `${id}-glow`, x: '-50%', y: '-50%', width: '200%', height: '200%' }, [
+          svgEl('feGaussianBlur', { stdDeviation: 2.5, result: 'b' }),
+          svgEl('feMerge', {}, [svgEl('feMergeNode', { in: 'b' }), svgEl('feMergeNode', { in: 'SourceGraphic' })]),
+        ]),
+      ]),
+      svgEl('rect', { width: 128, height: 128, rx: 28, fill: `url(#${id}-bg)` }),
+      svgEl('g', { stroke: '#00C9B1', 'stroke-width': 3.5, 'stroke-linecap': 'round', fill: 'none' }, [
+        svgEl('path', { d: 'M84 29.4 L44 29.4 L24 64 L44 98.6 L84 98.6', opacity: 0.9 }),
+        svgEl('g', { opacity: 0.55 }, ring.map(([x, y]) => svgEl('line', { x1: 64, y1: 64, x2: x, y2: y }))),
+      ]),
+      svgEl('g', { fill: '#00C9B1', stroke: '#0D1B2A', 'stroke-width': 2.5 },
+        ring.map(([cx, cy]) => svgEl('circle', { cx, cy, r: 7 }))),
+      svgEl('circle', { cx: 64, cy: 64, r: 11, fill: '#FFD166', stroke: '#0D1B2A', 'stroke-width': 2.5, filter: `url(#${id}-glow)` }),
+      svgEl('g', { stroke: '#FFD166', 'stroke-width': 3.5, 'stroke-linecap': 'round', fill: 'none', opacity: 0.9 }, [
+        svgEl('line', { x1: 96, y1: 64, x2: 108, y2: 64 }),
+        svgEl('polyline', { points: '102,58 108,64 102,70' }),
+      ]),
+    ]);
+  }
   /** @param {string} command @param {string} [db] */
   const run = (command, db) => vscode.postMessage({ type: 'command', command, db });
 

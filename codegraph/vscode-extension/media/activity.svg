@@ -1,12 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-  <line x1="6" y1="6.5" x2="12.5" y2="12"/>
-  <line x1="12.5" y1="12" x2="18.5" y2="6"/>
-  <line x1="12.5" y1="12" x2="8" y2="18.5"/>
-  <line x1="12.5" y1="12" x2="18" y2="18"/>
-  <line x1="6" y1="6.5" x2="8" y2="18.5"/>
-  <circle cx="6" cy="6.5" r="2.2" fill="none"/>
-  <circle cx="18.5" cy="6" r="2.2" fill="none"/>
-  <circle cx="8" cy="18.5" r="2.2" fill="none"/>
-  <circle cx="18" cy="18" r="2.2" fill="none"/>
-  <circle cx="12.5" cy="12" r="3" fill="currentColor" stroke="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="14.5 15 98 98" width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <!-- The CodeGraph logo (assets/logo.svg) in one colour, cropped to its marks and drawn thicker for 24 px -->
+  <path d="M84 29.4 L44 29.4 L24 64 L44 98.6 L84 98.6" stroke-width="6"/>
+  <g stroke-width="4.5" opacity="0.6">
+    <line x1="64" y1="64" x2="84" y2="29.4"/>
+    <line x1="64" y1="64" x2="44" y2="29.4"/>
+    <line x1="64" y1="64" x2="24" y2="64"/>
+    <line x1="64" y1="64" x2="44" y2="98.6"/>
+    <line x1="64" y1="64" x2="84" y2="98.6"/>
+  </g>
+  <g fill="currentColor" stroke="none">
+    <circle cx="84" cy="29.4" r="8.5"/>
+    <circle cx="44" cy="29.4" r="8.5"/>
+    <circle cx="24" cy="64" r="8.5"/>
+    <circle cx="44" cy="98.6" r="8.5"/>
+    <circle cx="84" cy="98.6" r="8.5"/>
+    <circle cx="64" cy="64" r="12.5"/>
+  </g>
+  <g stroke-width="6">
+    <line x1="96" y1="64" x2="108" y2="64"/>
+    <polyline points="102,58 108,64 102,70"/>
+  </g>
 </svg>
