@@ -5,8 +5,8 @@ using CodeGraph.Mcp;
 namespace CodeGraph.Tests;
 
 /// <summary>
-/// Rows print an 8-character handle for a node id while the graph is in memory, and every id-taking tool accepts
-/// the handle or the id. Two ids whose handles collide keep their long form.
+/// Rows print an 8-character handle for a node id, from the graph in memory or from the database, and every
+/// id-taking tool accepts the handle or the id. Two ids whose handles collide keep their long form.
 /// </summary>
 public sealed class NodeHandlesTests
 {
@@ -54,7 +54,7 @@ public sealed class NodeHandlesTests
     }
 
     [Fact]
-    public void Rows_print_the_handle_with_a_snapshot_and_the_id_without_one()
+    public void Rows_print_the_handle_with_a_snapshot_and_without_one()
     {
         using var db = new TempDb();
         db.Store.Seeded();
@@ -62,12 +62,13 @@ public sealed class NodeHandlesTests
         using var reader = GraphStore.OpenReader(db.DbPath, snapshot, TimeSpan.FromSeconds(5));
         var handle = NodeHandles.For(snapshot).Handle(Graph.Save);
 
+        // Without a snapshot the call reads through the database, and the handles come from its id list.
         var withSnapshot = Tools(reader, db.DbPath).FindSymbol("Save", nameMatch: "Exact");
         var withoutSnapshot = Tools(db.Store, db.DbPath).FindSymbol("Save", nameMatch: "Exact");
 
         Assert.NotEqual(Graph.Save, handle);
         Assert.EndsWith($"  [{handle}]\n", withSnapshot.ReplaceLineEndings("\n"));
-        Assert.EndsWith($"  [{Graph.Save}]\n", withoutSnapshot.ReplaceLineEndings("\n"));
+        Assert.Equal(withSnapshot, withoutSnapshot);
         Assert.Same(NodeHandles.For(snapshot), NodeHandles.For(snapshot));
         Assert.Equal(Graph.Save, NodeHandles.For(snapshot).Resolve(handle));
     }
@@ -87,7 +88,82 @@ public sealed class NodeHandlesTests
     }
 
     [Fact]
-    public void A_handle_resolves_through_the_last_snapshot_while_a_reload_runs()
+    public void The_cache_has_handles_before_the_first_load_and_while_a_reload_runs()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
+        var dbPath = Path.Combine(directory, "graph.db");
+        try
+        {
+            using (var writer = new GraphStore(dbPath))
+            {
+                writer.Replace(full: true, [], Graph.Nodes, Graph.Edges, [], [], new Dictionary<string, string>());
+            }
+
+            // No timer and no call to Current: no snapshot loads, as at the start of a server process.
+            using var cache = new GraphSnapshotCache(dbPath);
+            var handle = NodeHandles.Encode(NodeHandles.Hash(Graph.Save));
+            Assert.Null(cache.Handles());
+
+            NodeHandles? fromDatabase;
+            using (var reader = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5)))
+            {
+                // A name does not ask for the store. A name with the shape of a handle does, and comes back as it was.
+                var asked = 0;
+                Assert.Equal("Service.Save", NodeIds.Resolve(" Service.Save ", cache, () => { asked++; return reader; }));
+                Assert.Equal(0, asked);
+                Assert.True(NodeHandles.LooksLikeHandle("validate"));
+                Assert.Equal("validate", NodeIds.Resolve("validate", cache, () => { asked++; return reader; }));
+                Assert.Equal(1, asked);
+
+                // The handles were made once from the id list, and now answer with no reader.
+                fromDatabase = cache.Handles();
+                Assert.NotNull(fromDatabase);
+                Assert.Same(fromDatabase, cache.Handles(reader));
+                Assert.Equal(handle, fromDatabase.Handle(Graph.Save));
+                Assert.Equal(Graph.Save, NodeIds.Resolve($"[{handle}]", cache, () => { asked++; return reader; }));
+                Assert.Equal(1, asked);
+                Assert.StartsWith("not in memory yet", cache.Describe());
+            }
+
+            // After a load, the handles are those of the snapshot.
+            var loaded = cache.WaitForCurrent(TimeSpan.FromSeconds(30));
+            Assert.NotNull(loaded);
+            Assert.Same(NodeHandles.For(loaded), cache.Handles());
+            Assert.NotSame(fromDatabase, cache.Handles());
+
+            // The file moves away: its stamp changes and no load can finish, as in a reload that takes a long time.
+            // The last snapshot that loaded still resolves the handle, and nothing opens the database.
+            File.Move(dbPath, dbPath + ".away");
+            Assert.Null(cache.Current);
+            Assert.Same(NodeHandles.For(loaded), cache.Handles());
+            Assert.Equal(Graph.Save, NodeIds.Resolve($"[{handle}]", cache, () => throw new InvalidOperationException("no store is necessary")));
+            Assert.Equal("aaaaaaaa", NodeIds.Resolve("aaaaaaaa", cache, () => throw new InvalidOperationException("no store is necessary")));
+        }
+        finally
+        {
+            TempDb.TryDelete(directory);
+        }
+    }
+
+    [Fact]
+    public void Without_a_store_and_before_a_load_a_handle_comes_back_as_it_was()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
+        try
+        {
+            using var cache = new GraphSnapshotCache(Path.Combine(directory, "graph.db"));
+
+            Assert.Null(cache.Handles());
+            Assert.Equal("validate", NodeIds.Resolve("[validate]", cache, () => null));
+        }
+        finally
+        {
+            TempDb.TryDelete(directory);
+        }
+    }
+
+    [Fact]
+    public void A_database_that_cannot_list_the_ids_gives_no_handles_and_the_status_line_says_why()
     {
         var directory = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
         var dbPath = Path.Combine(directory, "graph.db");
@@ -99,20 +175,37 @@ public sealed class NodeHandlesTests
             }
 
             using var cache = new GraphSnapshotCache(dbPath);
-            Assert.Null(cache.Last);
-            var loaded = cache.WaitForCurrent(TimeSpan.FromSeconds(30));
-            Assert.NotNull(loaded);
-            var handle = NodeHandles.For(loaded).Handle(Graph.Save);
-            Assert.Equal(Graph.Save, NodeIds.Normalize(handle, cache, TimeSpan.Zero));
+            var closed = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5));
+            closed.Dispose();
 
-            // The file moves away: its stamp changes and no load can finish, as in a reload that takes a long time.
-            File.Move(dbPath, dbPath + ".away");
-            Assert.Null(cache.Current);
-            Assert.Same(loaded, cache.Last);
+            // A disposed store is not a database error: that defect in the caller is not hidden.
+            Assert.ThrowsAny<Exception>(() => cache.Handles(closed));
+            Assert.DoesNotContain("rows print full ids", cache.Describe());
 
-            Assert.Equal(Graph.Save, NodeIds.Normalize($"[{handle}]", cache, TimeSpan.Zero));
-            Assert.Equal("aaaaaaaa", NodeIds.Normalize("aaaaaaaa", cache, TimeSpan.Zero));
-            Assert.Equal("Service.Save", NodeIds.Normalize(" Service.Save ", cache, TimeSpan.Zero));
+            // A database with no nodes table is one.
+            var other = Path.Combine(directory, "other.db");
+            using (var connection = new DuckDB.NET.Data.DuckDBConnection($"Data Source={other}"))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = "CREATE TABLE unrelated (x INTEGER);";
+                command.ExecuteNonQuery();
+            }
+
+            using (var broken = GraphStore.Open(other, readOnly: true, TimeSpan.FromSeconds(5)))
+            {
+                Assert.Null(cache.Handles(broken));
+            }
+
+            Assert.Contains("rows print full ids, because the id list could not be read (", cache.Describe());
+
+            // The next call with a good store makes the handles, and the status line is clean again.
+            using (var reader = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5)))
+            {
+                Assert.NotNull(cache.Handles(reader));
+            }
+
+            Assert.DoesNotContain("rows print full ids", cache.Describe());
         }
         finally
         {

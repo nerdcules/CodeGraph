@@ -19,6 +19,9 @@ public sealed class GraphSnapshotCache : IDisposable
     private readonly Timer? _timer;
     private readonly Lock _lock = new();
     private (FileStamp Stamp, GraphSnapshot Snapshot)? _entry;
+    private readonly Lock _handlesLock = new();
+    private NodeHandles? _fromDatabase;
+    private string? _handlesError;
     private Task? _loading;
     private DateTime _retryAfter;
     private string? _lastError;
@@ -60,19 +63,84 @@ public sealed class GraphSnapshotCache : IDisposable
     }
 
     /// <summary>
-    /// The last snapshot that loaded, also after the file changed; null before the first load. Not for graph reads:
-    /// it can be older than the file. A handle is the hash of its id, so this snapshot still resolves the handles
-    /// that earlier answers printed while a reload runs.
+    /// The handles that rows print and arguments resolve with, on every read path. They are those of the last
+    /// snapshot that loaded, also while a reload runs. Before the first load, they are made once from the id list
+    /// that <paramref name="reader"/> gives, and kept until a snapshot loads.
+    /// <para>
+    /// A handle is the hash of its id, so handles that are older than the file are still correct. An id that they do
+    /// not know prints in full until the next load. Null if nothing has loaded and there is no reader, if the reader
+    /// cannot list the ids (<see cref="Describe"/> then says why), and with CODEGRAPH_SNAPSHOT=off (the server then keeps no copy of the graph, and the
+    /// handles are a table of every id). This method never opens the database, never waits and never starts a load.
+    /// </para>
     /// </summary>
-    public GraphSnapshot? Last
+    /// <param name="reader">The open store of the tool call; null to answer only from what is already in memory.</param>
+    public NodeHandles? Handles(GraphStore? reader = null)
     {
-        get
+        if (!Enabled)
         {
-            lock (_lock)
+            return null;
+        }
+
+        if (Known() is { } known)
+        {
+            return known;
+        }
+
+        if (reader is null)
+        {
+            return null;
+        }
+
+        // One call makes them; calls that arrive in parallel at the start of a session wait here and share the result.
+        lock (_handlesLock)
+        {
+            if (Known() is { } made)
             {
-                return _entry?.Snapshot;
+                return made;
+            }
+
+            try
+            {
+                var handles = new NodeHandles(reader.AllNodeIds());
+                lock (_lock)
+                {
+                    if (_entry is null)
+                    {
+                        _fromDatabase = handles;
+                    }
+
+                    _handlesError = null;
+                }
+
+                return handles;
+            }
+            catch (DuckDB.NET.Data.DuckDBException e)
+            {
+                // Rows print full ids and the answer is still correct. A tool that reads the graph reports the
+                // database error itself; a live tool does not, so index_status says why there are no handles.
+                lock (_lock)
+                {
+                    _handlesError = e.Message.Split('\n')[0];
+                }
+
+                return null;
             }
         }
+    }
+
+    private NodeHandles? Known()
+    {
+        GraphSnapshot? loaded;
+        lock (_lock)
+        {
+            loaded = _entry?.Snapshot;
+            if (loaded is null)
+            {
+                return _fromDatabase;
+            }
+        }
+
+        return NodeHandles.For(loaded);
     }
 
     /// <summary>Starts a load if the file changed since the last one. Cheap: two <c>stat</c> calls when nothing did.</summary>
@@ -128,9 +196,10 @@ public sealed class GraphSnapshotCache : IDisposable
                 return "loading into memory; reads go to the database until it is ready";
             }
 
-            return _lastError is null
+            var handles = _handlesError is null ? "" : $"; rows print full ids, because the id list could not be read ({_handlesError})";
+            return (_lastError is null
                 ? "not in memory yet; reads go to the database"
-                : $"not in memory ({_lastError}); reads go to the database";
+                : $"not in memory ({_lastError}); reads go to the database") + handles;
         }
     }
 
@@ -171,6 +240,8 @@ public sealed class GraphSnapshotCache : IDisposable
             lock (_lock)
             {
                 _entry = (stamp, snapshot);
+                _fromDatabase = null;
+                _handlesError = null;
                 _lastError = null;
             }
         }

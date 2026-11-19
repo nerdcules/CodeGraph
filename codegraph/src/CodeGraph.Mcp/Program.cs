@@ -96,9 +96,6 @@ var anchor = new GraphAnchor(dbPath);
 // re-index; until it lands, calls read through DuckDB as before. CODEGRAPH_SNAPSHOT=off turns it off.
 var snapshots = new GraphSnapshotCache(dbPath, anchor, poll: GraphSnapshotCache.Enabled ? TimeSpan.FromSeconds(1) : null);
 
-// The first tool call waits at most 2 s for that load, so its answer prints handles as the calls after it do.
-var firstCall = new FirstCallWait(snapshots, TimeSpan.FromSeconds(2));
-
 // CODEGRAPH_DAEMON=auto: the first tool call starts a daemon when none runs; once per server process.
 var autoStart = LiveLauncher.AutoStart ? 1 : 0;
 
@@ -167,36 +164,28 @@ void AddGraph(IServiceCollection services)
                 }
             }
 
-            // After the flush, so the snapshot it waits for is the one of the graph that this call reads.
-            if (GraphSnapshotCache.Enabled)
-            {
-                firstCall.Wait();
-            }
-
-            // Answers print ids in [brackets]; a model that copies the brackets along still gets its node.
-            if (context.Params?.Arguments is { } arguments)
-            {
-                NodeIds.NameTheId(context.Params.Name, arguments);
-                foreach (var key in arguments.Keys.Where(NodeIds.Arguments.Contains).ToList())
-                {
-                    if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String && arguments[key].GetString() is { } raw)
-                    {
-                        // A handle (8 characters, as rows print them while the graph is in memory) becomes its id. While
-                        // a reload after a re-index runs, the last snapshot that loaded resolves it.
-                        var id = GraphSnapshotCache.Enabled
-                            ? NodeIds.Normalize(raw, snapshots, TimeSpan.FromSeconds(2))
-                            : NodeIds.Normalize(raw, null);
-                        if (id != raw)
-                        {
-                            arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
-                        }
-                    }
-                }
-            }
-
             CallToolResult result;
             try
             {
+                // Answers print ids in [brackets]; a model that copies the brackets along still gets its node.
+                if (context.Params?.Arguments is { } arguments)
+                {
+                    NodeIds.NameTheId(context.Params.Name, arguments);
+                    foreach (var key in arguments.Keys.Where(NodeIds.Arguments.Contains).ToList())
+                    {
+                        if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String && arguments[key].GetString() is { } raw)
+                        {
+                            // A handle (8 characters, as rows print them) becomes its id. Before the first snapshot
+                            // loads, the handles come from the store of this call, the one that the tool then reads.
+                            var id = NodeIds.Resolve(raw, snapshots, () => context.Services?.GetService<GraphStore>());
+                            if (id != raw)
+                            {
+                                arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
+                            }
+                        }
+                    }
+                }
+
                 result = await next(context, cancellationToken);
             }
             catch (Exception e) when (ToolErrors.Explain(context.Params?.Name ?? "?", e, context.Params?.Arguments, dbPath) is { } explained)

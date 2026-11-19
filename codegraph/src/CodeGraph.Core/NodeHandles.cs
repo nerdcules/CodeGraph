@@ -10,7 +10,7 @@ namespace CodeGraph.Core;
 /// parameter type: the id of <c>GraphStore.Replace</c> is over 400 characters that say nothing the row did not.
 /// The handle is 8 base-32 characters (40 bits) of the SHA-256 of the id, so it is the same in every answer and
 /// every session for as long as the id exists. Two ids whose handles collide keep their long form. Made once per
-/// loaded snapshot; without a snapshot, rows print the id.
+/// loaded snapshot, and before the first load once from the id list of the database (<see cref="GraphSnapshotCache.Handles"/>).
 /// </summary>
 public sealed class NodeHandles
 {
