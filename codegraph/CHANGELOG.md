@@ -20,7 +20,9 @@ The executables report their version with `--version`; the MCP server shows it t
 - Rows print an 8-character handle in place of the node id while the graph is in memory: 40 bits of the SHA-256 of
   the id in base 32, made when the snapshot loads, the same in every answer and session. Every tool that takes an
   id accepts the handle or the id; two ids whose handles collide print in full. A C# id repeated the full name with
-  every parameter type: `GraphStore.Replace`'s id is over 400 characters, on every row that names it.
+  every parameter type: `GraphStore.Replace`'s id is over 400 characters, on every row that names it. While a
+  reload after a re-index runs, the snapshot that loaded last still resolves a handle. The first tool call of a
+  server process waits up to 2 s for the graph to load, so its answer prints handles as the answers after it do.
 - `impact_of`, `covered_by`, `callers_of`, `tests_for` and `snippet` take a name (`Save`, or `Service.Save`) where
   they take an id: when exactly one symbol has that exact name, the tool answers for it; otherwise it lists the
   candidates with their ids. The server instructions are shorter and say so, say that `impact_of` already lists the
