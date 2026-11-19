@@ -5,6 +5,12 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+- `codegraph-index compare` passes `ToolSearch` in `--tools` and allows it in both conditions, so Claude Code
+  defers the codegraph tool schemas and loads one when a session asks for the tool, as it does in an interactive
+  session. Before, the "with" sessions got every schema in their first model call.
+
 ## 1.4.0
 
 `codegraph-index compare` measures a question with the graph and without it, usage figures are sizes only, and

@@ -86,7 +86,14 @@ public sealed class CompareCommandTests
     {
         string[] writers = ["Bash(find", "Bash(sed", "Bash(awk", "Bash(sort", "Bash(uniq", "Bash(rg", "Bash(git log", "Bash(git show", "Bash(git diff", "Bash(git grep"];
         Assert.DoesNotContain(CompareCommand.ReadOnlyRules, rule => rule is "Edit" or "Write" or "NotebookEdit" or "Bash" || writers.Any(w => rule.StartsWith(w, StringComparison.Ordinal)));
-        Assert.Equal("Read,Grep,Glob,Bash", CompareCommand.BuiltInTools);
+        Assert.Equal("Read,Grep,Glob,Bash,ToolSearch", CompareCommand.BuiltInTools);
+    }
+
+    [Fact]
+    public void ToolSearch_is_a_tool_and_allowed_so_the_MCP_schemas_load_on_demand()
+    {
+        Assert.Contains("ToolSearch", CompareCommand.BuiltInTools.Split(','));
+        Assert.Contains("ToolSearch", CompareCommand.ReadOnlyRules);
     }
 
     [Fact]

@@ -20,8 +20,13 @@ internal static class CompareCommand
         "usage: codegraph-index compare <prompt> [--prompt-file <file>] [--runs <n>] [--model <name>] [--effort <level>]\n" +
         "                               [--allow <rule>]... [--out <folder>] [--timeout <seconds>] [--claude <path>] [--yes]";
 
-    /// <summary>The built-in tools both conditions get. None of them writes a file.</summary>
-    public const string BuiltInTools = "Read,Grep,Glob,Bash";
+    /// <summary>
+    /// The built-in tools both conditions get. None of them writes a file. <c>ToolSearch</c> is on the list because
+    /// Claude Code defers the MCP tool schemas only when it is: the session then starts with the server's instructions
+    /// and tool names, and loads a schema when it asks for the tool, as an interactive session does. Left out of
+    /// <c>--tools</c>, every MCP tool schema is in the first model call.
+    /// </summary>
+    public const string BuiltInTools = "Read,Grep,Glob,Bash,ToolSearch";
 
     /// <summary>
     /// What both conditions may run without asking (Claude Code's <c>dontAsk</c> mode denies everything else). Only
@@ -32,7 +37,7 @@ internal static class CompareCommand
     /// </summary>
     public static readonly string[] ReadOnlyRules =
     [
-        "Read", "Grep", "Glob",
+        "Read", "Grep", "Glob", "ToolSearch",
         "Bash(grep *)", "Bash(ls)", "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(pwd)",
         "Bash(git status)", "Bash(git status *)", "Bash(git ls-files)", "Bash(git ls-files *)",
     ];
@@ -461,7 +466,7 @@ internal static class CompareCommand
                       $"effort {setup.Effort ?? "not set (Claude Code's default)"}");
         sb.AppendLine("- Each run is a new `claude -p` session with no saved session: no run sees another's context. " +
                       "Odd rounds ran without the server first, even rounds with it first.");
-        sb.AppendLine("- Both conditions: the same settings, CLAUDE.md and memory; tools Read, Grep, Glob and read-only shell commands. " +
+        sb.AppendLine("- Both conditions: the same settings, CLAUDE.md and memory; tools Read, Grep, Glob, ToolSearch and read-only shell commands. " +
                       "With: the codegraph server from .mcp.json as well, telemetry off.");
         sb.AppendLine();
         sb.AppendLine("Every figure below is from the session's own log except wall time, which compare measured. " +
