@@ -162,6 +162,57 @@ public sealed class NodeHandlesTests
         }
     }
 
+    [Fact]
+    public void A_database_that_cannot_list_the_ids_gives_no_handles_and_the_status_line_says_why()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
+        var dbPath = Path.Combine(directory, "graph.db");
+        try
+        {
+            using (var writer = new GraphStore(dbPath))
+            {
+                writer.Replace(full: true, [], Graph.Nodes, Graph.Edges, [], [], new Dictionary<string, string>());
+            }
+
+            using var cache = new GraphSnapshotCache(dbPath);
+            var closed = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5));
+            closed.Dispose();
+
+            // A disposed store is not a database error: that defect in the caller is not hidden.
+            Assert.ThrowsAny<Exception>(() => cache.Handles(closed));
+            Assert.DoesNotContain("rows print full ids", cache.Describe());
+
+            // A database with no nodes table is one.
+            var other = Path.Combine(directory, "other.db");
+            using (var connection = new DuckDB.NET.Data.DuckDBConnection($"Data Source={other}"))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = "CREATE TABLE unrelated (x INTEGER);";
+                command.ExecuteNonQuery();
+            }
+
+            using (var broken = GraphStore.Open(other, readOnly: true, TimeSpan.FromSeconds(5)))
+            {
+                Assert.Null(cache.Handles(broken));
+            }
+
+            Assert.Contains("rows print full ids, because the id list could not be read (", cache.Describe());
+
+            // The next call with a good store makes the handles, and the status line is clean again.
+            using (var reader = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5)))
+            {
+                Assert.NotNull(cache.Handles(reader));
+            }
+
+            Assert.DoesNotContain("rows print full ids", cache.Describe());
+        }
+        finally
+        {
+            TempDb.TryDelete(directory);
+        }
+    }
+
     private static CodeGraphTools Tools(GraphStore store, string dbPath) =>
         new(store, new IndexFreshness(dbPath, TimeSpan.FromSeconds(3)), new Telemetry(null),
             new LiveClient(dbPath), new SemanticSearch(null), new GraphSnapshotCache(dbPath), new AnswerPaths(null));

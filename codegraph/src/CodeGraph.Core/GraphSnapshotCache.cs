@@ -21,6 +21,7 @@ public sealed class GraphSnapshotCache : IDisposable
     private (FileStamp Stamp, GraphSnapshot Snapshot)? _entry;
     private readonly Lock _handlesLock = new();
     private NodeHandles? _fromDatabase;
+    private string? _handlesError;
     private Task? _loading;
     private DateTime _retryAfter;
     private string? _lastError;
@@ -68,7 +69,7 @@ public sealed class GraphSnapshotCache : IDisposable
     /// <para>
     /// A handle is the hash of its id, so handles that are older than the file are still correct. An id that they do
     /// not know prints in full until the next load. Null if nothing has loaded and there is no reader, if the reader
-    /// cannot list the ids, and with CODEGRAPH_SNAPSHOT=off (the server then keeps no copy of the graph, and the
+    /// cannot list the ids (<see cref="Describe"/> then says why), and with CODEGRAPH_SNAPSHOT=off (the server then keeps no copy of the graph, and the
     /// handles are a table of every id). This method never opens the database, never waits and never starts a load.
     /// </para>
     /// </summary>
@@ -107,13 +108,22 @@ public sealed class GraphSnapshotCache : IDisposable
                     {
                         _fromDatabase = handles;
                     }
+
+                    _handlesError = null;
                 }
 
                 return handles;
             }
-            catch (DuckDB.NET.Data.DuckDBException)
+            catch (DuckDB.NET.Data.DuckDBException e)
             {
-                return null; // the call itself reports what is wrong with the database; rows print full ids
+                // Rows print full ids and the answer is still correct. A tool that reads the graph reports the
+                // database error itself; a live tool does not, so index_status says why there are no handles.
+                lock (_lock)
+                {
+                    _handlesError = e.Message.Split('\n')[0];
+                }
+
+                return null;
             }
         }
     }
@@ -186,9 +196,10 @@ public sealed class GraphSnapshotCache : IDisposable
                 return "loading into memory; reads go to the database until it is ready";
             }
 
-            return _lastError is null
+            var handles = _handlesError is null ? "" : $"; rows print full ids, because the id list could not be read ({_handlesError})";
+            return (_lastError is null
                 ? "not in memory yet; reads go to the database"
-                : $"not in memory ({_lastError}); reads go to the database";
+                : $"not in memory ({_lastError}); reads go to the database") + handles;
         }
     }
 
@@ -230,6 +241,7 @@ public sealed class GraphSnapshotCache : IDisposable
             {
                 _entry = (stamp, snapshot);
                 _fromDatabase = null;
+                _handlesError = null;
                 _lastError = null;
             }
         }
