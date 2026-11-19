@@ -7,6 +7,15 @@ The executables report their version with `--version`; the MCP server shows it t
 
 ## Unreleased
 
+- `codegraph-index compare "<prompt>"` asks Claude Code the same question with the codegraph server and without
+  it, three rounds by default, and reports what each session's own log says: wall time, model calls, input tokens
+  with cache reads, output tokens, cost, the context at the first and last model call, and tool calls, with the
+  medians of each condition. Each run is a new `claude -p` session with no saved session, so no run sees another's
+  context; the rounds alternate which condition goes first. Both conditions get the same settings, CLAUDE.md,
+  memory and read-only tools (Claude Code's `dontAsk` mode), so no session can edit a file; a run whose server did
+  not connect, or during which the working tree changed, is reported and left out of the medians. The answers are
+  not scored. Tested with a stand-in `claude` in the unit tests, and twice for real on this repository (Claude Code
+  2.1.328, Haiku, one round each). See [Measure it with and without](docs/usage.md#measure-it-with-and-without).
 - The usage figures state sizes only. `codegraph-index usage`, the line the indexer prints after a run, the
   `usage_stats` tool and the extension's Usage item no longer say how many tokens "stayed out of the context" or
   were "saved", and the `saved tok` column is gone; the status JSON drops `tokensSaved`. That figure was the size

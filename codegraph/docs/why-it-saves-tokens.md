@@ -115,6 +115,9 @@ The savings come from a few design choices:
 
 `usage_stats` reports, for the current session and all time, the size of each tool's answers and of the files
 they name. Those are sizes, not a saving; the session pair above is the measured comparison.
+`codegraph-index compare "<question>"` makes that comparison on your own repository: separate new Claude Code
+sessions with and without the server, alternating which goes first, with every figure read from the session logs
+([Measure it with and without](usage.md#measure-it-with-and-without)).
 
 
 ## Keeping the graph current

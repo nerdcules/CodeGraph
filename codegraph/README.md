@@ -112,7 +112,9 @@ last 7 days: 114 tool calls answered (1 failed); answers 175,547 tokens, the fil
 ```
 
 These are sizes, not a saving: a session without the graph reads parts of files, not every file an answer names.
-[Why it saves tokens](docs/why-it-saves-tokens.md#in-a-real-session) has a measured session with and without.
+To measure a saving on your own code, `codegraph-index compare "<question>"` asks Claude Code the question in
+separate new sessions with and without the server and reports what each session's log says it cost
+([Measure it with and without](docs/usage.md#measure-it-with-and-without)).
 The indexer prints the same line after each run, and the `usage_stats` tool opens with it.
 
 ## What you can ask

@@ -20,6 +20,7 @@
 - [Read an answer](#read-an-answer)
 - [Import and export a graph](#import-and-export-a-graph)
 - [See what the graph did for you](#see-what-the-graph-did-for-you)
+- [Measure it with and without](#measure-it-with-and-without)
 - [Command reference](#command-reference)
 - [Environment variables](#environment-variables)
 
@@ -285,6 +286,86 @@ It does this only when the server has recorded tool calls.
 The `usage_stats` tool shows the same figures to the client.
 Set `CODEGRAPH_TELEMETRY=off` in `.mcp.json` to keep the calls in memory only.
 
+## Measure it with and without
+
+The usage figures above are sizes. To measure what the graph changes in a real session, ask Claude Code the same
+question with the codegraph server and without it:
+
+```bash
+codegraph-index compare "What breaks if I change GraphStore.Replace, and which tests cover it?"
+```
+
+Run it in a repository that `codegraph-index init` has set up: it needs the graph and the `codegraph` entry in
+`.mcp.json`. It asks before it starts, because the sessions use your Claude account's usage; `--yes` skips the
+question, and without a terminal `--yes` is required.
+
+**Separate sessions.** Each run is a new `claude -p` session with no saved session (`--no-session-persistence`), so
+no run sees another's question, answer or files. Asking both ways in one session would not measure anything: the
+second ask starts with the first one's answer and files already in its context. If you compare by hand, use two new
+sessions too.
+
+**The same start.** Both conditions get the same model and effort, the same settings, CLAUDE.md and memory, and the
+same tools: Read, Grep, Glob, and the shell commands `grep`, `ls`, `cat`, `head`, `tail`, `wc`, `pwd`,
+`git status` and `git ls-files`. None of these has an option that writes a file or runs another program, which is
+why `find`, `sed`, `awk`, `sort`, `rg` and `git log`/`show`/`diff` are not on the list; `--allow` adds a rule to
+both conditions. Claude Code's `dontAsk` mode refuses everything else, including output redirection and any part
+of a compound command that is not on the list (checked with `touch`, `> file` and `&& rm` on Claude Code 2.1.328).
+The only difference is the codegraph server, which the "with" runs get from `.mcp.json` with
+`CODEGRAPH_TELEMETRY=off`, so the runs stay out of the usage log. The report
+shows what each session started with ("first context": system prompt, tool definitions, CLAUDE.md, memory and the
+prompt), so the cost of the codegraph tool definitions is counted, not hidden.
+
+**Rounds.** Three rounds by default (`--runs <n>`, up to 20). Odd rounds run without the server first, even rounds
+with it first, so neither condition is always the second run, which can read a prompt cache the first one wrote.
+The report lists cache reads apart from the total.
+
+**What counts.** A run is left out of the medians, with the reason, when it exits with an error or times out
+(`--timeout`, default 900 seconds), when its log has no result, when a "with" run's codegraph server did not
+connect, when a "without" run had an MCP server, or when the working tree changed during the run.
+
+**The figures.** All come from each session's own stream-json log, except wall time, which compare measures:
+model calls, input tokens (every call's whole input, cache reads included), cache reads, output tokens, the cost
+Claude Code reports, the input of the first and the last model call and the growth between them, and the tool
+calls. compare prints a table of the runs and the medians of each condition, and writes `report.md` (the same
+tables and every answer), `results.json` and the raw logs to `.codegraph/compare/<time>/`.
+
+**What it does not do.** It does not score the answers: a faster or cheaper run can be a worse answer, so read them
+in `report.md`. One prompt on one repository is a direction, not a general result.
+
+Two runs on this repository on 19 November 2026, each `--runs 1 --model haiku` (Claude Code 2.1.328, commit
+`a4bbc6d`, a graph built at `2a361ca` and stale by 12 files), for "What calls UsageSummary.Line, and which tests
+cover it?". The second used the allowlist above; the first a longer one (`rg`, `sort`, `uniq`, `cut` and
+`git log`/`show`/`diff`/`grep`/`blame` as well), which neither of its sessions used:
+
+| | first run, with | first run, without | second run, with | second run, without |
+|---|---|---|---|---|
+| wall s | 14.0 | 14.3 | 15.3 | 12.8 |
+| model calls | 5 | 6 | 6 | 4 |
+| input tokens | 115,360 | 107,598 | 139,086 | 65,048 |
+| output tokens | 2,519 | 2,733 | 2,708 | 2,456 |
+| cost USD | 0.0046 | 0.0059 | 0.0050 | 0.0048 |
+| first context | 18,466 | 9,869 | 18,532 | 9,935 |
+| context growth | 8,187 | 12,885 | 8,826 | 12,568 |
+| tool calls | 6 | 8 | 7 | 5 |
+
+In both, the "with" session started 8,597 tokens larger; the codegraph server is the only difference in the
+configuration, so that is what its tool definitions and instructions added to the first call. The context grew
+less with the graph both times, and the input tokens were higher with it both times. Model calls, wall time,
+output tokens and cost went one way in the first run and the other way in the second, which is why one run of
+each says little and compare runs three rounds by default.
+
+| Option | Function |
+|---|---|
+| `--runs <n>` | Rounds; each round runs once with and once without. Default 3. |
+| `--model <name>` | Passed to `claude --model`. Default: Claude Code's own. |
+| `--effort <level>` | Passed to `claude --effort`. Default: Claude Code's own. |
+| `--prompt-file <file>` | Read the prompt from a file. |
+| `--allow <rule>` | Allow one more tool rule in both conditions, such as `"Bash(find *)"`. Repeatable. |
+| `--out <folder>` | Write the report and logs there. |
+| `--timeout <seconds>` | Stop a run after this long. Default 900. |
+| `--claude <path>` | The Claude Code executable. Default: `claude` on PATH. |
+| `--yes` | Start without asking. |
+
 ## Command reference
 
 ```
@@ -295,6 +376,8 @@ codegraph-index export [--db <path>] [--language <name>] [--out <file>] [--dead-
 codegraph-index usage [--db <path>] [--days <n>]
 codegraph-index status [--db <path>] [--json]
 codegraph-index stop [--db <path>]
+codegraph-index compare <prompt> [--runs <n>] [--model <name>] [--effort <level>] [--prompt-file <file>]
+                [--allow <rule>] [--out <folder>] [--timeout <seconds>] [--claude <path>] [--yes]
 codegraph-mcp [<graph.db>] [--root <folder>] [--web <port>]
 ```
 

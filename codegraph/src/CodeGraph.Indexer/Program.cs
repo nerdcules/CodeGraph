@@ -31,6 +31,14 @@ if (args is ["usage", .. var usageArgs])
     return UsageCommand.Run(usageArgs, Console.Out, Console.Error);
 }
 
+// `codegraph-index compare "<prompt>"` asks Claude Code the same question with and without the codegraph server, in
+// separate new sessions, and reports what each session's log says it cost.
+if (args is ["compare", .. var compareArgs])
+{
+    return await CompareCommand.RunAsync(compareArgs, Console.Out, Console.Error, IndexerVersion(),
+        Console.IsInputRedirected ? null : Console.ReadLine);
+}
+
 // `codegraph-index status [--db PATH] [--json]` reports the graph, its freshness, its daemon and its usage in one call.
 if (args is ["status", .. var statusArgs])
 {
@@ -142,6 +150,9 @@ if (usage || targetArg is null)
     Console.Error.WriteLine("       codegraph-index usage [--db <path>] [--days <n>]   what the graph did for its users");
     Console.Error.WriteLine("       codegraph-index status [--db <path>] [--json]      the graph, its freshness, daemon and usage");
     Console.Error.WriteLine("       codegraph-index stop [--db <path>]                 stop the daemon serving the graph");
+    Console.Error.WriteLine("       codegraph-index compare <prompt> [--runs <n>] [--model <name>] [--effort <level>] [--yes]");
+    Console.Error.WriteLine("                                     ask Claude Code the same question with and without the");
+    Console.Error.WriteLine("                                     codegraph server, in separate new sessions, and report the cost");
     Console.Error.WriteLine("       default db: <git worktree root>/.codegraph/graph.db (solution dir outside a repo)");
     Console.Error.WriteLine("       re-walks only files whose hash changed, plus files that depend on them;");
     Console.Error.WriteLine("       --full rebuilds everything");
