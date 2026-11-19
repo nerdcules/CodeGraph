@@ -506,9 +506,9 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [McpServerTool(Name = "callers_of", ReadOnly = true, Idempotent = true)]
     [Description("Who calls or reads this member (property and field accesses count). A call to an interface or base member counts as a call to every implementation and override. depth 1 = direct callers; higher depth walks the call graph outward.")]
     public string CallersOf(
-        [Description("Node id from find_symbol")] string id,
+        [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("How many hops to follow, 1-20, default 1")] int depth = 1) =>
-        Traversal(id, store.Callers(id, Math.Clamp(depth, 1, 20)), "callers");
+        Target(id, out var answer) is { } node ? Traversal(node.Id, store.Callers(node.Id, Math.Clamp(depth, 1, 20)), "callers") : answer!;
 
     [McpServerTool(Name = "callees_of", ReadOnly = true, Idempotent = true)]
     [Description("What this member calls. depth 1 = direct callees. Framework and NuGet members it calls are left out unless includeExternal is true.")]
@@ -521,16 +521,15 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [McpServerTool(Name = "impact_of", ReadOnly = true, Idempotent = true)]
     [Description("Everything that could break if this changes: transitive callers, overriders, implementers, subclasses, and for a type every member that references it — and which tests guard it (tests that reach it through calls; a run may execute it in fewer). Call this before editing a shared member or type.")]
     public string ImpactOf(
-        [Description("Node id from find_symbol")] string id,
+        [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("Max hops, 1-20, default 5")] int depth = 5)
     {
-        var node = store.GetNode(id);
-        if (node is null)
+        if (Target(id, out var answer) is not { } node)
         {
-            return NotFound(id);
+            return answer!;
         }
 
-        var hits = store.Impact(id, Math.Clamp(depth, 1, 20));
+        var hits = store.Impact(node.Id, Math.Clamp(depth, 1, 20));
         var tests = hits.Where(h => h.Node.IsTest).ToList();
         var others = hits.Where(h => !h.Node.IsTest).ToList();
 
@@ -605,14 +604,14 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
     [McpServerTool(Name = "tests_for", ReadOnly = true, Idempotent = true)]
     [Description("Test methods that call or read this member directly, including through an interface or base member it implements or overrides.")]
-    public string TestsFor([Description("Node id from find_symbol")] string id)
+    public string TestsFor([Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id)
     {
-        if (store.GetNode(id) is null)
+        if (Target(id, out var answer) is not { } node)
         {
-            return NotFound(id);
+            return answer!;
         }
 
-        var tests = store.DirectTests(id);
+        var tests = store.DirectTests(node.Id);
         return tests.Count == 0
             ? "no test calls this member directly (try impact_of for transitive coverage)"
             : Format(tests.Select(t => (t, t.Signature)));
@@ -621,14 +620,13 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [McpServerTool(Name = "snippet", ReadOnly = true, Idempotent = true)]
     [Description("The source text of one node — just its declaration span, not the whole file. Use after find_symbol/outline once you know exactly what you need.")]
     public async Task<string> Snippet(
-        [Description("Node id from find_symbol")] string id,
+        [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("Extra lines of context above and below, default 0")] int context = 0,
         CancellationToken cancellationToken = default)
     {
-        var node = store.GetNode(id);
-        if (node is null)
+        if (Target(id, out var answer) is not { } node)
         {
-            return NotFound(id);
+            return answer!;
         }
 
         if (node.FilePath is null || !File.Exists(node.FilePath))
@@ -941,13 +939,12 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [McpServerTool(Name = "covered_by", ReadOnly = true, Idempotent = true)]
     [Description("Test methods that transitively reach this member via the call graph, following interface and virtual dispatch (a test that calls IRunner.Run reaches Runner.Run). Shows depth (hop count from test to target); lists the nearest 50 by depth, then the count of the rest at each depth. This is static reach, not measured execution: a test can reach a member through a call it never makes at run time, so report the count as tests that can reach it. Complements tests_for, which only shows direct callers.")]
     public string CoveredBy(
-        [Description("Node id from find_symbol")] string id,
+        [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("Max hops to search, 1-30, default 10")] int depth = 10)
     {
-        var node = store.GetNode(id);
-        if (node is null) return NotFound(id);
+        if (Target(id, out var answer) is not { } node) return answer!;
 
-        var hits = store.TransitiveTests(id, Math.Clamp(depth, 1, 30));
+        var hits = store.TransitiveTests(node.Id, Math.Clamp(depth, 1, 30));
         if (hits.Count == 0)
             return $"{node.FullName}: not reached by any test within {Math.Clamp(depth, 1, 30)} hops — consider adding coverage";
 
@@ -1005,6 +1002,34 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     /// one of a colliding pair, prints in full.
     /// </summary>
     private string Id(string id) => store.Snapshot is { } snapshot ? NodeHandles.For(snapshot).Handle(id) : id;
+
+    /// <summary>
+    /// The node an id argument names: the node with that id (a handle has already become its id in the call-tool
+    /// filter), else the one symbol whose exact name it is (<c>Save</c>, or a qualified tail such as
+    /// <c>Service.Save</c>). Null, with <paramref name="answer"/> set, when nothing has that name or several symbols
+    /// do; the answer then lists them with their ids so the next call can pick one. In the 19 November 2026 sessions
+    /// find_symbol ran 17 times in 12 sessions only to turn a name the model already had into an id.
+    /// </summary>
+    private GraphNode? Target(string idOrName, out string? answer)
+    {
+        answer = null;
+        if (store.GetNode(idOrName) is { } node)
+        {
+            return node;
+        }
+
+        var matches = store.FindSymbol(idOrName, null, 21, null, null, null, null, null, null, null, null, "Exact", 0, null);
+        if (matches.Count == 1)
+        {
+            return matches[0];
+        }
+
+        answer = matches.Count == 0
+            ? $"no node has the id '{idOrName}' and no symbol has that exact name. Use find_symbol with a partial name; ids look like M:Namespace.Type.Method(System.String)"
+            : $"{(matches.Count > 20 ? "more than 20" : matches.Count.ToString(CultureInfo.InvariantCulture))} symbols are named {idOrName}; pass the id of one:\n"
+              + Format(matches.Take(20).Select(n => (n, n.Signature)));
+        return null;
+    }
 
     private string Format(IEnumerable<(GraphNode Node, string? Extra)> rows)
     {

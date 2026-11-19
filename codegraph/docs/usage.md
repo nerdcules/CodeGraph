@@ -178,11 +178,13 @@ Use the codegraph tools before you read source files to find callers, tests or i
 
 ![A typical turn: find_symbol, impact_of, then snippet](images/typical-turn.svg)
 
-A typical turn uses three tools:
+A typical turn uses two or three tools:
 
-1. `find_symbol` finds the node id of the method.
-2. `impact_of` finds the dependents and the tests that guard them.
-3. `snippet` shows only the lines that the assistant must change.
+1. `impact_of` takes the name of the method and finds the dependents and the tests that reach it.
+2. `snippet` shows only the lines that the assistant must change.
+
+`find_symbol` comes first only when the name is not exact, or when more than one symbol has it.
+`impact_of`, `covered_by`, `callers_of`, `tests_for` and `snippet` take a name or an id.
 
 In [BENCHMARKS round 12](../BENCHMARKS.md#round-12-the-docs-re-measured), the three answers for `GraphStore.Replace` used about 5,500 tokens.
 The 15 files that the answers name use about 65,000 tokens.

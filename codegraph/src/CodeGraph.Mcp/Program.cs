@@ -128,20 +128,7 @@ void AddGraph(IServiceCollection services)
                 WebsiteUrl = "https://github.com/nerdcules/CodeGraph",
                 Icons = [new Icon { Source = LogoDataUri(), MimeType = "image/svg+xml", Sizes = ["any"] }],
             };
-            options.ServerInstructions =
-                """
-                codegraph answers structural questions about the indexed codebase from a compiler-built graph, so prefer
-                it to grepping or opening files. Typical turn: find_symbol (or search_code when you only know what the
-                code does) → impact_of / callers_of / references_to → snippet on the two or three declarations that matter.
-                Ids in [brackets] are opaque: an 8-character handle while the graph is in memory, else a Roslyn doc-comment id (C#) or a ts:/scip: id; pass them back verbatim, without the brackets.
-                File paths in rows are relative to the root named in the first line of the answer; join the two before you Read a file. An answer that starts with
-                "⚠ STALE INDEX" is from a graph older than the working tree; rows ending in STALE come from edited files.
-                Call impact_of before changing anything shared, and tests_for / covered_by to find the tests that guard it.
-                When codegraph-index --watch is running (live_status), four tools answer from the live compiler (Roslyn, the TypeScript language service, or a language server):
-                symbol_at turns a file position into an id, live_references finds every use of a symbol including
-                framework and NuGet members, diagnostics reports compiler errors, and check_change compiles a proposed
-                file in memory and reports what it would break before you write it.
-                """;
+            options.ServerInstructions = ServerInstructions.Text;
         })
         .WithStdioServerTransport()
         .WithToolsFromAssembly()

@@ -21,6 +21,12 @@ The executables report their version with `--version`; the MCP server shows it t
   the id in base 32, made when the snapshot loads, the same in every answer and session. Every tool that takes an
   id accepts the handle or the id; two ids whose handles collide print in full. A C# id repeated the full name with
   every parameter type: `GraphStore.Replace`'s id is over 400 characters, on every row that names it.
+- `impact_of`, `covered_by`, `callers_of`, `tests_for` and `snippet` take a name (`Save`, or `Service.Save`) where
+  they take an id: when exactly one symbol has that exact name, the tool answers for it; otherwise it lists the
+  candidates with their ids. The server instructions are shorter and say so, say that `impact_of` already lists the
+  tests that reach the member, and that `index_status` is for when an answer looks wrong; a test keeps them under
+  4,096 characters, Claude Code's limit. In the 19 November sessions, `find_symbol` ran 17 times in 12 sessions
+  only to get ids, and `index_status` in 10 of 12.
 
 ## 1.4.0
 
