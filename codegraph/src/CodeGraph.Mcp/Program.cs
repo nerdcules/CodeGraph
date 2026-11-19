@@ -164,28 +164,28 @@ void AddGraph(IServiceCollection services)
                 }
             }
 
-            // Answers print ids in [brackets]; a model that copies the brackets along still gets its node.
-            if (context.Params?.Arguments is { } arguments)
-            {
-                NodeIds.NameTheId(context.Params.Name, arguments);
-                foreach (var key in arguments.Keys.Where(NodeIds.Arguments.Contains).ToList())
-                {
-                    if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String && arguments[key].GetString() is { } raw)
-                    {
-                        // A handle (8 characters, as rows print them) becomes its id. No wait: the cache has handles
-                        // from the last snapshot that loaded, and from the database before the first load.
-                        var id = NodeIds.Resolve(raw, snapshots);
-                        if (id != raw)
-                        {
-                            arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
-                        }
-                    }
-                }
-            }
-
             CallToolResult result;
             try
             {
+                // Answers print ids in [brackets]; a model that copies the brackets along still gets its node.
+                if (context.Params?.Arguments is { } arguments)
+                {
+                    NodeIds.NameTheId(context.Params.Name, arguments);
+                    foreach (var key in arguments.Keys.Where(NodeIds.Arguments.Contains).ToList())
+                    {
+                        if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String && arguments[key].GetString() is { } raw)
+                        {
+                            // A handle (8 characters, as rows print them) becomes its id. Before the first snapshot
+                            // loads, the handles come from the store of this call, the one that the tool then reads.
+                            var id = NodeIds.Resolve(raw, snapshots, () => context.Services?.GetService<GraphStore>());
+                            if (id != raw)
+                            {
+                                arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
+                            }
+                        }
+                    }
+                }
+
                 result = await next(context, cancellationToken);
             }
             catch (Exception e) when (ToolErrors.Explain(context.Params?.Name ?? "?", e, context.Params?.Arguments, dbPath) is { } explained)

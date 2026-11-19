@@ -5,8 +5,8 @@ using CodeGraph.Mcp;
 namespace CodeGraph.Tests;
 
 /// <summary>
-/// Rows print an 8-character handle for a node id while the graph is in memory, and every id-taking tool accepts
-/// the handle or the id. Two ids whose handles collide keep their long form.
+/// Rows print an 8-character handle for a node id, from the graph in memory or from the database, and every
+/// id-taking tool accepts the handle or the id. Two ids whose handles collide keep their long form.
 /// </summary>
 public sealed class NodeHandlesTests
 {
@@ -102,37 +102,42 @@ public sealed class NodeHandlesTests
             // No timer and no call to Current: no snapshot loads, as at the start of a server process.
             using var cache = new GraphSnapshotCache(dbPath);
             var handle = NodeHandles.Encode(NodeHandles.Hash(Graph.Save));
-            var fromDatabase = cache.Handles();
-            Assert.NotNull(fromDatabase);
-            Assert.Equal(handle, fromDatabase.Handle(Graph.Save));
-            Assert.Same(fromDatabase, cache.Handles());
-            Assert.StartsWith("not in memory yet", cache.Describe());
-            Assert.Equal(Graph.Save, NodeIds.Resolve($"[{handle}]", cache));
+            Assert.Null(cache.Handles());
 
-            // A write moves the stamp: the handles are made again, and they know the new node.
-            using (var writer = new GraphStore(dbPath))
+            NodeHandles? fromDatabase;
+            using (var reader = GraphStore.Open(dbPath, readOnly: true, TimeSpan.FromSeconds(5)))
             {
-                writer.Replace(full: false, [], [Graph.Node("M:Demo.New", NodeKind.Method, "New", "Demo.New")], [], [], [], new Dictionary<string, string>());
-            }
+                // A name does not ask for the store. A name with the shape of a handle does, and comes back as it was.
+                var asked = 0;
+                Assert.Equal("Service.Save", NodeIds.Resolve(" Service.Save ", cache, () => { asked++; return reader; }));
+                Assert.Equal(0, asked);
+                Assert.True(NodeHandles.LooksLikeHandle("validate"));
+                Assert.Equal("validate", NodeIds.Resolve("validate", cache, () => { asked++; return reader; }));
+                Assert.Equal(1, asked);
 
-            var afterWrite = cache.Handles();
-            Assert.NotNull(afterWrite);
-            Assert.NotSame(fromDatabase, afterWrite);
-            Assert.Equal("M:Demo.New", afterWrite.Resolve(NodeHandles.Encode(NodeHandles.Hash("M:Demo.New"))));
+                // The handles were made once from the id list, and now answer with no reader.
+                fromDatabase = cache.Handles();
+                Assert.NotNull(fromDatabase);
+                Assert.Same(fromDatabase, cache.Handles(reader));
+                Assert.Equal(handle, fromDatabase.Handle(Graph.Save));
+                Assert.Equal(Graph.Save, NodeIds.Resolve($"[{handle}]", cache, () => { asked++; return reader; }));
+                Assert.Equal(1, asked);
+                Assert.StartsWith("not in memory yet", cache.Describe());
+            }
 
             // After a load, the handles are those of the snapshot.
             var loaded = cache.WaitForCurrent(TimeSpan.FromSeconds(30));
             Assert.NotNull(loaded);
             Assert.Same(NodeHandles.For(loaded), cache.Handles());
+            Assert.NotSame(fromDatabase, cache.Handles());
 
             // The file moves away: its stamp changes and no load can finish, as in a reload that takes a long time.
-            // The last snapshot that loaded still resolves the handle, with no wait.
+            // The last snapshot that loaded still resolves the handle, and nothing opens the database.
             File.Move(dbPath, dbPath + ".away");
             Assert.Null(cache.Current);
             Assert.Same(NodeHandles.For(loaded), cache.Handles());
-            Assert.Equal(Graph.Save, NodeIds.Resolve($"[{handle}]", cache));
-            Assert.Equal("aaaaaaaa", NodeIds.Resolve("aaaaaaaa", cache));
-            Assert.Equal("Service.Save", NodeIds.Resolve(" Service.Save ", cache));
+            Assert.Equal(Graph.Save, NodeIds.Resolve($"[{handle}]", cache, () => throw new InvalidOperationException("no store is necessary")));
+            Assert.Equal("aaaaaaaa", NodeIds.Resolve("aaaaaaaa", cache, () => throw new InvalidOperationException("no store is necessary")));
         }
         finally
         {
@@ -141,18 +146,15 @@ public sealed class NodeHandlesTests
     }
 
     [Fact]
-    public void A_name_with_the_shape_of_a_handle_does_not_wait_and_no_graph_file_gives_no_handles()
+    public void Without_a_store_and_before_a_load_a_handle_comes_back_as_it_was()
     {
         var directory = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
         try
         {
             using var cache = new GraphSnapshotCache(Path.Combine(directory, "graph.db"));
-            var watch = System.Diagnostics.Stopwatch.StartNew();
 
             Assert.Null(cache.Handles());
-            Assert.True(NodeHandles.LooksLikeHandle("validate"));
-            Assert.Equal("validate", NodeIds.Resolve("validate", cache));
-            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
+            Assert.Equal("validate", NodeIds.Resolve("[validate]", cache, () => null));
         }
         finally
         {

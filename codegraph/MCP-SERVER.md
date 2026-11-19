@@ -148,7 +148,7 @@ Rows print an 8-character handle in place of the id, such as `[k7m2qa4z]`: 40 bi
 base 32, so the handle is the same in every answer and every session for as long as the id exists. Every tool that
 takes an id accepts the handle or the id. Two ids whose handles collide print in full. The handles come from the
 graph in memory, and from the id list of the database until the graph has loaded. While the server loads the graph
-again after a re-index, a node that is new prints its full id.
+again after a re-index, a node that is new prints its full id. With `CODEGRAPH_SNAPSHOT=off`, rows print full ids.
 
 `impact_of`, `covered_by`, `callers_of`, `tests_for` and `snippet` also take a name in place of the id (`Save`, or
 `Service.Save`): when exactly one symbol has that exact name, the tool answers for it; otherwise it lists the

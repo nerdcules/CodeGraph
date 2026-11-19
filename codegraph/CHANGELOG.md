@@ -7,13 +7,15 @@ The executables report their version with `--version`; the MCP server shows it t
 
 ## Unreleased
 
-- Rows print the 8-character handle on every read path, not only while the graph is in memory. Before the first
-  snapshot loads, the server makes the handles from the id list of the database. While a reload after a re-index
-  runs, it uses the handles of the snapshot that loaded last; a node that is new since then prints its full id until
-  the reload ends. In 1.5.0 an answer from the database printed full ids, so the first answer of a session and the
-  answers during a reload were longer than the others. No call waits for the snapshot now: the 2 s wait of the
-  first tool call is gone, and so is the 2 s wait for an argument with the shape of a handle, which also delayed a
-  name of 8 lowercase letters such as `validate`. `CODEGRAPH_SNAPSHOT=off` prints handles too.
+- Rows print the 8-character handle on every read path, not only while the graph is in memory. In 1.5.0 an answer
+  from the database printed full ids. The first answer of a session and the answers during a reload were thus
+  longer than the others.
+  - Before the first snapshot loads, the server makes the handles from the id list of the database.
+  - While a reload after a re-index runs, the server uses the handles of the snapshot that loaded last. A node
+    that is new since that snapshot prints its full id until the reload ends.
+  - No call waits for the snapshot. The 2 s wait of the first tool call is gone. The 2 s wait for an argument with
+    the shape of a handle is gone too; it also delayed a name of 8 lowercase letters such as `validate`.
+  - `CODEGRAPH_SNAPSHOT=off` prints full ids, as in 1.5.0.
 
 ## 1.5.0
 

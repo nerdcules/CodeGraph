@@ -19,7 +19,8 @@ public sealed class GraphSnapshotCache : IDisposable
     private readonly Timer? _timer;
     private readonly Lock _lock = new();
     private (FileStamp Stamp, GraphSnapshot Snapshot)? _entry;
-    private (FileStamp Stamp, NodeHandles Handles)? _fromDatabase;
+    private readonly Lock _handlesLock = new();
+    private NodeHandles? _fromDatabase;
     private Task? _loading;
     private DateTime _retryAfter;
     private string? _lastError;
@@ -61,66 +62,75 @@ public sealed class GraphSnapshotCache : IDisposable
     }
 
     /// <summary>
-    /// The handles of the graph, on every read path: those of the last snapshot that loaded, and before the first
-    /// load, handles made from the id list of the database (kept until the file changes or a snapshot loads). A handle
-    /// is the hash of its id, so handles that are older than the file are still correct; an id that they do not know
-    /// prints in full. Null when there is no graph file or the database cannot be read now. Does not start a load.
+    /// The handles that rows print and arguments resolve with, on every read path. They are those of the last
+    /// snapshot that loaded, also while a reload runs. Before the first load, they are made once from the id list
+    /// that <paramref name="reader"/> gives, and kept until a snapshot loads.
+    /// <para>
+    /// A handle is the hash of its id, so handles that are older than the file are still correct. An id that they do
+    /// not know prints in full until the next load. Null if nothing has loaded and there is no reader, if the reader
+    /// cannot list the ids, and with CODEGRAPH_SNAPSHOT=off (the server then keeps no copy of the graph, and the
+    /// handles are a table of every id). This method never opens the database, never waits and never starts a load.
+    /// </para>
     /// </summary>
-    /// <param name="reader">The open store of this tool call, to read the ids from; null to open the database here.</param>
+    /// <param name="reader">The open store of the tool call; null to answer only from what is already in memory.</param>
     public NodeHandles? Handles(GraphStore? reader = null)
     {
-        var stamp = FileStamp.Of(_dbPath);
+        if (!Enabled)
+        {
+            return null;
+        }
+
+        if (Known() is { } known)
+        {
+            return known;
+        }
+
+        if (reader is null)
+        {
+            return null;
+        }
+
+        // One call makes them; calls that arrive in parallel at the start of a session wait here and share the result.
+        lock (_handlesLock)
+        {
+            if (Known() is { } made)
+            {
+                return made;
+            }
+
+            try
+            {
+                var handles = new NodeHandles(reader.AllNodeIds());
+                lock (_lock)
+                {
+                    if (_entry is null)
+                    {
+                        _fromDatabase = handles;
+                    }
+                }
+
+                return handles;
+            }
+            catch (DuckDB.NET.Data.DuckDBException)
+            {
+                return null; // the call itself reports what is wrong with the database; rows print full ids
+            }
+        }
+    }
+
+    private NodeHandles? Known()
+    {
         GraphSnapshot? loaded;
         lock (_lock)
         {
             loaded = _entry?.Snapshot;
-            if (loaded is null && _fromDatabase is { } made && made.Stamp == stamp)
+            if (loaded is null)
             {
-                return made.Handles;
+                return _fromDatabase;
             }
         }
 
-        if (loaded is not null)
-        {
-            return NodeHandles.For(loaded);
-        }
-
-        if (!stamp.Exists)
-        {
-            return null;
-        }
-
-        try
-        {
-            NodeHandles handles;
-            if (reader is not null)
-            {
-                handles = new NodeHandles(reader.AllNodeIds());
-            }
-            else
-            {
-                using var lease = _anchor?.AcquireCurrent();
-                if (_anchor is not null && lease is null)
-                {
-                    return null; // a call may still be reading a replaced file
-                }
-
-                using var store = GraphStore.Open(_dbPath, readOnly: true, TimeSpan.FromSeconds(2));
-                handles = new NodeHandles(store.AllNodeIds());
-            }
-
-            lock (_lock)
-            {
-                _fromDatabase = (stamp, handles);
-            }
-
-            return handles;
-        }
-        catch (Exception)
-        {
-            // Most often the indexer holds the write lock. Rows then print full ids, as they did before handles.
-            return null;
-        }
+        return NodeHandles.For(loaded);
     }
 
     /// <summary>Starts a load if the file changed since the last one. Cheap: two <c>stat</c> calls when nothing did.</summary>

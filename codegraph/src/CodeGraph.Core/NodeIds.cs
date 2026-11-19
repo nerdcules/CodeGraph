@@ -61,13 +61,18 @@ public static class NodeIds
     }
 
     /// <summary>
-    /// <see cref="Normalize(string, NodeHandles?)"/> with the handles that <paramref name="snapshots"/> has for the
-    /// graph. It never waits for a load: the cache has handles on every read path. Only an argument that has the
-    /// shape of a handle asks for them; the tool's own lookup then says if the node is still there.
+    /// <see cref="Normalize(string, NodeHandles?)"/> with the handles of <paramref name="snapshots"/>. Only an
+    /// argument with the shape of a handle asks for them. <paramref name="reader"/> gives the open store of the
+    /// call, and runs only if no handles are in memory yet. The tool's own lookup then says if the node is there.
     /// </summary>
-    public static string Resolve(string raw, GraphSnapshotCache snapshots)
+    public static string Resolve(string raw, GraphSnapshotCache snapshots, Func<GraphStore?> reader)
     {
         var id = Unwrap(raw);
-        return NodeHandles.LooksLikeHandle(id) ? Normalize(id, snapshots.Handles()) : id;
+        if (!NodeHandles.LooksLikeHandle(id))
+        {
+            return id;
+        }
+
+        return Normalize(id, snapshots.Handles() ?? (reader() is { } open ? snapshots.Handles(open) : null));
     }
 }
