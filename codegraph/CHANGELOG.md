@@ -5,7 +5,11 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased
+## 1.5.0
+
+Answers from the codegraph server are shorter, with the same facts: relative paths, 8-character handles in
+place of node ids, a cap on `covered_by`, and five tools that take a name. In 24 Opus sessions on Jellyfin and Hono,
+the "with" cost fell from 0.2664 to 0.1224 USD and from 0.1236 to 0.0408 USD (medians).
 
 - `codegraph-index compare` passes `ToolSearch` in `--tools` and allows it in both conditions, so Claude Code
   defers the codegraph tool schemas and loads one when a session asks for the tool, as it does in an interactive
