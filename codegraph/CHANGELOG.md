@@ -17,10 +17,12 @@ The executables report their version with `--version`; the MCP server shows it t
     the shape of a handle is gone too; it also delayed a name of 8 lowercase letters such as `validate`.
   - `CODEGRAPH_SNAPSHOT=off` prints full ids, as in 1.5.0.
 - The VS Code extension's icons show the same picture as the CodeGraph logo ([assets/logo.svg](assets/logo.svg)).
-  The activity bar icon is now the logo itself as a one-colour mask: the same size, strokes, opacities and glow, with
-  no crop. Before, it was a cropped copy with thicker strokes. `media/icon.png` is a new 256 px render of the logo
-  in Chromium, the engine that VS Code uses, and is the same as that render in each pixel. `scripts/icons.js` makes
-  the icons from the logo, and a unit test fails if an icon and the logo do not agree.
+  The activity bar icon is now the logo itself as a one-colour mask: the logo's shapes, strokes, opacities and
+  glow, in the square around its marks. Before, it was a copy with thicker strokes and larger nodes. VS Code draws
+  this icon in one theme colour only. `media/icon.png` is a new 256 px render of the logo in Chromium, the engine
+  that VS Code uses, and is the same as that render in each pixel. `scripts/icons.js` makes both icons from the
+  logo. A unit test fails if `activity.svg` or the Overview's logo does not agree with the logo, or if
+  `icon.png` records a different logo. The unused copy `media/icon.svg` is gone.
 
 ## 1.5.0
 

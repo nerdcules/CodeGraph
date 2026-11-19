@@ -16,15 +16,12 @@ const icons = require(path.join(extensionDir, 'scripts', 'icons.js')) as {
 const lf = (file: string) => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
 const again = 'Run `node scripts/icons.js --browser <Chrome or Edge>` to make the icons from assets/logo.svg again.';
 
-test('media/icon.svg is the logo', () => {
-  assert.equal(lf(path.join(media, 'icon.svg')), icons.readLogo(), again);
-});
-
 test('media/activity.svg is the logo as a one-colour mask', () => {
   assert.equal(lf(path.join(media, 'activity.svg')), icons.activitySvg(icons.readLogo()), again);
 });
 
-test('media/icon.png is a 256 px render of the current logo', () => {
+// The pixels are not checked here: that needs a browser. The script records the logo it rendered.
+test('media/icon.png is 256 px and records the current logo', () => {
   const info = icons.pngInfo(fs.readFileSync(path.join(media, 'icon.png')));
   assert.deepEqual([info.width, info.height, info.colourType], [256, 256, 6]);
   assert.equal(info.source, icons.sourceText(icons.readLogo()), again);
