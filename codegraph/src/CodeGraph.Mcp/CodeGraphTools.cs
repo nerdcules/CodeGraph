@@ -14,7 +14,7 @@ namespace CodeGraph.Mcp;
 /// Rows whose file was edited since indexing end in <c>STALE</c>; the call-tool filter in Program adds the summary line.
 /// </summary>
 [McpServerToolType]
-public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live, SemanticSearch semantic, GraphSnapshotCache snapshots)
+public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live, SemanticSearch semantic, GraphSnapshotCache snapshots, AnswerPaths paths)
 {
     // ── Live tools: answered by codegraph-index --watch, not by the graph: the Roslyn solution for C#, a language
     // server (typescript-language-server, jdtls, pyright, gopls, rust-analyzer) for the other languages ─────────
@@ -47,7 +47,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         {
             var sb = new StringBuilder();
             sb.Append(s.Kind.ToLowerInvariant()).Append("  ").Append(s.Display);
-            if (s.File is not null) sb.Append("  ").Append(s.File).Append(':').Append(s.Line);
+            if (s.File is not null) sb.Append("  ").Append(paths.Relative(s.File)).Append(':').Append(s.Line);
             if (s.Id is not null) sb.Append("  [").Append(s.Id).Append(']');
             sb.AppendLine(s.InSource ? "" : "  (metadata: not in the graph; use live_references to find its uses)");
             if (s.ExpressionType is not null) sb.AppendLine($"expression type: {s.ExpressionType}");
@@ -70,7 +70,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             sb.AppendLine(r.InSource ? ":" : " (metadata symbol):");
             foreach (var reference in r.References)
             {
-                sb.Append("  ").Append(reference.EnclosingMember ?? "(file level)").Append("  ").Append(reference.File).Append(':').Append(reference.Line);
+                sb.Append("  ").Append(reference.EnclosingMember ?? "(file level)").Append("  ").Append(paths.Relative(reference.File)).Append(':').Append(reference.Line);
                 if (reference.EnclosingMemberId is not null) sb.Append("  [").Append(reference.EnclosingMemberId).Append(']');
                 sb.AppendLine();
                 sb.Append("      ").AppendLine(reference.Text);
@@ -177,7 +177,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         Live("data_flow", new { symbol }, (LiveDataFlow d) =>
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"data flow in {d.Member}  {d.File}:{d.Line}");
+            sb.AppendLine($"data flow in {d.Member}  {paths.Relative(d.File)}:{d.Line}");
             if (d.Parameters.Count == 0) sb.AppendLine("(no parameters)");
             foreach (var p in d.Parameters)
             {
@@ -218,7 +218,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             var shown = 0;
             foreach (var file in r.Files)
             {
-                sb.AppendLine(file.File);
+                sb.AppendLine(paths.Relative(file.File));
                 foreach (var line in file.Lines)
                 {
                     if (shown++ >= Math.Clamp(limit, 1, 2000))
@@ -271,8 +271,8 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         return sb.ToString();
     }
 
-    private static string Format(LiveDiagnostic d) =>
-        $"  {d.Severity.ToLowerInvariant()} {d.Id}: {d.Message}{(d.File is not null ? $"  {d.File}:{d.Line}" : "")}";
+    private string Format(LiveDiagnostic d) =>
+        $"  {d.Severity.ToLowerInvariant()} {d.Id}: {d.Message}{(d.File is not null ? $"  {paths.Relative(d.File)}:{d.Line}" : "")}";
 
     // ── Graph tools: answered from the DuckDB graph ────────────────────────────────────────────────────────
     [McpServerTool(Name = "search_code", ReadOnly = true, Idempotent = true)]
@@ -641,7 +641,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         var end = Math.Min(lines.Length, node.EndLine + pad);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"// {node.FilePath}:{start}-{end}");
+        sb.AppendLine($"// {paths.Relative(node.FilePath)}:{start}-{end}");
         for (var line = start; line <= end; line++)
         {
             sb.Append(line).Append(": ").AppendLine(lines[line - 1]);
@@ -682,12 +682,12 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
         foreach (var path in report.ChangedFiles.Order(StringComparer.OrdinalIgnoreCase))
         {
-            sb.AppendLine($"  edited  {path}");
+            sb.AppendLine($"  edited  {paths.Relative(path)}");
         }
 
         foreach (var path in report.MissingFiles.Order(StringComparer.OrdinalIgnoreCase))
         {
-            sb.AppendLine($"  deleted {path}");
+            sb.AppendLine($"  deleted {paths.Relative(path)}");
         }
 
         return sb.ToString();
@@ -728,7 +728,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             sb.Append("  reason=").Append(candidate.Reason);
             if (method.FilePath is not null)
             {
-                sb.Append("  ").Append(method.FilePath).Append(':').Append(method.StartLine);
+                sb.Append("  ").Append(paths.Relative(method.FilePath)).Append(':').Append(method.StartLine);
             }
 
             sb.Append("  [").Append(method.Id).Append(']');
@@ -784,7 +784,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         foreach (var (m, count) in top)
         {
             sb.Append(m.Kind == NodeKind.External ? "external  " : "method  ").Append(m.FullName).Append("  ").Append(count).Append(" callers");
-            if (m.FilePath is not null) sb.Append("  ").Append(m.FilePath).Append(':').Append(m.StartLine);
+            if (m.FilePath is not null) sb.Append("  ").Append(paths.Relative(m.FilePath)).Append(':').Append(m.StartLine);
             sb.Append("  [").Append(m.Id).Append(']');
             sb.AppendLine();
         }
@@ -1008,7 +1008,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
             if (node.FilePath is not null)
             {
-                sb.Append("  ").Append(node.FilePath).Append(':').Append(node.StartLine).Append('-').Append(node.EndLine);
+                sb.Append("  ").Append(paths.Relative(node.FilePath)).Append(':').Append(node.StartLine).Append('-').Append(node.EndLine);
             }
 
             sb.Append("  [").Append(node.Id).Append(']');

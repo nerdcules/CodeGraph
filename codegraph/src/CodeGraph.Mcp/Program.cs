@@ -74,6 +74,9 @@ Console.Error.WriteLine(File.Exists(dbPath)
 
 var freshness = new IndexFreshness(dbPath, TimeSpan.FromSeconds(3));
 
+// Answers name files relative to this root, once per answer; the graph stores them absolute.
+var answerRoot = AnswerPaths.RootFor(dbPath);
+
 // Telemetry stays beside the graph, one JSON line per tool call; CODEGRAPH_TELEMETRY=off keeps it in memory only.
 var telemetrySetting = Environment.GetEnvironmentVariable("CODEGRAPH_TELEMETRY");
 var telemetryOff = telemetrySetting is not null && telemetrySetting.Trim().ToLowerInvariant() is "0" or "off" or "false" or "no";
@@ -106,6 +109,8 @@ void AddGraph(IServiceCollection services)
     services.AddSingleton(new SemanticSearch(EmbeddingSettings.FromEnvironment()));
     services.AddSingleton(anchor);
     services.AddSingleton(snapshots);
+    // One per tool call: it remembers whether this answer shortened a path, so the filter can name the root once.
+    services.AddScoped(_ => new AnswerPaths(answerRoot));
     // The anchor lease is taken only if the call opens the database, and released with the store.
     services.AddScoped(_ => GraphStore.OpenReader(
         dbPath, GraphSnapshotCache.Enabled ? snapshots.Current : null, TimeSpan.FromSeconds(15), anchor.Acquire));
@@ -128,7 +133,8 @@ void AddGraph(IServiceCollection services)
                 codegraph answers structural questions about the indexed codebase from a compiler-built graph, so prefer
                 it to grepping or opening files. Typical turn: find_symbol (or search_code when you only know what the
                 code does) → impact_of / callers_of / references_to → snippet on the two or three declarations that matter.
-                Ids in [brackets] are opaque (Roslyn doc-comment ids for C#, ts:/scip: prefixes otherwise); pass them back verbatim, without the brackets. An answer that starts with
+                Ids in [brackets] are opaque (Roslyn doc-comment ids for C#, ts:/scip: prefixes otherwise); pass them back verbatim, without the brackets.
+                File paths in rows are relative to the root named in the first line of the answer; join the two before you Read a file. An answer that starts with
                 "⚠ STALE INDEX" is from a graph older than the working tree; rows ending in STALE come from edited files.
                 Call impact_of before changing anything shared, and tests_for / covered_by to find the tests that guard it.
                 When codegraph-index --watch is running (live_status), four tools answer from the live compiler (Roslyn, the TypeScript language service, or a language server):
@@ -199,6 +205,12 @@ void AddGraph(IServiceCollection services)
             {
                 scope.Complete(0, isError: true);
                 throw;
+            }
+
+            // The root goes first, and the STALE warning before it, so the answer reads: warning, root, rows.
+            if (context.Services?.GetService<AnswerPaths>()?.Header is { } rootLine)
+            {
+                result.Content.Insert(0, new TextContentBlock { Text = rootLine });
             }
 
             if (freshness.Check().Warning() is { } warning)

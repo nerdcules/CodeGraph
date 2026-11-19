@@ -12,5 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/CodeGraph.Core/CodeGraph.Core.csproj" />
     <ProjectReference Include="../../src/CodeGraph.Indexer/CodeGraph.Indexer.csproj" />
+    <ProjectReference Include="../../src/CodeGraph.Mcp/CodeGraph.Mcp.csproj" />
   </ItemGroup>
 </Project>

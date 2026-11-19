@@ -136,8 +136,13 @@ kind  full name  [extra]  file:start-end  [id]  [STALE]
 ```
 
 ```
-method  GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout, System.Threading.CancellationToken)  depth 1  C:\dev\GymX\src\GymX.Core\WorkoutService.cs:41-67  [M:GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout,System.Threading.CancellationToken)]
+paths are relative to C:\dev\GymX
+method  GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout, System.Threading.CancellationToken)  depth 1  src\GymX.Core\WorkoutService.cs:41-67  [M:GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout,System.Threading.CancellationToken)]
 ```
+
+File paths are relative to the repository root: the git worktree that holds the graph, else the folder that holds
+`.codegraph`. An answer that has such a path names the root once, in its first line (after the `STALE` warning, if
+any). A path outside the root stays absolute. Join the root and the path before opening a file.
 
 For C#, the `[id]` is the Roslyn documentation-comment id; ids from the TypeScript extractor start with `ts:`,
 and ids from a SCIP indexer with `scip:`. Pass it back verbatim, without the brackets, to any tool that takes

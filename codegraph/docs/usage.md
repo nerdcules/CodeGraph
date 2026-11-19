@@ -217,10 +217,16 @@ An answer is compact text.
 Each row shows the kind, the name, the file and lines, and the node id:
 
 ```
-method  App.Core.OrderService.Submit(App.Core.Order)  depth 1  /repo/src/App.Core/OrderService.cs:41-58  [M:App.Core.OrderService.Submit(App.Core.Order)]
+paths are relative to /repo
+method  App.Core.OrderService.Submit(App.Core.Order)  depth 1  src/App.Core/OrderService.cs:41-58  [M:App.Core.OrderService.Submit(App.Core.Order)]
 ```
 
 Give the id in brackets to the next tool.
+
+File paths are relative to the repository root.
+The first line of an answer with paths names the root.
+Join the root and the path before you open a file.
+A path outside the root stays absolute.
 
 A walk shows the nearest 200 rows.
 After 200 rows, it shows the count at each depth.

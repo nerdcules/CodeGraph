@@ -10,6 +10,10 @@ The executables report their version with `--version`; the MCP server shows it t
 - `codegraph-index compare` passes `ToolSearch` in `--tools` and allows it in both conditions, so Claude Code
   defers the codegraph tool schemas and loads one when a session asks for the tool, as it does in an interactive
   session. Before, the "with" sessions got every schema in their first model call.
+- File paths in answers are relative to the repository root (the git worktree that holds the graph, else the folder
+  that holds `.codegraph`), and an answer with paths names the root once in its first line, after the `STALE`
+  warning if there is one. Rows, `snippet` headers, `index_status` file lists and the live tools' locations all use
+  it; a path outside the root stays absolute. The server instructions say to join the two before a Read.
 
 ## 1.4.0
 
