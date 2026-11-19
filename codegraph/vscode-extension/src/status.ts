@@ -60,7 +60,6 @@ export interface UsageReport {
   errors: number;
   sourceTokens: number;
   resultTokens: number;
-  tokensSaved: number;
   topTools: { tool: string; calls: number }[];
   allTimeCalls: number;
   firstCallAt: string;

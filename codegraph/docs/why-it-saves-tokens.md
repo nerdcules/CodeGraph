@@ -113,8 +113,8 @@ The savings come from a few design choices:
   redoing the work. With the live daemon, `check_change` compiles a proposed edit and lists what
   it breaks, so the model doesn't need a build-and-read-the-errors loop to find out.
 
-`usage_stats` reports, for the current session and all time, the tokens each tool returned and
-an estimate of the source tokens those answers saved the model from reading.
+`usage_stats` reports, for the current session and all time, the size of each tool's answers and of the files
+they name. Those are sizes, not a saving; the session pair above is the measured comparison.
 
 
 ## Keeping the graph current
@@ -140,8 +140,8 @@ an estimate of the source tokens those answers saved the model from reading.
 ## See what it did for you
 
 Every tool call is one JSON line in `.codegraph/telemetry.jsonl`: the tool, the time it took, the size of
-the answer, and the size of the files the answer pointed at. That last number is what reading those files
-instead would have cost. `codegraph-index usage` sums the last seven days into one line, the indexer
+the answer, and the size of the files the answer names. The last is a size, not a cost: the session without
+the graph above read parts of files, not whole files. `codegraph-index usage` sums the last seven days into one line, the indexer
 prints the same line after each run, and the `usage_stats` tool opens with it and then lists every tool.
 
 ---

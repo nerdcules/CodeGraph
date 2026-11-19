@@ -261,7 +261,7 @@ and override.
 |---|---|---|
 | `graph_stats` | | Node and edge counts; confirms the graph loaded. |
 | `index_status` | | Which graph, built when and at which commit, which compiler and language versions each language was read with (and warnings when the code is ahead of it), which indexed files changed or vanished since. |
-| `usage_stats` | | Opens with the telemetry file's path and how tokens are estimated, then the last seven days in one line, then calls per tool, latency, answer size and estimated source tokens saved, this session and all time. `codegraph-index usage` prints a summary from a terminal: the last days in one line, all time in one line, and a table of the calls in that period. |
+| `usage_stats` | | Opens with the telemetry file's path and how tokens are estimated, then the last seven days in one line, then calls per tool, latency, answer size and the size of the files the answers name, this session and all time. Sizes only: no saving is measured. `codegraph-index usage` prints a summary from a terminal: the last days in one line, all time in one line, and a table of the calls in that period. |
 
 Edge kinds, for `traverse` and `path_between`: `Calls`, `Inherits`, `Implements`, `Overrides`,
 `Contains`, `DependsOn`, `TestedBy`, `InvokedByFramework`, `References`, `CallsExternal`, and from the
@@ -294,8 +294,9 @@ Each call is appended as one JSON line to `.codegraph/telemetry.jsonl` beside th
 {"at":"2026-10-29T19:56:39Z","tool":"impact_of","ms":25,"result_chars":2717,"source_chars":129653,"error":false}
 ```
 
-`source_chars` is the total size of the files the answer pointed at, which is what reading
-them instead would have cost. `usage_stats` turns the file into per-tool totals. The file
+`result_chars` is the answer's length in characters. `source_chars` is the total size in bytes of the files the
+answer names, each counted once per call. It is a size, not what a session without the graph would have read;
+that is not recorded. `usage_stats` turns the file into per-tool totals. The file
 never leaves the machine; `CODEGRAPH_TELEMETRY=off` disables it.
 
 ## Semantic search

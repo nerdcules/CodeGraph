@@ -259,17 +259,26 @@ To see the last seven days, run this in the repository:
 codegraph-index usage
 ```
 
-```
-last 7 days: 143 tool calls answered (2 failed); the files they pointed at come to about 1,230,412 tokens, the answers to 48,207, so about 1,182,205 tokens stayed out of the context; most used: find_symbol ×61, impact_of ×24, tests_for ×19
-since 2026-10-28: ...
+This repository's own log on 19 November 2026 printed:
 
-tool          calls  errors   avg ms  result tok  source tok   saved tok
-find_symbol      61       2       14        6100      310000      303900
-...
+```
+last 7 days: 114 tool calls answered (1 failed); answers 175,547 tokens, the files they name 2,705,154 tokens (estimated at 4 characters a token); most used: find_symbol ×42, impact_of ×29, snippet ×26
+since 2026-11-12: 114 tool calls answered (1 failed); answers 175,547 tokens, the files they name 2,705,154 tokens (estimated at 4 characters a token); most used: find_symbol ×42, impact_of ×29, snippet ×26
+
+tool          calls  errors   avg ms  answer tok   files tok
+find_symbol      42       1       35       18968      850608
+impact_of        29       0       14      112121     1201710
+snippet          26       0        6       29756      572308
+index_status      9       0       50        3035           0
+tests_for         5       0       28       10843       80528
+usage_stats       2       0       12         665           0
+live_status       1       0        1         159           0
 ```
 
-"Source tok" is the size of the files that the answers pointed at.
-That is what the client would have read without the graph.
+"Answer tok" is the size of the answers. "Files tok" is the size of the files they name, each file counted once
+per call. Both are estimates at 4 characters a token; no tokenizer is used. They are sizes, not a saving: without
+the graph an assistant searches and reads parts of files, and how much it reads is not recorded here.
+[Why it saves tokens](why-it-saves-tokens.md#in-a-real-session) has a measured session with and without.
 Give `--days 30` for a longer period.
 After a one-shot C# index, the indexer prints the first line with `(codegraph-index usage for details)` at the end.
 It does this only when the server has recorded tool calls.

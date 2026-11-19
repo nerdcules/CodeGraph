@@ -4,7 +4,10 @@ using System.Text.Json.Serialization;
 
 namespace CodeGraph.Core;
 
-/// <summary>One tool call as the server saw it. Token figures are estimates at four characters per token.</summary>
+/// <summary>
+/// One tool call as the server saw it: its time, the size of its answer (characters) and the size of the files the
+/// answer names (bytes). Token figures are estimates at four characters per token, not a tokenizer's count.
+/// </summary>
 public sealed record ToolCallRecord(
     [property: JsonPropertyName("at")] DateTime At,
     [property: JsonPropertyName("tool")] string Tool,
@@ -16,18 +19,18 @@ public sealed record ToolCallRecord(
     [JsonIgnore]
     public long ResultTokens => Tokens(ResultChars);
 
-    /// <summary>What reading the files the answer points at would have cost instead.</summary>
+    /// <summary>
+    /// The size of the files the answer names, each counted once per call. A size, not a measured saving: a session
+    /// without the graph reads parts of files, not all of them (docs/why-it-saves-tokens.md has a measured pair).
+    /// </summary>
     [JsonIgnore]
     public long SourceTokens => Tokens(SourceChars);
-
-    [JsonIgnore]
-    public long TokensSaved => Math.Max(0, SourceTokens - ResultTokens);
 
     public static long Tokens(long chars) => (chars + 3) / 4;
 }
 
 /// <summary>Per-tool totals over a set of calls.</summary>
-public sealed record ToolUsage(string Tool, int Calls, int Errors, double AverageMilliseconds, long ResultTokens, long SourceTokens, long TokensSaved)
+public sealed record ToolUsage(string Tool, int Calls, int Errors, double AverageMilliseconds, long ResultTokens, long SourceTokens)
 {
     public static ToolUsage Of(string tool, IReadOnlyCollection<ToolCallRecord> calls) => new(
         tool,
@@ -35,8 +38,7 @@ public sealed record ToolUsage(string Tool, int Calls, int Errors, double Averag
         calls.Count(c => c.IsError),
         calls.Count == 0 ? 0 : calls.Average(c => c.Milliseconds),
         calls.Sum(c => c.ResultTokens),
-        calls.Sum(c => c.SourceTokens),
-        calls.Sum(c => c.TokensSaved));
+        calls.Sum(c => c.SourceTokens));
 
     public static IReadOnlyList<ToolUsage> Group(IEnumerable<ToolCallRecord> calls) => calls
         .GroupBy(c => c.Tool, StringComparer.Ordinal)
@@ -47,8 +49,8 @@ public sealed record ToolUsage(string Tool, int Calls, int Errors, double Averag
 }
 
 /// <summary>
-/// The feedback loop: how often each tool is called, how long it takes, how much it returns, and how much source
-/// it saved the model from reading. Everything stays on this machine: calls are kept in memory for the session and
+/// The feedback loop: how often each tool is called, how long it takes, how much it returns, and how large the
+/// files its answers name are. Everything stays on this machine: calls are kept in memory for the session and
 /// appended as JSON lines to <see cref="LogPath"/> (null disables the file) so <c>usage_stats</c> can report all time.
 /// </summary>
 public sealed class Telemetry(string? logPath)
@@ -171,12 +173,12 @@ public sealed class Telemetry(string? logPath)
         var width = Math.Max(4, usage.Max(u => u.Tool.Length));
         var lines = new List<string>
         {
-            $"{"tool".PadRight(width)}  calls  errors   avg ms  result tok  source tok   saved tok",
+            $"{"tool".PadRight(width)}  calls  errors   avg ms  answer tok   files tok",
         };
         foreach (var u in usage)
         {
             lines.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{u.Tool.PadRight(width)}  {u.Calls,5}  {u.Errors,6}  {u.AverageMilliseconds,7:F0}  {u.ResultTokens,10}  {u.SourceTokens,10}  {u.TokensSaved,10}"));
+                $"{u.Tool.PadRight(width)}  {u.Calls,5}  {u.Errors,6}  {u.AverageMilliseconds,7:F0}  {u.ResultTokens,10}  {u.SourceTokens,10}"));
         }
 
         return string.Join('\n', lines);
@@ -241,11 +243,11 @@ public sealed class ToolCallScope : IDisposable
 }
 
 /// <summary>
-/// What the graph did for its users over a period, in one sentence: the line that makes a tool whose work
-/// happens silently inside an assistant's turns visible. <c>codegraph-index usage</c> prints it, the indexer
+/// What the graph did for its users over a period, in one sentence of counts and sizes: the line that makes a tool
+/// whose work happens silently inside an assistant's turns visible. <c>codegraph-index usage</c> prints it, the indexer
 /// prints it after a run, and <c>usage_stats</c> opens with it.
 /// </summary>
-public sealed record UsageSummary(DateTime Since, int Calls, int Errors, long ResultTokens, long SourceTokens, long TokensSaved, IReadOnlyList<ToolUsage> Tools)
+public sealed record UsageSummary(DateTime Since, int Calls, int Errors, long ResultTokens, long SourceTokens, IReadOnlyList<ToolUsage> Tools)
 {
     /// <summary>The calls at or after <paramref name="since"/> (UTC).</summary>
     public static UsageSummary Of(IEnumerable<ToolCallRecord> calls, DateTime since)
@@ -257,7 +259,6 @@ public sealed record UsageSummary(DateTime Since, int Calls, int Errors, long Re
             inPeriod.Count(c => c.IsError),
             inPeriod.Sum(c => c.ResultTokens),
             inPeriod.Sum(c => c.SourceTokens),
-            inPeriod.Sum(c => c.TokensSaved),
             ToolUsage.Group(inPeriod));
     }
 
@@ -266,8 +267,9 @@ public sealed record UsageSummary(DateTime Since, int Calls, int Errors, long Re
         Of(calls, (now ?? DateTime.UtcNow).AddDays(-days));
 
     /// <summary>
-    /// One sentence, for example: "last 7 days: 143 tool calls answered; the files they pointed at come to about
-    /// 1,230,000 tokens, the answers to 48,000, so about 1,180,000 tokens stayed out of the context".
+    /// One sentence of sizes, for example: "last 7 days: 114 tool calls answered (1 failed); answers 175,547 tokens,
+    /// the files they name 2,705,154 tokens (estimated at 4 characters a token); most used: find_symbol ×42, ...".
+    /// It states no saving: what a session without the graph would have read is not measured here.
     /// </summary>
     public string Line(string period)
     {
@@ -279,6 +281,6 @@ public sealed record UsageSummary(DateTime Since, int Calls, int Errors, long Re
         var errors = Errors == 0 ? "" : string.Create(CultureInfo.InvariantCulture, $" ({Errors} failed)");
         var top = Tools.Count == 0 ? "" : $"; most used: {string.Join(", ", Tools.Take(3).Select(t => string.Create(CultureInfo.InvariantCulture, $"{t.Tool} ×{t.Calls}")))}";
         return string.Create(CultureInfo.InvariantCulture,
-            $"{period}: {Calls} tool calls answered{errors}; the files they pointed at come to about {SourceTokens:N0} tokens, the answers to {ResultTokens:N0}, so about {TokensSaved:N0} tokens stayed out of the context{top}");
+            $"{period}: {Calls} tool calls answered{errors}; answers {ResultTokens:N0} tokens, the files they name {SourceTokens:N0} tokens (estimated at 4 characters a token){top}");
     }
 }

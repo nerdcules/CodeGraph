@@ -357,7 +357,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "usage_stats", ReadOnly = true, Idempotent = true)]
-    [Description("How the graph is being used: calls per tool, latency, result size, and an estimate of the source tokens those answers saved the model from reading. Session and all-time.")]
+    [Description("How the graph is being used: calls per tool, latency, the size of the answers and the size of the files they name. Session and all-time. Sizes only; no saving is measured.")]
     public string UsageStats()
     {
         var session = telemetry.Session;
@@ -367,8 +367,9 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         sb.AppendLine(telemetry.LogPath is null
             ? "telemetry : in memory only (CODEGRAPH_TELEMETRY=off)"
             : $"telemetry : {telemetry.LogPath} (set CODEGRAPH_TELEMETRY=off to stop writing it)");
-        sb.AppendLine("tokens are estimated at 4 characters each; 'source tok' is the size of the files an answer pointed at,");
-        sb.AppendLine("which is what reading them instead would have cost; 'saved tok' is that minus the answer itself.");
+        sb.AppendLine("tokens are estimated at 4 characters each. 'answer tok' is the size of the answers; 'files tok' is the size");
+        sb.AppendLine("of the files they name, each file counted once per call. These are sizes, not a saving: a session without");
+        sb.AppendLine("the graph reads parts of files, and how much it reads is not measured here.");
         sb.AppendLine();
         sb.AppendLine(UsageSummary.LastDays(allTime.Count == 0 ? session : allTime, 7).Line("last 7 days"));
         sb.AppendLine();
@@ -380,7 +381,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         return sb.ToString();
 
         static string Totals(IReadOnlyList<ToolCallRecord> calls) =>
-            $"{calls.Count} call(s), {calls.Sum(c => c.ResultTokens)} result tokens, ~{calls.Sum(c => c.TokensSaved)} source tokens saved";
+            $"{calls.Count} call(s), answers {calls.Sum(c => c.ResultTokens)} tokens, files named {calls.Sum(c => c.SourceTokens)} tokens";
     }
 
     [McpServerTool(Name = "find_symbol", ReadOnly = true, Idempotent = true)]

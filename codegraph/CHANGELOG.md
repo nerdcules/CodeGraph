@@ -5,6 +5,16 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+- The usage figures state sizes only. `codegraph-index usage`, the line the indexer prints after a run, the
+  `usage_stats` tool and the extension's Usage item no longer say how many tokens "stayed out of the context" or
+  were "saved", and the `saved tok` column is gone; the status JSON drops `tokensSaved`. That figure was the size
+  of every file an answer names minus the answer, which assumes a session without the graph reads those files
+  whole. The measured pair in [Why it saves tokens](docs/why-it-saves-tokens.md#in-a-real-session) did not: the
+  context grew 18,460 tokens with CodeGraph and 21,579 without. The line now reads "answers N tokens, the files
+  they name M tokens (estimated at 4 characters a token)"; the table's columns are `answer tok` and `files tok`.
+
 ## 1.3.1
 
 - The VS Code extension uses the CodeGraph logo ([assets/logo.svg](assets/logo.svg)): as its icon in the Extensions

@@ -63,7 +63,7 @@ To skip the questions, give the answers and `--yes`: `... | bash -s -- ~/dev/You
 
 ## Your first five minutes
 
-![Install with one line, ask one question, see the answer, and a week later see what it saved](docs/images/first-five-minutes.svg)
+![Install with one line, ask one question, see the answer, and a week later see how it was used](docs/images/first-five-minutes.svg)
 
 **1. Install** with the command [above](#install). The script downloads the release for your platform and
 checks its checksum. For each repository you pick, it writes the `codegraph` server into the config of each
@@ -103,14 +103,16 @@ The dependents at depth 2 and 3 reach `Replace` through other methods. A text se
 found them, and would have matched every `string.Replace` on the way. The assistant then opens only the
 members it is going to change, with `snippet`.
 
-**3. See what it did for you.** After a week, run `codegraph-index usage` in the repository. It prints a
-line like this one (the numbers are an example):
+**3. See how it was used.** After a week, run `codegraph-index usage` in the repository. It prints a line like
+this one, from this repository's own log on 19 November 2026:
 
 ```
-last 7 days: 143 tool calls answered; the files they pointed at come to about 1,230,000 tokens, the answers
-to 48,000, so about 1,180,000 tokens stayed out of the context; most used: find_symbol ×61, impact_of ×24, tests_for ×19
+last 7 days: 114 tool calls answered (1 failed); answers 175,547 tokens, the files they name 2,705,154 tokens
+(estimated at 4 characters a token); most used: find_symbol ×42, impact_of ×29, snippet ×26
 ```
 
+These are sizes, not a saving: a session without the graph reads parts of files, not every file an answer names.
+[Why it saves tokens](docs/why-it-saves-tokens.md#in-a-real-session) has a measured session with and without.
 The indexer prints the same line after each run, and the `usage_stats` tool opens with it.
 
 ## What you can ask

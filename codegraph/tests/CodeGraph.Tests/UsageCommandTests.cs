@@ -24,7 +24,7 @@ public sealed class UsageCommandTests
             Assert.Contains("last 7 days: 2 tool calls answered", text);
             Assert.Contains("since " + DateTime.UtcNow.ToString("yyyy-MM-dd"), text);
             Assert.Contains("impact_of", text);
-            Assert.Equal("last 7 days: 2 tool calls answered; the files they pointed at come to about 0 tokens, the answers to 1,100, so about 0 tokens stayed out of the context; most used: find_symbol ×1, impact_of ×1 (codegraph-index usage for details)", UsageCommand.AfterIndexLine(dbPath));
+            Assert.Equal("last 7 days: 2 tool calls answered; answers 1,100 tokens, the files they name 0 tokens (estimated at 4 characters a token); most used: find_symbol ×1, impact_of ×1 (codegraph-index usage for details)", UsageCommand.AfterIndexLine(dbPath));
         }
         finally
         {

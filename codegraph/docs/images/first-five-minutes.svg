@@ -22,5 +22,5 @@
 
   <text x="24" y="358" fill="#8b949e">3  a week later</text>
   <text x="24" y="380" fill="#e6edf3"><tspan fill="#7ee787">$</tspan> codegraph-index usage</text>
-  <text x="24" y="398" fill="#e6edf3">last 7 days: 143 tool calls answered; ... so about <tspan fill="#ffa657">1,180,000 tokens stayed out of the context</tspan></text>
+  <text x="24" y="398" fill="#e6edf3">last 7 days: <tspan fill="#ffa657">114 tool calls answered</tspan> (1 failed); answers 175,547 tokens, the files they name 2,705,154 ...</text>
 </svg>
