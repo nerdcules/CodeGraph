@@ -997,16 +997,18 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         $"no node with id '{id}'. Use find_symbol to look it up; ids look like M:Namespace.Type.Method(System.String)";
 
     /// <summary>
-    /// The id as a row prints it: its 8-character handle while the graph is in memory (the call-tool filter turns the
-    /// handle back into the id), else the id itself. An id with no handle, such as a live symbol outside the graph or
-    /// one of a colliding pair, prints in full.
+    /// The id as a row prints it: its 8-character handle (the call-tool filter turns the handle back into the id).
+    /// An id with no handle, such as a live symbol outside the graph or one of a colliding pair, prints in full.
     /// </summary>
     private string Id(string id) => Handles?.Handle(id) ?? id;
 
     private NodeHandles? _handles;
 
-    /// <summary>The handles of the snapshot this call reads, looked up once per call; null while the graph is not in memory.</summary>
-    private NodeHandles? Handles => _handles ??= store.Snapshot is { } snapshot ? NodeHandles.For(snapshot) : null;
+    /// <summary>
+    /// The handles for this call, looked up once: those of the snapshot that the call reads, else those that the
+    /// cache has (the last snapshot that loaded, or made from the database). Null only if the database cannot be read.
+    /// </summary>
+    private NodeHandles? Handles => _handles ??= store.Snapshot is { } snapshot ? NodeHandles.For(snapshot) : snapshots.Handles(store);
 
     /// <summary>
     /// The node an id argument names: the node with that id (a handle has already become its id in the call-tool
@@ -1032,7 +1034,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         answer = matches.Count switch
         {
             0 when NodeHandles.LooksLikeHandle(idOrName) =>
-                $"'{idOrName}' is not a handle of this graph: the graph was rebuilt, or is not in memory yet. Pass the name, or retry.",
+                $"'{idOrName}' is not a handle of this graph: the graph was rebuilt and the node is gone. Pass the name, or use find_symbol.",
             0 => $"no node has the id '{idOrName}' and no symbol has that exact name. A re-index retires the id of a removed member; "
                  + "use find_symbol with a partial name. Ids look like M:Namespace.Type.Method(System.String)",
             > 20 => $"more than 20 symbols are named {idOrName}; pass the id of one, or use find_symbol with nameMatch Exact and offset to see the rest:\n"

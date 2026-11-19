@@ -54,7 +54,7 @@ public sealed class NodeHandlesTests
     }
 
     [Fact]
-    public void Rows_print_the_handle_with_a_snapshot_and_the_id_without_one()
+    public void Rows_print_the_handle_with_a_snapshot_and_without_one()
     {
         using var db = new TempDb();
         db.Store.Seeded();
@@ -62,12 +62,13 @@ public sealed class NodeHandlesTests
         using var reader = GraphStore.OpenReader(db.DbPath, snapshot, TimeSpan.FromSeconds(5));
         var handle = NodeHandles.For(snapshot).Handle(Graph.Save);
 
+        // Without a snapshot the call reads through the database, and the handles come from its id list.
         var withSnapshot = Tools(reader, db.DbPath).FindSymbol("Save", nameMatch: "Exact");
         var withoutSnapshot = Tools(db.Store, db.DbPath).FindSymbol("Save", nameMatch: "Exact");
 
         Assert.NotEqual(Graph.Save, handle);
         Assert.EndsWith($"  [{handle}]\n", withSnapshot.ReplaceLineEndings("\n"));
-        Assert.EndsWith($"  [{Graph.Save}]\n", withoutSnapshot.ReplaceLineEndings("\n"));
+        Assert.Equal(withSnapshot, withoutSnapshot);
         Assert.Same(NodeHandles.For(snapshot), NodeHandles.For(snapshot));
         Assert.Equal(Graph.Save, NodeHandles.For(snapshot).Resolve(handle));
     }
@@ -87,7 +88,7 @@ public sealed class NodeHandlesTests
     }
 
     [Fact]
-    public void A_handle_resolves_through_the_last_snapshot_while_a_reload_runs()
+    public void The_cache_has_handles_before_the_first_load_and_while_a_reload_runs()
     {
         var directory = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
         var dbPath = Path.Combine(directory, "graph.db");
@@ -98,21 +99,60 @@ public sealed class NodeHandlesTests
                 writer.Replace(full: true, [], Graph.Nodes, Graph.Edges, [], [], new Dictionary<string, string>());
             }
 
+            // No timer and no call to Current: no snapshot loads, as at the start of a server process.
             using var cache = new GraphSnapshotCache(dbPath);
-            Assert.Null(cache.Last);
+            var handle = NodeHandles.Encode(NodeHandles.Hash(Graph.Save));
+            var fromDatabase = cache.Handles();
+            Assert.NotNull(fromDatabase);
+            Assert.Equal(handle, fromDatabase.Handle(Graph.Save));
+            Assert.Same(fromDatabase, cache.Handles());
+            Assert.StartsWith("not in memory yet", cache.Describe());
+            Assert.Equal(Graph.Save, NodeIds.Resolve($"[{handle}]", cache));
+
+            // A write moves the stamp: the handles are made again, and they know the new node.
+            using (var writer = new GraphStore(dbPath))
+            {
+                writer.Replace(full: false, [], [Graph.Node("M:Demo.New", NodeKind.Method, "New", "Demo.New")], [], [], [], new Dictionary<string, string>());
+            }
+
+            var afterWrite = cache.Handles();
+            Assert.NotNull(afterWrite);
+            Assert.NotSame(fromDatabase, afterWrite);
+            Assert.Equal("M:Demo.New", afterWrite.Resolve(NodeHandles.Encode(NodeHandles.Hash("M:Demo.New"))));
+
+            // After a load, the handles are those of the snapshot.
             var loaded = cache.WaitForCurrent(TimeSpan.FromSeconds(30));
             Assert.NotNull(loaded);
-            var handle = NodeHandles.For(loaded).Handle(Graph.Save);
-            Assert.Equal(Graph.Save, NodeIds.Normalize(handle, cache, TimeSpan.Zero));
+            Assert.Same(NodeHandles.For(loaded), cache.Handles());
 
             // The file moves away: its stamp changes and no load can finish, as in a reload that takes a long time.
+            // The last snapshot that loaded still resolves the handle, with no wait.
             File.Move(dbPath, dbPath + ".away");
             Assert.Null(cache.Current);
-            Assert.Same(loaded, cache.Last);
+            Assert.Same(NodeHandles.For(loaded), cache.Handles());
+            Assert.Equal(Graph.Save, NodeIds.Resolve($"[{handle}]", cache));
+            Assert.Equal("aaaaaaaa", NodeIds.Resolve("aaaaaaaa", cache));
+            Assert.Equal("Service.Save", NodeIds.Resolve(" Service.Save ", cache));
+        }
+        finally
+        {
+            TempDb.TryDelete(directory);
+        }
+    }
 
-            Assert.Equal(Graph.Save, NodeIds.Normalize($"[{handle}]", cache, TimeSpan.Zero));
-            Assert.Equal("aaaaaaaa", NodeIds.Normalize("aaaaaaaa", cache, TimeSpan.Zero));
-            Assert.Equal("Service.Save", NodeIds.Normalize(" Service.Save ", cache, TimeSpan.Zero));
+    [Fact]
+    public void A_name_with_the_shape_of_a_handle_does_not_wait_and_no_graph_file_gives_no_handles()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "codegraph-tests", Guid.NewGuid().ToString("n"));
+        try
+        {
+            using var cache = new GraphSnapshotCache(Path.Combine(directory, "graph.db"));
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+
+            Assert.Null(cache.Handles());
+            Assert.True(NodeHandles.LooksLikeHandle("validate"));
+            Assert.Equal("validate", NodeIds.Resolve("validate", cache));
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
         }
         finally
         {

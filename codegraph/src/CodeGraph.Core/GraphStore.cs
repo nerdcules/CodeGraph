@@ -1101,6 +1101,26 @@ public sealed class GraphStore : IDisposable
         return rows;
     }
 
+    /// <summary>Every node id, in no order. <see cref="NodeHandles"/> reads this when no snapshot has loaded yet.</summary>
+    public IReadOnlyCollection<string> AllNodeIds()
+    {
+        if (_snapshot is not null)
+        {
+            return _snapshot.Ids.ToList();
+        }
+
+        using var command = Connection.CreateCommand();
+        command.CommandText = "SELECT id FROM nodes;";
+        using var reader = command.ExecuteReader();
+        var ids = new List<string>();
+        while (reader.Read())
+        {
+            ids.Add(reader.GetString(0));
+        }
+
+        return ids;
+    }
+
     public GraphNode? GetNode(string id)
     {
         if (_snapshot is not null)

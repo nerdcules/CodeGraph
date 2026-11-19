@@ -5,6 +5,16 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+- Rows print the 8-character handle on every read path, not only while the graph is in memory. Before the first
+  snapshot loads, the server makes the handles from the id list of the database. While a reload after a re-index
+  runs, it uses the handles of the snapshot that loaded last; a node that is new since then prints its full id until
+  the reload ends. In 1.5.0 an answer from the database printed full ids, so the first answer of a session and the
+  answers during a reload were longer than the others. No call waits for the snapshot now: the 2 s wait of the
+  first tool call is gone, and so is the 2 s wait for an argument with the shape of a handle, which also delayed a
+  name of 8 lowercase letters such as `validate`. `CODEGRAPH_SNAPSHOT=off` prints handles too.
+
 ## 1.5.0
 
 Answers from the codegraph server are shorter, with the same facts: relative paths, 8-character handles in

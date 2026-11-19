@@ -224,7 +224,7 @@ method  App.Core.OrderService.Submit(App.Core.Order)  depth 1  src/App.Core/Orde
 ```
 
 Give the id in brackets to the next tool.
-While the graph is in memory, the brackets hold an 8-character handle.
+The brackets hold an 8-character handle.
 The handle is a hash of the full id, so it is the same in every answer.
 A tool takes the handle or the full id.
 Two ids with the same handle show the full id.

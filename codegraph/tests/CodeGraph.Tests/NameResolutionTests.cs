@@ -55,8 +55,8 @@ public sealed class NameResolutionTests
         var answer = Tools(db).CallersOf("Run");
 
         Assert.StartsWith("2 symbols are named Run; pass the id of one:", answer);
-        Assert.Contains("[M:Demo.Alpha.Run]", answer);
-        Assert.Contains("[M:Demo.Beta.Run]", answer);
+        Assert.Contains($"[{NodeHandles.Encode(NodeHandles.Hash("M:Demo.Alpha.Run"))}]", answer);
+        Assert.Contains($"[{NodeHandles.Encode(NodeHandles.Hash("M:Demo.Beta.Run"))}]", answer);
         // A qualified tail picks one of them.
         Assert.StartsWith("Demo.Alpha.Run: no callers", Tools(db).CallersOf("Alpha.Run"));
     }

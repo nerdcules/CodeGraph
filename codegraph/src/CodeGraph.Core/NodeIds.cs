@@ -61,25 +61,13 @@ public static class NodeIds
     }
 
     /// <summary>
-    /// <see cref="Normalize(string, NodeHandles?)"/> with the handles of the graph in memory. While a reload after a
-    /// re-index runs, the last snapshot that loaded resolves the handle: its id is the same in every snapshot, and the
-    /// tool's own lookup then says if the node is still there. Only a handle that no loaded snapshot knows waits up to
-    /// <paramref name="wait"/> for the load.
+    /// <see cref="Normalize(string, NodeHandles?)"/> with the handles that <paramref name="snapshots"/> has for the
+    /// graph. It never waits for a load: the cache has handles on every read path. Only an argument that has the
+    /// shape of a handle asks for them; the tool's own lookup then says if the node is still there.
     /// </summary>
-    public static string Normalize(string raw, GraphSnapshotCache snapshots, TimeSpan wait)
+    public static string Resolve(string raw, GraphSnapshotCache snapshots)
     {
         var id = Unwrap(raw);
-        if (!NodeHandles.LooksLikeHandle(id))
-        {
-            return id;
-        }
-
-        var known = snapshots.Current ?? snapshots.Last;
-        if (known is not null && NodeHandles.For(known).Resolve(id) is { } full)
-        {
-            return full;
-        }
-
-        return snapshots.WaitForCurrent(wait) is { } loaded && !ReferenceEquals(loaded, known) ? Normalize(id, NodeHandles.For(loaded)) : id;
+        return NodeHandles.LooksLikeHandle(id) ? Normalize(id, snapshots.Handles()) : id;
     }
 }

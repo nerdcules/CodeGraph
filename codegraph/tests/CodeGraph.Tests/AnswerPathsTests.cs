@@ -87,7 +87,7 @@ public sealed class AnswerPathsTests
 
         var answer = tools.FindSymbol("Save", nameMatch: "Exact");
 
-        Assert.Contains("  Service.cs:1-2  [M:Demo.Service.Save]", answer);
+        Assert.Contains($"  Service.cs:1-2  [{NodeHandles.Encode(NodeHandles.Hash(Graph.Save))}]", answer);
         Assert.DoesNotContain("/repo/", answer);
         Assert.Equal("paths are relative to /repo", paths.Header);
     }

@@ -19,6 +19,7 @@ public sealed class GraphSnapshotCache : IDisposable
     private readonly Timer? _timer;
     private readonly Lock _lock = new();
     private (FileStamp Stamp, GraphSnapshot Snapshot)? _entry;
+    private (FileStamp Stamp, NodeHandles Handles)? _fromDatabase;
     private Task? _loading;
     private DateTime _retryAfter;
     private string? _lastError;
@@ -60,18 +61,65 @@ public sealed class GraphSnapshotCache : IDisposable
     }
 
     /// <summary>
-    /// The last snapshot that loaded, also after the file changed; null before the first load. Not for graph reads:
-    /// it can be older than the file. A handle is the hash of its id, so this snapshot still resolves the handles
-    /// that earlier answers printed while a reload runs.
+    /// The handles of the graph, on every read path: those of the last snapshot that loaded, and before the first
+    /// load, handles made from the id list of the database (kept until the file changes or a snapshot loads). A handle
+    /// is the hash of its id, so handles that are older than the file are still correct; an id that they do not know
+    /// prints in full. Null when there is no graph file or the database cannot be read now. Does not start a load.
     /// </summary>
-    public GraphSnapshot? Last
+    /// <param name="reader">The open store of this tool call, to read the ids from; null to open the database here.</param>
+    public NodeHandles? Handles(GraphStore? reader = null)
     {
-        get
+        var stamp = FileStamp.Of(_dbPath);
+        GraphSnapshot? loaded;
+        lock (_lock)
         {
+            loaded = _entry?.Snapshot;
+            if (loaded is null && _fromDatabase is { } made && made.Stamp == stamp)
+            {
+                return made.Handles;
+            }
+        }
+
+        if (loaded is not null)
+        {
+            return NodeHandles.For(loaded);
+        }
+
+        if (!stamp.Exists)
+        {
+            return null;
+        }
+
+        try
+        {
+            NodeHandles handles;
+            if (reader is not null)
+            {
+                handles = new NodeHandles(reader.AllNodeIds());
+            }
+            else
+            {
+                using var lease = _anchor?.AcquireCurrent();
+                if (_anchor is not null && lease is null)
+                {
+                    return null; // a call may still be reading a replaced file
+                }
+
+                using var store = GraphStore.Open(_dbPath, readOnly: true, TimeSpan.FromSeconds(2));
+                handles = new NodeHandles(store.AllNodeIds());
+            }
+
             lock (_lock)
             {
-                return _entry?.Snapshot;
+                _fromDatabase = (stamp, handles);
             }
+
+            return handles;
+        }
+        catch (Exception)
+        {
+            // Most often the indexer holds the write lock. Rows then print full ids, as they did before handles.
+            return null;
         }
     }
 
@@ -171,6 +219,7 @@ public sealed class GraphSnapshotCache : IDisposable
             lock (_lock)
             {
                 _entry = (stamp, snapshot);
+                _fromDatabase = null;
                 _lastError = null;
             }
         }

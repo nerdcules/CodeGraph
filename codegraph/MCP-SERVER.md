@@ -144,10 +144,11 @@ File paths are relative to the repository root: the git worktree that holds the 
 `.codegraph`. An answer that has such a path names the root once, in its first line (after the `STALE` warning, if
 any). A path outside the root stays absolute. Join the root and the path before opening a file.
 
-While the graph is in memory (the normal case once the server has loaded it), rows print an 8-character handle in
-place of the id, such as `[k7m2qa4z]`: 40 bits of the SHA-256 of the id in base 32, so the handle is the same in
-every answer and every session for as long as the id exists. Every tool that takes an id accepts the handle or the
-id. Two ids whose handles collide print in full. Until the graph is in memory, rows print the id itself.
+Rows print an 8-character handle in place of the id, such as `[k7m2qa4z]`: 40 bits of the SHA-256 of the id in
+base 32, so the handle is the same in every answer and every session for as long as the id exists. Every tool that
+takes an id accepts the handle or the id. Two ids whose handles collide print in full. The handles come from the
+graph in memory, and from the id list of the database until the graph has loaded. While the server loads the graph
+again after a re-index, a node that is new prints its full id.
 
 `impact_of`, `covered_by`, `callers_of`, `tests_for` and `snippet` also take a name in place of the id (`Save`, or
 `Service.Save`): when exactly one symbol has that exact name, the tool answers for it; otherwise it lists the
