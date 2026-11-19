@@ -7,6 +7,15 @@ The executables report their version with `--version`; the MCP server shows it t
 
 ## Unreleased
 
+- `find_symbol` with `nameMatch: "Exact"` finds a qualified tail after the `/` or `:` that ends a package path,
+  as well as after a `.`. Go, Python and TypeScript full names put the package before the type that way
+  (`github.com/spf13/cobra/Command.Find`, `httpx._urls/URL.join`, `src/context:Context.header`), so `Command.Find`,
+  `URL.join` and `Context.header` found nothing before. Found while building the answer keys for the four public
+  repositories.
+- `covered_by` opens "N test(s) reach X through calls (static reach: a run may execute it in fewer)" instead of
+  "N test(s) transitively cover X", and its description and `impact_of`'s say that the tests are the ones that can
+  reach the member. On HTTPX the list held 225 tests where 46 run the method, and the answers reported 213 or 225
+  as the tests that cover it.
 - The page "Why it saves tokens" is now [Measured results](docs/measured-results.md) (`docs/measured-results.md`):
   on the four public repositories, Claude Code with CodeGraph saved time and model calls, not tokens. Every link and
   nav bar points to the new name.

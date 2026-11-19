@@ -192,7 +192,7 @@ and override.
 
 | tool | arguments | answers |
 |---|---|---|
-| `find_symbol` | `query`, `kind?`, `limit` (1–100, 20), `typeKind?`, `accessibility?`, `isStatic?`, `isAbstract?`, `isVirtual?`, `isAsync?`, `isOverride?`, `memberKind?`, `nameMatch` (Contains / StartsWith / EndsWith / Exact), `offset`, `language?` | Types and members by name, case-insensitive. Exact name matches first, then shorter names. `Exact` also takes a qualified tail such as `GraphStore.Replace`. |
+| `find_symbol` | `query`, `kind?`, `limit` (1–100, 20), `typeKind?`, `accessibility?`, `isStatic?`, `isAbstract?`, `isVirtual?`, `isAsync?`, `isOverride?`, `memberKind?`, `nameMatch` (Contains / StartsWith / EndsWith / Exact), `offset`, `language?` | Types and members by name, case-insensitive. Exact name matches first, then shorter names. `Exact` also takes a qualified tail such as `GraphStore.Replace`, after a `.`, or after the `/` or `:` that ends a package path in Go, Python and TypeScript names (`Command.Find` for `github.com/spf13/cobra/Command.Find`). |
 | `search_code` | `query`, `kind?`, `file?`, `limit` (1–100, 20), `mode` (auto / lexical / semantic / hybrid), `language?` | "Where's the code that does X": BM25 full-text over names, signatures, comments, string literals and body identifiers, fused with vector similarity when the graph has [embeddings](#semantic-search). Each hit shows how many query terms it matched and its score (lexical), its similarity (semantic), or its rank by words and by meaning (hybrid). |
 | `outline` | `id` | Direct children, no bodies: members of a type, types in a file, files in a project. |
 | `members_of` | `id`, `kind?`, `accessibility?`, `isStatic?`, `isAbstract?`, `isAsync?`, `isVirtual?`, `isOverride?`, `limit` (500), `offset` | Members of a type filtered by kind and modifiers. |
@@ -224,7 +224,7 @@ and override.
 | tool | arguments | answers |
 |---|---|---|
 | `tests_for` | `id` | Test methods that call or read this member directly, including through an interface or base member it implements. In C#, what the framework runs around a test counts as called by it: the test class's constructors and `Dispose`, `IAsyncLifetime`, and `[SetUp]` / `[TestInitialize]`-style methods. |
-| `covered_by` | `id`, `depth` (1–30, 10) | Tests that reach this member transitively, following interface and virtual dispatch, with hop count. |
+| `covered_by` | `id`, `depth` (1–30, 10) | Tests that reach this member transitively, following interface and virtual dispatch, with hop count. This is static reach, and the answer says so: on four public repositories (19 November 2026) the list held every test that runs the method on Cobra and Jellyfin, and on HTTPX listed 225 where 46 run it ([measured](docs/measured-results.md#four-public-repositories)). |
 | `coverage_stats` | | Share of production methods reachable from any test through the call graph. Static reachability, not line coverage. |
 | `uncovered` | `file?`, `limit` (1–500, 100), `offset` | Production methods no test reaches. |
 

@@ -207,7 +207,9 @@ public sealed class GraphSnapshot
 
     /// <summary>
     /// Whether <paramref name="query"/> is the full name without its parameter list, or a tail of it that starts
-    /// after a dot: <c>GraphStore.Replace</c> for <c>CodeGraph.Core.GraphStore.Replace(bool, …)</c>.
+    /// after a dot, a slash or a colon: <c>GraphStore.Replace</c> for <c>CodeGraph.Core.GraphStore.Replace(bool, …)</c>,
+    /// <c>Command.Find</c> for Go's <c>github.com/spf13/cobra/Command.Find</c>, <c>URL.join</c> for Python's
+    /// <c>httpx._urls/URL.join</c>, <c>Context.header</c> for TypeScript's <c>src/context:Context.header</c>.
     /// </summary>
     private static bool QualifiedTail(string fullName, string query)
     {
@@ -216,7 +218,7 @@ public sealed class GraphSnapshot
         return bare.Equals(query, StringComparison.OrdinalIgnoreCase)
                || (bare.Length > query.Length
                    && bare.EndsWith(query, StringComparison.OrdinalIgnoreCase)
-                   && bare[bare.Length - query.Length - 1] == '.');
+                   && (bare[bare.Length - query.Length - 1] is '.' or '/' or ':'));
     }
 
     /// <inheritdoc cref="GraphStore.FindSymbol"/>

@@ -32,7 +32,7 @@ method, which can run above the tests that execute it: on Python's HTTPX, 225 li
 ([measured](docs/measured-results.md#four-public-repositories)).
 
 - Precision and recall of 100% on generated codebases in eight languages, on current toolchains and on 2023-era ones, bar one old rust-analyzer at 87% call recall ([benchmarks](BENCHMARKS.md))
-- 460 tests: in a local Linux run on 19 November 2026, 458 passed and 2 skipped (tests of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
+- 461 tests: in a local Linux run on 19 November 2026, 459 passed and 2 skipped (tests of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
 - Prebuilt for six platforms, nothing to compile ([releases](https://github.com/nerdcules/CodeGraph/releases/latest))
 
 Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the TypeScript compiler; Java,
