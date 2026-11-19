@@ -336,6 +336,9 @@ public sealed class GraphSnapshot
             .Take(Math.Max(0, limit))
             .ToList();
 
+    /// <summary>Every node id, in no order; <see cref="NodeHandles"/> reads this once per snapshot.</summary>
+    public IEnumerable<string> Ids => _index.Keys;
+
     /// <inheritdoc cref="GraphStore.AllNodes"/>
     public IReadOnlyList<GraphNode> AllNodes(NodeKind? kind = null) =>
         kind is null

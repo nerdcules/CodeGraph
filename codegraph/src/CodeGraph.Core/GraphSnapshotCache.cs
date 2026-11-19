@@ -59,6 +59,22 @@ public sealed class GraphSnapshotCache : IDisposable
         }
     }
 
+    /// <summary>
+    /// The last snapshot that loaded, also after the file changed; null before the first load. Not for graph reads:
+    /// it can be older than the file. A handle is the hash of its id, so this snapshot still resolves the handles
+    /// that earlier answers printed while a reload runs.
+    /// </summary>
+    public GraphSnapshot? Last
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _entry?.Snapshot;
+            }
+        }
+    }
+
     /// <summary>Starts a load if the file changed since the last one. Cheap: two <c>stat</c> calls when nothing did.</summary>
     public void Refresh() => _ = Current;
 

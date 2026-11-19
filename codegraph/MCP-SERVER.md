@@ -122,7 +122,7 @@ The `initialize` response carries everything a client's server page can display,
 | `serverInfo.description` | one-paragraph summary of what the graph answers |
 | `serverInfo.websiteUrl` | the GitHub repository |
 | `serverInfo.icons` | [assets/logo.svg](assets/logo.svg), embedded in the executable and sent as a data URI |
-| `instructions` | a short guide for the model: typical turn, ids are passed back verbatim without the brackets, what `STALE` means |
+| `instructions` | a short guide for the model (under 4,096 characters, Claude Code's limit): give the tools a name when you know it, `impact_of` already lists the tests, ids and handles are passed back verbatim without the brackets, paths are relative to the root the answer names, what `STALE` means |
 
 Which of these a given client renders is up to the client; VS Code adds support for newer
 fields such as icons as it tracks the protocol.
@@ -136,8 +136,22 @@ kind  full name  [extra]  file:start-end  [id]  [STALE]
 ```
 
 ```
-method  GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout, System.Threading.CancellationToken)  depth 1  C:\dev\GymX\src\GymX.Core\WorkoutService.cs:41-67  [M:GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout,System.Threading.CancellationToken)]
+paths are relative to C:\dev\GymX
+method  GymX.Core.WorkoutService.SaveAsync(GymX.Core.Workout, System.Threading.CancellationToken)  depth 1  src\GymX.Core\WorkoutService.cs:41-67  [k7m2qa4z]
 ```
+
+File paths are relative to the repository root: the git worktree that holds the graph, else the folder that holds
+`.codegraph`. An answer that has such a path names the root once, in its first line (after the `STALE` warning, if
+any). A path outside the root stays absolute. Join the root and the path before opening a file.
+
+While the graph is in memory (the normal case once the server has loaded it), rows print an 8-character handle in
+place of the id, such as `[k7m2qa4z]`: 40 bits of the SHA-256 of the id in base 32, so the handle is the same in
+every answer and every session for as long as the id exists. Every tool that takes an id accepts the handle or the
+id. Two ids whose handles collide print in full. Until the graph is in memory, rows print the id itself.
+
+`impact_of`, `covered_by`, `callers_of`, `tests_for` and `snippet` also take a name in place of the id (`Save`, or
+`Service.Save`): when exactly one symbol has that exact name, the tool answers for it; otherwise it lists the
+candidates with their ids. So a question about a method you can name needs no `find_symbol` first.
 
 For C#, the `[id]` is the Roslyn documentation-comment id; ids from the TypeScript extractor start with `ts:`,
 and ids from a SCIP indexer with `scip:`. Pass it back verbatim, without the brackets, to any tool that takes
@@ -196,16 +210,16 @@ and override.
 | `search_code` | `query`, `kind?`, `file?`, `limit` (1–100, 20), `mode` (auto / lexical / semantic / hybrid), `language?` | "Where's the code that does X": BM25 full-text over names, signatures, comments, string literals and body identifiers, fused with vector similarity when the graph has [embeddings](#semantic-search). Each hit shows how many query terms it matched and its score (lexical), its similarity (semantic), or its rank by words and by meaning (hybrid). |
 | `outline` | `id` | Direct children, no bodies: members of a type, types in a file, files in a project. |
 | `members_of` | `id`, `kind?`, `accessibility?`, `isStatic?`, `isAbstract?`, `isAsync?`, `isVirtual?`, `isOverride?`, `limit` (500), `offset` | Members of a type filtered by kind and modifiers. |
-| `snippet` | `id`, `context` (0–50 extra lines) | The declaration span from source, line-numbered. Read this instead of the file. |
+| `snippet` | `id` (or an exact name), `context` (0–50 extra lines) | The declaration span from source, line-numbered. Read this instead of the file. |
 | `neighbors` | `id` | Every edge in and out of a node across all kinds. |
 
 ### Call graph and impact
 
 | tool | arguments | answers |
 |---|---|---|
-| `callers_of` | `id`, `depth` (1–20, 1) | Who calls or reads this member, transitively. A call to an interface or base member counts for every implementation and override. |
+| `callers_of` | `id` (or an exact name), `depth` (1–20, 1) | Who calls or reads this member, transitively. A call to an interface or base member counts for every implementation and override. |
 | `callees_of` | `id`, `depth` (1–20, 1), `includeExternal` (false) | What this member calls; with `includeExternal`, the framework and NuGet members too. |
-| `impact_of` | `id`, `depth` (1–20, 5) | Everything that could break: transitive callers, overriders, implementers, subclasses, and for a type every member that references it. Guarding tests are listed separately. Call before editing anything shared. |
+| `impact_of` | `id` (or an exact name), `depth` (1–20, 5) | Everything that could break: transitive callers, overriders, implementers, subclasses, and for a type every member that references it. Guarding tests are listed separately. Call before editing anything shared. |
 | `path_between` | `from`, `to`, `edgeKinds` (Calls), `maxDepth` (1–20, 10), `maxPaths` (1–5, 3) | Shortest call chains from one method to another: up to `maxPaths`, all of the shortest length. |
 | `most_called` | `limit` (1–100, 20), `minCallers` (1), `offset`, `includeExternal` (false), `nameFilter?`, `language?` | Methods ranked by direct caller count. With `includeExternal` and e.g. `nameFilter: "System.IO"`, which framework APIs the solution leans on. |
 | `traverse` | `id`, `edgeKind`, `direction` (inbound / outbound), `depth` (1–10, 1) | Generic walk over one edge kind when no named tool fits. |
@@ -223,8 +237,8 @@ and override.
 
 | tool | arguments | answers |
 |---|---|---|
-| `tests_for` | `id` | Test methods that call or read this member directly, including through an interface or base member it implements. In C#, what the framework runs around a test counts as called by it: the test class's constructors and `Dispose`, `IAsyncLifetime`, and `[SetUp]` / `[TestInitialize]`-style methods. |
-| `covered_by` | `id`, `depth` (1–30, 10) | Tests that reach this member transitively, following interface and virtual dispatch, with hop count. This is static reach, and the answer says so: on four public repositories (19 November 2026) the list held every test that runs the method on Cobra and Jellyfin, and on HTTPX listed 225 where 46 run it ([measured](docs/measured-results.md#four-public-repositories)). |
+| `tests_for` | `id` (or an exact name) | Test methods that call or read this member directly, including through an interface or base member it implements. In C#, what the framework runs around a test counts as called by it: the test class's constructors and `Dispose`, `IAsyncLifetime`, and `[SetUp]` / `[TestInitialize]`-style methods. |
+| `covered_by` | `id` (or an exact name), `depth` (1–30, 10) | Tests that reach this member transitively, following interface and virtual dispatch, with hop count: the nearest 50 by depth, then the count of the rest at each depth. This is static reach, and the answer says so: on four public repositories (19 November 2026) the list held every test that runs the method on Cobra and Jellyfin, and on HTTPX listed 225 where 46 run it ([measured](docs/measured-results.md#four-public-repositories)). |
 | `coverage_stats` | | Share of production methods reachable from any test through the call graph. Static reachability, not line coverage. |
 | `uncovered` | `file?`, `limit` (1–500, 100), `offset` | Production methods no test reaches. |
 

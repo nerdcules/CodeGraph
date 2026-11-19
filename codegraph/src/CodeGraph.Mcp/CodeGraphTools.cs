@@ -14,7 +14,7 @@ namespace CodeGraph.Mcp;
 /// Rows whose file was edited since indexing end in <c>STALE</c>; the call-tool filter in Program adds the summary line.
 /// </summary>
 [McpServerToolType]
-public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live, SemanticSearch semantic, GraphSnapshotCache snapshots)
+public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live, SemanticSearch semantic, GraphSnapshotCache snapshots, AnswerPaths paths)
 {
     // ── Live tools: answered by codegraph-index --watch, not by the graph: the Roslyn solution for C#, a language
     // server (typescript-language-server, jdtls, pyright, gopls, rust-analyzer) for the other languages ─────────
@@ -47,11 +47,11 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         {
             var sb = new StringBuilder();
             sb.Append(s.Kind.ToLowerInvariant()).Append("  ").Append(s.Display);
-            if (s.File is not null) sb.Append("  ").Append(s.File).Append(':').Append(s.Line);
-            if (s.Id is not null) sb.Append("  [").Append(s.Id).Append(']');
+            if (s.File is not null) sb.Append("  ").Append(paths.Relative(s.File)).Append(':').Append(s.Line);
+            if (s.Id is not null) sb.Append("  [").Append(Id(s.Id)).Append(']');
             sb.AppendLine(s.InSource ? "" : "  (metadata: not in the graph; use live_references to find its uses)");
             if (s.ExpressionType is not null) sb.AppendLine($"expression type: {s.ExpressionType}");
-            if (s.EnclosingMemberId is not null) sb.AppendLine($"inside: [{s.EnclosingMemberId}]");
+            if (s.EnclosingMemberId is not null) sb.AppendLine($"inside: [{Id(s.EnclosingMemberId)}]");
             return sb.ToString();
         }, cancellationToken);
 
@@ -70,8 +70,8 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             sb.AppendLine(r.InSource ? ":" : " (metadata symbol):");
             foreach (var reference in r.References)
             {
-                sb.Append("  ").Append(reference.EnclosingMember ?? "(file level)").Append("  ").Append(reference.File).Append(':').Append(reference.Line);
-                if (reference.EnclosingMemberId is not null) sb.Append("  [").Append(reference.EnclosingMemberId).Append(']');
+                sb.Append("  ").Append(reference.EnclosingMember ?? "(file level)").Append("  ").Append(paths.Relative(reference.File)).Append(':').Append(reference.Line);
+                if (reference.EnclosingMemberId is not null) sb.Append("  [").Append(Id(reference.EnclosingMemberId)).Append(']');
                 sb.AppendLine();
                 sb.Append("      ").AppendLine(reference.Text);
             }
@@ -154,7 +154,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         var analysed = 0;
         foreach (var d in declarations.OrderBy(d => d.Change switch { "removed" => 0, "signature" => 1, "body" => 2, _ => 3 }))
         {
-            sb.Append("  ").Append(d.Change).Append("  ").Append(d.Display).Append("  [").Append(d.Id).Append(']');
+            sb.Append("  ").Append(d.Change).Append("  ").Append(d.Display).Append("  [").Append(Id(d.Id)).Append(']');
             if (d.Change != "added" && analysed < MaxImpact && store.GetNode(d.Id) is not null)
             {
                 analysed++;
@@ -177,7 +177,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         Live("data_flow", new { symbol }, (LiveDataFlow d) =>
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"data flow in {d.Member}  {d.File}:{d.Line}");
+            sb.AppendLine($"data flow in {d.Member}  {paths.Relative(d.File)}:{d.Line}");
             if (d.Parameters.Count == 0) sb.AppendLine("(no parameters)");
             foreach (var p in d.Parameters)
             {
@@ -187,7 +187,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
                 {
                     sb.Append("  ").Append(flow.Line).Append(": ").Append(flow.Detail);
                     if (flow.Via is not null) sb.Append(" (via '").Append(flow.Via).Append("')");
-                    if (flow.TargetId is not null) sb.Append("  [").Append(flow.TargetId).Append(']');
+                    if (flow.TargetId is not null) sb.Append("  [").Append(Id(flow.TargetId)).Append(']');
                     sb.AppendLine();
                 }
             }
@@ -218,7 +218,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             var shown = 0;
             foreach (var file in r.Files)
             {
-                sb.AppendLine(file.File);
+                sb.AppendLine(paths.Relative(file.File));
                 foreach (var line in file.Lines)
                 {
                     if (shown++ >= Math.Clamp(limit, 1, 2000))
@@ -271,8 +271,8 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         return sb.ToString();
     }
 
-    private static string Format(LiveDiagnostic d) =>
-        $"  {d.Severity.ToLowerInvariant()} {d.Id}: {d.Message}{(d.File is not null ? $"  {d.File}:{d.Line}" : "")}";
+    private string Format(LiveDiagnostic d) =>
+        $"  {d.Severity.ToLowerInvariant()} {d.Id}: {d.Message}{(d.File is not null ? $"  {paths.Relative(d.File)}:{d.Line}" : "")}";
 
     // ── Graph tools: answered from the DuckDB graph ────────────────────────────────────────────────────────
     [McpServerTool(Name = "search_code", ReadOnly = true, Idempotent = true)]
@@ -506,9 +506,9 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [McpServerTool(Name = "callers_of", ReadOnly = true, Idempotent = true)]
     [Description("Who calls or reads this member (property and field accesses count). A call to an interface or base member counts as a call to every implementation and override. depth 1 = direct callers; higher depth walks the call graph outward.")]
     public string CallersOf(
-        [Description("Node id from find_symbol")] string id,
+        [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("How many hops to follow, 1-20, default 1")] int depth = 1) =>
-        Traversal(id, store.Callers(id, Math.Clamp(depth, 1, 20)), "callers");
+        Target(id, out var answer) is { } node ? Traversal(node.Id, store.Callers(node.Id, Math.Clamp(depth, 1, 20)), "callers") : answer!;
 
     [McpServerTool(Name = "callees_of", ReadOnly = true, Idempotent = true)]
     [Description("What this member calls. depth 1 = direct callees. Framework and NuGet members it calls are left out unless includeExternal is true.")]
@@ -521,16 +521,15 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [McpServerTool(Name = "impact_of", ReadOnly = true, Idempotent = true)]
     [Description("Everything that could break if this changes: transitive callers, overriders, implementers, subclasses, and for a type every member that references it — and which tests guard it (tests that reach it through calls; a run may execute it in fewer). Call this before editing a shared member or type.")]
     public string ImpactOf(
-        [Description("Node id from find_symbol")] string id,
+        [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("Max hops, 1-20, default 5")] int depth = 5)
     {
-        var node = store.GetNode(id);
-        if (node is null)
+        if (Target(id, out var answer) is not { } node)
         {
-            return NotFound(id);
+            return answer!;
         }
 
-        var hits = store.Impact(id, Math.Clamp(depth, 1, 20));
+        var hits = store.Impact(node.Id, Math.Clamp(depth, 1, 20));
         var tests = hits.Where(h => h.Node.IsTest).ToList();
         var others = hits.Where(h => !h.Node.IsTest).ToList();
 
@@ -549,7 +548,9 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
         if (tests.Count > 0)
         {
-            sb.AppendLine(tests.Count > MaxTestRows ? $"tests (nearest {MaxTestRows} of {tests.Count}):" : "tests:");
+            sb.AppendLine(tests.Count > MaxTestRows
+                ? $"tests (nearest {MaxTestRows} of {tests.Count}; the rest by depth: {ByDepth(tests.Skip(MaxTestRows))}):"
+                : "tests:");
             sb.Append(Format(tests.Take(MaxTestRows).Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
         }
         else
@@ -603,14 +604,14 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
     [McpServerTool(Name = "tests_for", ReadOnly = true, Idempotent = true)]
     [Description("Test methods that call or read this member directly, including through an interface or base member it implements or overrides.")]
-    public string TestsFor([Description("Node id from find_symbol")] string id)
+    public string TestsFor([Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id)
     {
-        if (store.GetNode(id) is null)
+        if (Target(id, out var answer) is not { } node)
         {
-            return NotFound(id);
+            return answer!;
         }
 
-        var tests = store.DirectTests(id);
+        var tests = store.DirectTests(node.Id);
         return tests.Count == 0
             ? "no test calls this member directly (try impact_of for transitive coverage)"
             : Format(tests.Select(t => (t, t.Signature)));
@@ -619,14 +620,13 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [McpServerTool(Name = "snippet", ReadOnly = true, Idempotent = true)]
     [Description("The source text of one node — just its declaration span, not the whole file. Use after find_symbol/outline once you know exactly what you need.")]
     public async Task<string> Snippet(
-        [Description("Node id from find_symbol")] string id,
+        [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("Extra lines of context above and below, default 0")] int context = 0,
         CancellationToken cancellationToken = default)
     {
-        var node = store.GetNode(id);
-        if (node is null)
+        if (Target(id, out var answer) is not { } node)
         {
-            return NotFound(id);
+            return answer!;
         }
 
         if (node.FilePath is null || !File.Exists(node.FilePath))
@@ -641,7 +641,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         var end = Math.Min(lines.Length, node.EndLine + pad);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"// {node.FilePath}:{start}-{end}");
+        sb.AppendLine($"// {paths.Relative(node.FilePath)}:{start}-{end}");
         for (var line = start; line <= end; line++)
         {
             sb.Append(line).Append(": ").AppendLine(lines[line - 1]);
@@ -682,12 +682,12 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
         foreach (var path in report.ChangedFiles.Order(StringComparer.OrdinalIgnoreCase))
         {
-            sb.AppendLine($"  edited  {path}");
+            sb.AppendLine($"  edited  {paths.Relative(path)}");
         }
 
         foreach (var path in report.MissingFiles.Order(StringComparer.OrdinalIgnoreCase))
         {
-            sb.AppendLine($"  deleted {path}");
+            sb.AppendLine($"  deleted {paths.Relative(path)}");
         }
 
         return sb.ToString();
@@ -728,10 +728,10 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             sb.Append("  reason=").Append(candidate.Reason);
             if (method.FilePath is not null)
             {
-                sb.Append("  ").Append(method.FilePath).Append(':').Append(method.StartLine);
+                sb.Append("  ").Append(paths.Relative(method.FilePath)).Append(':').Append(method.StartLine);
             }
 
-            sb.Append("  [").Append(method.Id).Append(']');
+            sb.Append("  [").Append(Id(method.Id)).Append(']');
             sb.AppendLine();
         }
 
@@ -784,8 +784,8 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         foreach (var (m, count) in top)
         {
             sb.Append(m.Kind == NodeKind.External ? "external  " : "method  ").Append(m.FullName).Append("  ").Append(count).Append(" callers");
-            if (m.FilePath is not null) sb.Append("  ").Append(m.FilePath).Append(':').Append(m.StartLine);
-            sb.Append("  [").Append(m.Id).Append(']');
+            if (m.FilePath is not null) sb.Append("  ").Append(paths.Relative(m.FilePath)).Append(':').Append(m.StartLine);
+            sb.Append("  [").Append(Id(m.Id)).Append(']');
             sb.AppendLine();
         }
         return sb.ToString();
@@ -866,7 +866,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             foreach (var (kind, target) in from)
                 sb.Append("    ").Append(kind.ToString().ToLowerInvariant()).Append(" → ")
                   .Append(target.Kind.ToString().ToLowerInvariant()).Append("  ").Append(target.FullName)
-                  .Append("  [").Append(target.Id).Append(']').AppendLine();
+                  .Append("  [").Append(Id(target.Id)).Append(']').AppendLine();
         }
         if (to.Count > 0)
         {
@@ -874,7 +874,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             foreach (var (kind, source) in to)
                 sb.Append("    ").Append(kind.ToString().ToLowerInvariant()).Append(" ← ")
                   .Append(source.Kind.ToString().ToLowerInvariant()).Append("  ").Append(source.FullName)
-                  .Append("  [").Append(source.Id).Append(']').AppendLine();
+                  .Append("  [").Append(Id(source.Id)).Append(']').AppendLine();
         }
         return sb.ToString();
     }
@@ -937,21 +937,27 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     }
 
     [McpServerTool(Name = "covered_by", ReadOnly = true, Idempotent = true)]
-    [Description("Test methods that transitively reach this member via the call graph, following interface and virtual dispatch (a test that calls IRunner.Run reaches Runner.Run). Shows depth (hop count from test to target). This is static reach, not measured execution: a test can reach a member through a call it never makes at run time, so report the count as tests that can reach it. Complements tests_for, which only shows direct callers.")]
+    [Description("Test methods that transitively reach this member via the call graph, following interface and virtual dispatch (a test that calls IRunner.Run reaches Runner.Run). Shows depth (hop count from test to target); lists the nearest 50 by depth, then the count of the rest at each depth. This is static reach, not measured execution: a test can reach a member through a call it never makes at run time, so report the count as tests that can reach it. Complements tests_for, which only shows direct callers.")]
     public string CoveredBy(
-        [Description("Node id from find_symbol")] string id,
+        [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("Max hops to search, 1-30, default 10")] int depth = 10)
     {
-        var node = store.GetNode(id);
-        if (node is null) return NotFound(id);
+        if (Target(id, out var answer) is not { } node) return answer!;
 
-        var hits = store.TransitiveTests(id, Math.Clamp(depth, 1, 30));
+        var hits = store.TransitiveTests(node.Id, Math.Clamp(depth, 1, 30));
         if (hits.Count == 0)
             return $"{node.FullName}: not reached by any test within {Math.Clamp(depth, 1, 30)} hops — consider adding coverage";
 
         var sb = new StringBuilder();
         sb.AppendLine($"{hits.Count} test(s) reach {node.FullName} through calls (static reach: a run may execute it in fewer):");
-        sb.Append(Format(hits.Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
+        if (hits.Count > MaxTestRows)
+        {
+            // On HTTPX one answer listed 225 tests: more than Claude Code shows a model in one piece. The nearest rows
+            // name the tests to run first; the count at each depth keeps the total and its shape.
+            sb.AppendLine($"nearest {MaxTestRows} by depth; the rest by depth: {ByDepth(hits.Skip(MaxTestRows))}");
+        }
+
+        sb.Append(Format(hits.Take(MaxTestRows).Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
         return sb.ToString();
     }
 
@@ -990,6 +996,53 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     private static string NotFound(string id) =>
         $"no node with id '{id}'. Use find_symbol to look it up; ids look like M:Namespace.Type.Method(System.String)";
 
+    /// <summary>
+    /// The id as a row prints it: its 8-character handle while the graph is in memory (the call-tool filter turns the
+    /// handle back into the id), else the id itself. An id with no handle, such as a live symbol outside the graph or
+    /// one of a colliding pair, prints in full.
+    /// </summary>
+    private string Id(string id) => Handles?.Handle(id) ?? id;
+
+    private NodeHandles? _handles;
+
+    /// <summary>The handles of the snapshot this call reads, looked up once per call; null while the graph is not in memory.</summary>
+    private NodeHandles? Handles => _handles ??= store.Snapshot is { } snapshot ? NodeHandles.For(snapshot) : null;
+
+    /// <summary>
+    /// The node an id argument names: the node with that id (a handle has already become its id in the call-tool
+    /// filter), else the one symbol whose exact name it is (<c>Save</c>, or a qualified tail such as
+    /// <c>Service.Save</c>). Null, with <paramref name="answer"/> set, when nothing has that name or several symbols
+    /// do; the answer then lists them with their ids so the next call can pick one. In the 19 November 2026 sessions
+    /// find_symbol ran 17 times in 12 sessions only to turn a name the model already had into an id.
+    /// </summary>
+    private GraphNode? Target(string idOrName, out string? answer)
+    {
+        answer = null;
+        if (store.GetNode(idOrName) is { } node)
+        {
+            return node;
+        }
+
+        var matches = store.FindSymbol(idOrName, null, 21, null, null, null, null, null, null, null, null, "Exact", 0, null);
+        if (matches.Count == 1)
+        {
+            return matches[0];
+        }
+
+        answer = matches.Count switch
+        {
+            0 when NodeHandles.LooksLikeHandle(idOrName) =>
+                $"'{idOrName}' is not a handle of this graph: the graph was rebuilt, or is not in memory yet. Pass the name, or retry.",
+            0 => $"no node has the id '{idOrName}' and no symbol has that exact name. A re-index retires the id of a removed member; "
+                 + "use find_symbol with a partial name. Ids look like M:Namespace.Type.Method(System.String)",
+            > 20 => $"more than 20 symbols are named {idOrName}; pass the id of one, or use find_symbol with nameMatch Exact and offset to see the rest:\n"
+                    + Format(matches.Take(20).Select(n => (n, n.Signature))),
+            _ => $"{matches.Count.ToString(CultureInfo.InvariantCulture)} symbols are named {idOrName}; pass the id of one:\n"
+                 + Format(matches.Select(n => (n, n.Signature))),
+        };
+        return null;
+    }
+
     private string Format(IEnumerable<(GraphNode Node, string? Extra)> rows)
     {
         var report = freshness.Check();
@@ -1008,10 +1061,10 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
 
             if (node.FilePath is not null)
             {
-                sb.Append("  ").Append(node.FilePath).Append(':').Append(node.StartLine).Append('-').Append(node.EndLine);
+                sb.Append("  ").Append(paths.Relative(node.FilePath)).Append(':').Append(node.StartLine).Append('-').Append(node.EndLine);
             }
 
-            sb.Append("  [").Append(node.Id).Append(']');
+            sb.Append("  [").Append(Id(node.Id)).Append(']');
             if (report.IsDirty(node.FilePath))
             {
                 sb.Append("  STALE");

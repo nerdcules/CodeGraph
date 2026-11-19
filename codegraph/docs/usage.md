@@ -178,11 +178,13 @@ Use the codegraph tools before you read source files to find callers, tests or i
 
 ![A typical turn: find_symbol, impact_of, then snippet](images/typical-turn.svg)
 
-A typical turn uses three tools:
+A typical turn uses two or three tools:
 
-1. `find_symbol` finds the node id of the method.
-2. `impact_of` finds the dependents and the tests that guard them.
-3. `snippet` shows only the lines that the assistant must change.
+1. `impact_of` takes the name of the method and finds the dependents and the tests that reach it.
+2. `snippet` shows only the lines that the assistant must change.
+
+`find_symbol` comes first only when the name is not exact, or when more than one symbol has it.
+`impact_of`, `covered_by`, `callers_of`, `tests_for` and `snippet` take a name or an id.
 
 In [BENCHMARKS round 12](../BENCHMARKS.md#round-12-the-docs-re-measured), the three answers for `GraphStore.Replace` used about 5,500 tokens.
 The 15 files that the answers name use about 65,000 tokens.
@@ -217,14 +219,25 @@ An answer is compact text.
 Each row shows the kind, the name, the file and lines, and the node id:
 
 ```
-method  App.Core.OrderService.Submit(App.Core.Order)  depth 1  /repo/src/App.Core/OrderService.cs:41-58  [M:App.Core.OrderService.Submit(App.Core.Order)]
+paths are relative to /repo
+method  App.Core.OrderService.Submit(App.Core.Order)  depth 1  src/App.Core/OrderService.cs:41-58  [k7m2qa4z]
 ```
 
 Give the id in brackets to the next tool.
+While the graph is in memory, the brackets hold an 8-character handle.
+The handle is a hash of the full id, so it is the same in every answer.
+A tool takes the handle or the full id.
+Two ids with the same handle show the full id.
+
+File paths are relative to the repository root.
+The first line of an answer with paths names the root.
+Join the root and the path before you open a file.
+A path outside the root stays absolute.
 
 A walk shows the nearest 200 rows.
 After 200 rows, it shows the count at each depth.
-`impact_of` shows up to 50 tests.
+`impact_of` and `covered_by` show the nearest 50 tests by depth.
+After 50 tests, they show the count of the rest at each depth.
 
 If a file changed after the last index, the answer starts with a warning.
 The rows from changed files show `STALE`.
@@ -305,15 +318,19 @@ second ask starts with the first one's answer and files already in its context. 
 sessions too.
 
 **The same start.** Both conditions get the same model and effort, the same settings, CLAUDE.md and memory, and the
-same tools: Read, Grep, Glob, and the shell commands `grep`, `ls`, `cat`, `head`, `tail`, `wc`, `pwd`,
-`git status` and `git ls-files`. None of these has an option that writes a file or runs another program, which is
-why `find`, `sed`, `awk`, `sort`, `rg` and `git log`/`show`/`diff` are not on the list; `--allow` adds a rule to
-both conditions. Claude Code's `dontAsk` mode refuses everything else, including output redirection and any part
+same tools: Read, Grep, Glob, ToolSearch, and the shell commands `grep`, `ls`, `cat`, `head`, `tail`, `wc`, `pwd`,
+`git status` and `git ls-files`. None of the shell commands has an option that writes a file or runs another
+program, which is why `find`, `sed`, `awk`, `sort`, `rg` and `git log`/`show`/`diff` are not on the list; `--allow`
+adds a rule to both conditions. ToolSearch is on the list because Claude Code defers the MCP tool schemas only when
+it is: the "with" session then starts with the server's instructions and tool names, and loads a schema when it asks
+for the tool, as an interactive session does. Without ToolSearch in `--tools`, every schema is in the first model
+call. Claude Code's `dontAsk` mode refuses everything else, including output redirection and any part
 of a compound command that is not on the list (checked with `touch`, `> file` and `&& rm` on Claude Code 2.1.328).
 The only difference is the codegraph server, which the "with" runs get from `.mcp.json` with
 `CODEGRAPH_TELEMETRY=off`, so the runs stay out of the usage log. The report
-shows what each session started with ("first context": system prompt, tool definitions, CLAUDE.md, memory and the
-prompt), so the cost of the codegraph tool definitions is counted, not hidden.
+shows what each session started with ("first context": system prompt, tool list, CLAUDE.md, memory and the
+prompt), so the cost of the codegraph server's instructions and tool list is counted, not hidden; a schema the
+session loads through ToolSearch counts in its context growth.
 
 **Rounds.** Three rounds by default (`--runs <n>`, up to 20). Odd rounds run without the server first, even rounds
 with it first, so neither condition is always the second run, which can read a prompt cache the first one wrote.

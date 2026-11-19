@@ -5,6 +5,31 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+- `codegraph-index compare` passes `ToolSearch` in `--tools` and allows it in both conditions, so Claude Code
+  defers the codegraph tool schemas and loads one when a session asks for the tool, as it does in an interactive
+  session. Before, the "with" sessions got every schema in their first model call.
+- File paths in answers are relative to the repository root (the git worktree that holds the graph, else the folder
+  that holds `.codegraph`), and an answer with paths names the root once in its first line, after the `STALE`
+  warning if there is one. Rows, `snippet` headers, `index_status` file lists and the live tools' locations all use
+  it; a path outside the root stays absolute. The server instructions say to join the two before a Read.
+- `covered_by` lists the nearest 50 tests by depth and then the count of the rest at each depth, as `impact_of`
+  does for its tests; `impact_of` adds that count too. On HTTPX, 4 of 10 `covered_by` answers in the 19 November
+  sessions were over Claude Code's 50,000-character limit and were saved to a file and read back in pieces.
+- Rows print an 8-character handle in place of the node id while the graph is in memory: 40 bits of the SHA-256 of
+  the id in base 32, made when the snapshot loads, the same in every answer and session. Every tool that takes an
+  id accepts the handle or the id; two ids whose handles collide print in full. A C# id repeated the full name with
+  every parameter type: `GraphStore.Replace`'s id is over 400 characters, on every row that names it. While a
+  reload after a re-index runs, the snapshot that loaded last still resolves a handle. The first tool call of a
+  server process waits up to 2 s for the graph to load, so its answer prints handles as the answers after it do.
+- `impact_of`, `covered_by`, `callers_of`, `tests_for` and `snippet` take a name (`Save`, or `Service.Save`) where
+  they take an id: when exactly one symbol has that exact name, the tool answers for it; otherwise it lists the
+  candidates with their ids. The server instructions are shorter and say so, say that `impact_of` already lists the
+  tests that reach the member, and that `index_status` is for when an answer looks wrong; a test keeps them under
+  4,096 characters, Claude Code's limit. In the 19 November sessions, `find_symbol` ran 17 times in 12 sessions
+  only to get ids, and `index_status` in 10 of 12.
+
 ## 1.4.0
 
 `codegraph-index compare` measures a question with the graph and without it, usage figures are sizes only, and

@@ -74,6 +74,9 @@ Console.Error.WriteLine(File.Exists(dbPath)
 
 var freshness = new IndexFreshness(dbPath, TimeSpan.FromSeconds(3));
 
+// Answers name files relative to this root, once per answer; the graph stores them absolute.
+var answerRoot = AnswerPaths.RootFor(dbPath);
+
 // Telemetry stays beside the graph, one JSON line per tool call; CODEGRAPH_TELEMETRY=off keeps it in memory only.
 var telemetrySetting = Environment.GetEnvironmentVariable("CODEGRAPH_TELEMETRY");
 var telemetryOff = telemetrySetting is not null && telemetrySetting.Trim().ToLowerInvariant() is "0" or "off" or "false" or "no";
@@ -93,6 +96,9 @@ var anchor = new GraphAnchor(dbPath);
 // re-index; until it lands, calls read through DuckDB as before. CODEGRAPH_SNAPSHOT=off turns it off.
 var snapshots = new GraphSnapshotCache(dbPath, anchor, poll: GraphSnapshotCache.Enabled ? TimeSpan.FromSeconds(1) : null);
 
+// The first tool call waits at most 2 s for that load, so its answer prints handles as the calls after it do.
+var firstCall = new FirstCallWait(snapshots, TimeSpan.FromSeconds(2));
+
 // CODEGRAPH_DAEMON=auto: the first tool call starts a daemon when none runs; once per server process.
 var autoStart = LiveLauncher.AutoStart ? 1 : 0;
 
@@ -106,6 +112,8 @@ void AddGraph(IServiceCollection services)
     services.AddSingleton(new SemanticSearch(EmbeddingSettings.FromEnvironment()));
     services.AddSingleton(anchor);
     services.AddSingleton(snapshots);
+    // One per tool call: it remembers whether this answer shortened a path, so the filter can name the root once.
+    services.AddScoped(_ => new AnswerPaths(answerRoot));
     // The anchor lease is taken only if the call opens the database, and released with the store.
     services.AddScoped(_ => GraphStore.OpenReader(
         dbPath, GraphSnapshotCache.Enabled ? snapshots.Current : null, TimeSpan.FromSeconds(15), anchor.Acquire));
@@ -123,19 +131,7 @@ void AddGraph(IServiceCollection services)
                 WebsiteUrl = "https://github.com/nerdcules/CodeGraph",
                 Icons = [new Icon { Source = LogoDataUri(), MimeType = "image/svg+xml", Sizes = ["any"] }],
             };
-            options.ServerInstructions =
-                """
-                codegraph answers structural questions about the indexed codebase from a compiler-built graph, so prefer
-                it to grepping or opening files. Typical turn: find_symbol (or search_code when you only know what the
-                code does) → impact_of / callers_of / references_to → snippet on the two or three declarations that matter.
-                Ids in [brackets] are opaque (Roslyn doc-comment ids for C#, ts:/scip: prefixes otherwise); pass them back verbatim, without the brackets. An answer that starts with
-                "⚠ STALE INDEX" is from a graph older than the working tree; rows ending in STALE come from edited files.
-                Call impact_of before changing anything shared, and tests_for / covered_by to find the tests that guard it.
-                When codegraph-index --watch is running (live_status), four tools answer from the live compiler (Roslyn, the TypeScript language service, or a language server):
-                symbol_at turns a file position into an id, live_references finds every use of a symbol including
-                framework and NuGet members, diagnostics reports compiler errors, and check_change compiles a proposed
-                file in memory and reports what it would break before you write it.
-                """;
+            options.ServerInstructions = ServerInstructions.Text;
         })
         .WithStdioServerTransport()
         .WithToolsFromAssembly()
@@ -171,16 +167,29 @@ void AddGraph(IServiceCollection services)
                 }
             }
 
+            // After the flush, so the snapshot it waits for is the one of the graph that this call reads.
+            if (GraphSnapshotCache.Enabled)
+            {
+                firstCall.Wait();
+            }
+
             // Answers print ids in [brackets]; a model that copies the brackets along still gets its node.
             if (context.Params?.Arguments is { } arguments)
             {
                 NodeIds.NameTheId(context.Params.Name, arguments);
                 foreach (var key in arguments.Keys.Where(NodeIds.Arguments.Contains).ToList())
                 {
-                    if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String
-                        && arguments[key].GetString() is { } raw && NodeIds.Unwrap(raw) is var id && id != raw)
+                    if (arguments[key].ValueKind == System.Text.Json.JsonValueKind.String && arguments[key].GetString() is { } raw)
                     {
-                        arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
+                        // A handle (8 characters, as rows print them while the graph is in memory) becomes its id. While
+                        // a reload after a re-index runs, the last snapshot that loaded resolves it.
+                        var id = GraphSnapshotCache.Enabled
+                            ? NodeIds.Normalize(raw, snapshots, TimeSpan.FromSeconds(2))
+                            : NodeIds.Normalize(raw, null);
+                        if (id != raw)
+                        {
+                            arguments[key] = System.Text.Json.JsonSerializer.SerializeToElement(id);
+                        }
                     }
                 }
             }
@@ -199,6 +208,18 @@ void AddGraph(IServiceCollection services)
             {
                 scope.Complete(0, isError: true);
                 throw;
+            }
+
+            // The root goes first, and the STALE warning before it, so the answer reads: warning, root, rows.
+            if (context.Services?.GetService<AnswerPaths>() is { } answerPaths)
+            {
+                if (answerPaths.Header is { } rootLine)
+                {
+                    result.Content.Insert(0, new TextContentBlock { Text = rootLine });
+                }
+
+                // A provider that does not scope requests hands the next call the same instance; it starts clean.
+                answerPaths.Reset();
             }
 
             if (freshness.Check().Warning() is { } warning)
