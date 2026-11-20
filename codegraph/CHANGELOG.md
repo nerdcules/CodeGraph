@@ -5,7 +5,10 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased
+## 1.5.1
+
+Rows print handles on every read path, including the first answer of a session, and on Windows an update no longer stops while an
+assistant runs `codegraph-mcp`. The VS Code extension's icons are drawn from the CodeGraph logo.
 
 - Rows print the 8-character handle on every read path, not only while the graph is in memory. In 1.5.0 an answer
   from the database printed full ids. The first answer of a session and the answers during a reload were thus
@@ -29,7 +32,6 @@ The executables report their version with `--version`; the MCP server shows it t
   held files of the 1.5.0 folder after an update and six tool calls. Now `codegraph-mcp` and `codegraph-index`
   start themselves again from the release folder that the junction points at, and wait for that child. `init`
   still names the junction in the MCP configs.
-
 - The VS Code extension's icons show the same picture as the CodeGraph logo ([assets/logo.svg](assets/logo.svg)).
   The activity bar icon is now the logo itself as a one-colour mask: the logo's shapes, strokes, opacities and
   glow, in the square around its marks. Before, it was a copy with thicker strokes and larger nodes. VS Code draws
