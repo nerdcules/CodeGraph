@@ -102,7 +102,7 @@ test('an update refuses a folder that holds other programs, linked or not', asyn
 });
 
 test('followFileLinks follows a link on the file, not a link on its folder', (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-links-'));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-links-')));
   try {
     const release = path.join(root, 'versions', '1.0.0');
     fs.mkdirSync(release, { recursive: true });
