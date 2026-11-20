@@ -15,8 +15,12 @@
     Use the arrow keys and space in the lists, Enter to accept. -Yes, CODEGRAPH_NONINTERACTIVE=1, or redirected
     input asks nothing.
 
-    Re-run to upgrade: a running codegraph-mcp holds its files open, so close the assistant sessions first or pass
-    -Force to stop them. Works in Windows PowerShell 5.1 and PowerShell 7 on Windows, macOS and Linux.
+    Re-run to upgrade. On Windows the install folder is a junction to a folder for each release: an upgrade unpacks
+    the new release into a new folder and points the junction at it. A running codegraph-mcp keeps the old release
+    until it restarts, and a later upgrade deletes the old folder. Only the first upgrade of a real folder (an
+    install from before this layout) must move it: close the assistant sessions first, or pass -Force to stop them.
+    On macOS and Linux an upgrade replaces the files in place, with the same choice.
+    Works in Windows PowerShell 5.1 and PowerShell 7 on Windows, macOS and Linux.
     CODEGRAPH_RELEASE_URL replaces https://github.com/nerdcules/CodeGraph/releases, for a mirror with the same layout.
 
     One line, without a checkout:
@@ -59,7 +63,8 @@
     With -FromSource, publish without running the test suite.
 
 .PARAMETER Force
-    Stop running codegraph-mcp / codegraph-index processes before overwriting them.
+    Stop running codegraph-mcp / codegraph-index processes before overwriting them. On Windows only the first
+    upgrade of a real install folder needs this.
 
 .EXAMPLE
     .\install.ps1
@@ -310,6 +315,81 @@ function Get-ExtensionVersion([string] $editor) {
     if ($line) { $line.Substring($extensionId.Length + 1) } else { $null }
 }
 
+function New-Suffix { [guid]::NewGuid().ToString('n').Substring(0, 8) }
+
+# Both installers use the same per-install Windows mutex for junction publication and release cleanup.
+function Enter-InstallLock([string] $dir) {
+    $key = [System.IO.Path]::GetFullPath($dir).TrimEnd('\').ToLowerInvariant()
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { $hash = -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($key)) | ForEach-Object { $_.ToString('x2') }) }
+    finally { $sha.Dispose() }
+    $mutex = [System.Threading.Mutex]::new($false, "Local\CodeGraphInstall-$hash")
+    try {
+        try { $null = $mutex.WaitOne() }
+        catch [System.Threading.AbandonedMutexException] { }
+        return $mutex
+    } catch {
+        $mutex.Dispose()
+        throw
+    }
+}
+
+# Windows: points the junction $dir at the release folder $target (issue #9). A junction to $target is made beside
+# $dir and renamed into its place, so a program that runs from the old release does not stop it. A real folder (an
+# install from before this layout) is moved into $versions first; a program that runs from it stops that move.
+function Set-InstallLink([string] $dir, [string] $target, [string] $versions) {
+    $item = Get-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+    if (-not $item) {
+        New-Item -ItemType Junction -Path $dir -Target $target | Out-Null
+        return
+    }
+    if ($item.LinkType) {
+        # A junction that an upgrade stopped between its two steps left beside $dir; the link only, never its target.
+        Get-ChildItem -LiteralPath (Split-Path -Parent $dir) -Force -Filter ".$(Split-Path -Leaf $dir).next-*" -ErrorAction SilentlyContinue |
+            Where-Object { $_.LinkType } | ForEach-Object { $_.Delete() }
+        $next = Join-Path (Split-Path -Parent $dir) ".$(Split-Path -Leaf $dir).next-$(New-Suffix)"
+        New-Item -ItemType Junction -Path $next -Target $target | Out-Null
+        $previous = @($item.Target)[0]
+        $item.Delete() # the junction only; a non-recursive delete never enters the folder it points at
+        try { [System.IO.Directory]::Move($next, $dir) }
+        catch {
+            New-Item -ItemType Junction -Path $dir -Target $previous | Out-Null
+            (Get-Item -LiteralPath $next -Force).Delete()
+            throw
+        }
+        return
+    }
+    if (@(Get-ChildItem -LiteralPath $dir -Force).Count -gt 0 -and -not (Test-Path (Join-Path $dir 'codegraph-index.dll')) -and -not (Test-Path (Join-Path $dir 'codegraph-mcp.dll'))) {
+        throw "$dir holds files that are not a codegraph install; choose an install folder of its own with -InstallDir"
+    }
+    $legacy = Join-Path $versions "previous-$(New-Suffix)"
+    try { [System.IO.Directory]::Move($dir, $legacy) }
+    catch {
+        throw "could not move $dir aside ($($_.Exception.Message)). A program still runs from it; close it, or run again with -Force. " +
+            "This occurs only once: after this upgrade, $dir links to a folder for each release."
+    }
+    try { New-Item -ItemType Junction -Path $dir -Target $target | Out-Null }
+    catch { [System.IO.Directory]::Move($legacy, $dir); throw }
+}
+
+# Deletes each folder in $versions except $current that nothing runs from. Windows does not rename a folder that a
+# program uses, so a rename tests each folder first: a delete of a folder in use removes the files that are not open
+# and leaves the program without them. A folder in use stays for the next upgrade. A folder younger than an hour
+# stays too: another upgrade (the VS Code extension, a second run) can still unpack into it or have it ready to link.
+# CODEGRAPH_KEEP_RELEASE_MINUTES changes the hour, for a test.
+function Remove-OldReleases([string] $versions, [string] $current) {
+    $keepMinutes = 60
+    if ($env:CODEGRAPH_KEEP_RELEASE_MINUTES -match '^\d+$') { $keepMinutes = [int] $env:CODEGRAPH_KEEP_RELEASE_MINUTES }
+    foreach ($folder in @(Get-ChildItem -LiteralPath $versions -Directory -Force -ErrorAction SilentlyContinue)) {
+        if ($folder.FullName.TrimEnd('\').Equals($current.TrimEnd('\'), [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        if (-not $folder.Name.StartsWith('.delete-') -and $folder.LastWriteTime -gt (Get-Date).AddMinutes(-$keepMinutes)) { continue }
+        $doomed = Join-Path $versions ".delete-$(New-Suffix)"
+        try { [System.IO.Directory]::Move($folder.FullName, $doomed) }
+        catch { Note "kept $(Pretty $folder.FullName): a program still runs from it; the next upgrade deletes it"; continue }
+        Remove-Item -LiteralPath $doomed -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("codegraph-install-" + [guid]::NewGuid().ToString('n'))
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $failed = 0
@@ -407,6 +487,15 @@ try {
     $InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
     $indexExe = Join-Path $InstallDir "codegraph-index$exe"
     $mcpExe = Join-Path $InstallDir "codegraph-mcp$exe"
+    # Windows: the install folder is a junction to a folder per release in $versions (see Set-InstallLink).
+    $linked = [bool] $onWindows
+    $versions = Join-Path (Split-Path -Parent $InstallDir) ".$(Split-Path -Leaf $InstallDir).versions"
+    $installItem = Get-Item -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue
+    $firstMove = $linked -and $installItem -and -not $installItem.LinkType
+    if ($firstMove -and @(Get-ChildItem -LiteralPath $InstallDir -Force).Count -gt 0 -and
+        -not (Test-Path (Join-Path $InstallDir 'codegraph-index.dll')) -and -not (Test-Path (Join-Path $InstallDir 'codegraph-mcp.dll'))) {
+        throw "$InstallDir holds files that are not a codegraph install; choose an install folder of its own with -InstallDir"
+    }
     $userPath = if ($onWindows) { [Environment]::GetEnvironmentVariable('Path', 'User') } else { $null }
     $alreadyOnPath = if ($onWindows) { @($userPath -split ';' | Where-Object { $_ }) -contains $InstallDir } else { Test-OnPath $InstallDir }
 
@@ -450,9 +539,13 @@ try {
 
     # ---- running processes --------------------------------------------------------------------------------
     # A running server keeps codegraph-mcp and its DLLs locked (Windows) or open (elsewhere); overwriting is unsafe.
+    # On Windows the upgrade writes a new release folder and moves the junction, so only the first move of a real
+    # folder must wait for them.
     $running = Get-Process -Name 'codegraph-mcp', 'codegraph-index' -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -and $_.Path.StartsWith($InstallDir, [System.StringComparison]::OrdinalIgnoreCase) }
-    if ($running) {
+    if ($running -and $linked -and -not $firstMove) {
+        Note "$(@($running).Count) running codegraph process(es) keep the old release until they restart"
+    } elseif ($running) {
         $list = ($running | ForEach-Object { "$($_.ProcessName) (pid $($_.Id))" }) -join ', '
         if (-not $Force -and $interactive) {
             Write-Host "codegraph is running from $(Pretty $InstallDir): $list."
@@ -463,11 +556,19 @@ try {
             $running | Stop-Process -Force
             Start-Sleep -Milliseconds 500
         } else {
-            throw "codegraph is running from $InstallDir ($list). Close the assistant sessions using it, or re-run with -Force."
+            $once = if ($firstMove) { " This occurs only once: after this upgrade, $InstallDir links to a folder for each release." } else { '' }
+            throw "codegraph is running from $InstallDir ($list). Close the assistant sessions using it, or re-run with -Force.$once"
         }
     }
 
     # ---- the executables ----------------------------------------------------------------------------------
+    # $releaseDir is the folder the files go into: a new release folder on Windows, the install folder elsewhere.
+    $releaseDir = $InstallDir
+    if ($linked) {
+        New-Item -ItemType Directory -Force -Path $versions | Out-Null
+        $releaseDir = Join-Path $versions "new-$(New-Suffix)"
+        New-Item -ItemType Directory -Path $releaseDir | Out-Null
+    }
     if ($FromSource) {
         $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
         if (-not $dotnet) { throw 'dotnet SDK not found on PATH. Install .NET 10 from https://dotnet.microsoft.com/download' }
@@ -499,15 +600,15 @@ try {
         $sourceRid = (dotnet --info | Select-String -Pattern '^\s*RID:\s*(\S+)' | Select-Object -First 1).Matches.Groups[1].Value
         if (-not $sourceRid) { throw 'could not read the runtime identifier from dotnet --info' }
         Step "Publishing to $InstallDir ($sourceRid, ReadyToRun)"
-        New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+        New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
         foreach ($project in 'src/CodeGraph.Indexer', 'src/CodeGraph.Mcp') {
-            dotnet publish (Join-Path $root $project) -c Release -r $sourceRid --self-contained false -p:PublishReadyToRun=true -o $InstallDir --nologo
+            dotnet publish (Join-Path $root $project) -c Release -r $sourceRid --self-contained false -p:PublishReadyToRun=true -o $releaseDir --nologo
             if ($LASTEXITCODE -ne 0) { throw "publish of $project failed" }
         }
 
         if ($hasNode) {
             # codegraph-index looks for extractors/typescript/cli.mjs beside itself.
-            $installedExtractor = Join-Path $InstallDir 'extractors/typescript'
+            $installedExtractor = Join-Path $releaseDir 'extractors/typescript'
             if (Test-Path $installedExtractor) { Remove-Item -Recurse -Force $installedExtractor }
             New-Item -ItemType Directory -Force -Path $installedExtractor | Out-Null
             foreach ($item in 'cli.mjs', 'lib', 'package.json', 'package-lock.json') {
@@ -525,19 +626,39 @@ try {
         Test-Checksum $archive $sums
 
         Step "Installing to $InstallDir"
-        New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-        Get-ChildItem -Force $InstallDir | Remove-Item -Recurse -Force
+        if (-not $linked) {
+            New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+            Get-ChildItem -Force $InstallDir | Remove-Item -Recurse -Force
+        }
         if ($os -eq 'win') {
-            Expand-Archive -Path $archive -DestinationPath $InstallDir -Force
-            Get-ChildItem -Recurse $InstallDir | Unblock-File -ErrorAction SilentlyContinue
+            Expand-Archive -Path $archive -DestinationPath $releaseDir -Force
+            Get-ChildItem -Recurse $releaseDir | Unblock-File -ErrorAction SilentlyContinue
         } else {
             tar -xzf $archive -C $InstallDir
             if ($LASTEXITCODE -ne 0) { throw 'tar failed' }
             chmod +x $indexExe $mcpExe
         }
-        Note "codegraph $(Get-Content (Join-Path $InstallDir 'VERSION'))"
+        Note "codegraph $(Get-Content (Join-Path $releaseDir 'VERSION'))"
         if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
             Note 'node is not on PATH; C# and the SCIP languages work, TypeScript and Angular need Node.js 22.22.3+ or 24.15+'
+        }
+    }
+
+    if ($linked) {
+        $installLock = Enter-InstallLock $InstallDir
+        try {
+            # A name that says which release the folder holds, then the junction moves to it.
+            $release = (Get-Content -LiteralPath (Join-Path $releaseDir 'VERSION') -ErrorAction SilentlyContinue | Select-Object -First 1)
+            $release = if ($release) { $release.Trim() -replace '[^\w.+-]', '_' } else { 'source' }
+            $named = Join-Path $versions "$release-$(New-Suffix)"
+            [System.IO.Directory]::Move($releaseDir, $named)
+            $releaseDir = $named
+            try { Set-InstallLink $InstallDir $releaseDir $versions }
+            catch { Remove-Item -LiteralPath $releaseDir -Recurse -Force -ErrorAction SilentlyContinue; throw }
+            Remove-OldReleases $versions $releaseDir
+        } finally {
+            $installLock.ReleaseMutex()
+            $installLock.Dispose()
         }
     }
 

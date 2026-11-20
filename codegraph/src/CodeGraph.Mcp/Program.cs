@@ -9,6 +9,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 
+// Started through the junction of the Windows install layout: run from the release folder instead (ReleaseFolder).
+if (ReleaseFolder.RunFromRealFolder(args) is { } relaunched)
+{
+    return relaunched;
+}
+
 // --version answers without touching a graph: install scripts use it to check the executable starts at all.
 if (args is ["--version"])
 {

@@ -7,7 +7,7 @@ import { Cli } from './cli';
 import { Daemons } from './daemons';
 import { Graph, Graphs } from './graphs';
 import { Indexing } from './indexing';
-import { installRelease, latestTag } from './install';
+import { installRelease, isLinkedInstall, latestTag } from './install';
 import { McpOffer, registerMcp } from './mcp';
 import { OverviewView } from './overview';
 import { compareVersions, isInstallFolder, releaseToInstall } from './platform';
@@ -241,12 +241,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
       }
       const verb = current ? `Update ${current} → ${tag.replace(/^v/, '')}` : `Install ${tag}`;
       const others = graphs.all().filter((g) => g.status?.daemon && !daemons!.isManaged(g));
-      const warning = process.platform === 'win32'
-        ? ' Windows cannot replace a running program: stop every CodeGraph MCP server and daemon started outside this window first' +
-          `${others.length ? ` (${others.length} daemon(s) are running)` : ''}; if one is still running, the update stops before changing anything.`
-        : others.length
-          ? ` ${others.length} daemon(s) started outside this window keep running the old version until they are restarted.`
-          : '';
+      // On Windows the install folder becomes a junction to a folder per release; only the first update of a real
+      // folder must move it, and a running program stops that one (install.ts).
+      const firstMove = process.platform === 'win32' && fs.existsSync(dir) && !isLinkedInstall(dir);
+      const warning = firstMove
+        ? ' Windows cannot move a folder that a program runs from: stop every CodeGraph MCP server and daemon started outside this window first' +
+          `${others.length ? ` (${others.length} daemon(s) are running)` : ''}; if one is still running, the update stops before changing anything.` +
+          ` This occurs only once: after this update, ${dir} links to a folder for each release, and an update does not wait for running programs.`
+        : process.platform === 'win32'
+          ? ' MCP servers and daemons that run now keep the old release until they restart.'
+          : others.length
+            ? ` ${others.length} daemon(s) started outside this window keep running the old version until they are restarted.`
+            : '';
       const where = adopt ? ` (codegraph-index on PATH, ${cli.indexer()}, is not in a folder of its own; codegraph.installDir will point at the new folder)` : '';
       const confirm = await vscode.window.showInformationMessage(
         `${verb} into ${dir}${where}? The release is unpacked beside it and swapped in, so the old installation stays whole if anything fails.${warning}`,

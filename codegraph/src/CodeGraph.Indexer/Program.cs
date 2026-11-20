@@ -7,6 +7,12 @@ using CodeGraph.Indexer;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 
+// Started through the junction of the Windows install layout: run from the release folder instead (ReleaseFolder).
+if (ReleaseFolder.RunFromRealFolder(args) is { } relaunched)
+{
+    return relaunched;
+}
+
 if (args is ["--version"])
 {
     Console.WriteLine(IndexerVersion());

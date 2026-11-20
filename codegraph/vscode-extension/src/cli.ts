@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { defaultInstallDir, executable, isInstallFolder } from './platform';
+import { defaultInstallDir, executable, installPathOf, isInstallFolder } from './platform';
 import { parseStatus, StatusReport } from './status';
 
 export interface RunResult {
@@ -24,7 +24,7 @@ export class Cli {
     }
     const onPath = findOnPath(executable('codegraph-index'));
     // A link on PATH (~/.local/bin/codegraph-index → ~/.codegraph/bin/codegraph-index) means the folder it points into.
-    return onPath ? path.dirname(realPath(onPath)) : defaultInstallDir();
+    return onPath ? path.dirname(installPathOf(onPath)) : defaultInstallDir();
   }
 
   /**
@@ -41,7 +41,7 @@ export class Cli {
     if (!onPath) {
       return { dir: defaultInstallDir(), adopt: false };
     }
-    const dir = path.dirname(realPath(onPath));
+    const dir = path.dirname(installPathOf(onPath));
     return isInstallFolder(dir) ? { dir, adopt: false } : { dir: defaultInstallDir(), adopt: true };
   }
 
@@ -167,14 +167,6 @@ export function findOnPath(name: string): string | undefined {
     }
   }
   return undefined;
-}
-
-function realPath(p: string): string {
-  try {
-    return fs.realpathSync(p);
-  } catch {
-    return p;
-  }
 }
 
 function expandHome(p: string): string {

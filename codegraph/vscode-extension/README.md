@@ -30,8 +30,9 @@ tokens of VS Code's Dark Modern and Light Modern themes.*
 
 - **Installs and updates CodeGraph.** It downloads the release archive for your machine from GitHub and checks it
   against the release's `SHA256SUMS`. It unpacks it beside the install folder and then swaps the two folders, so a
-  failed update leaves the old installation whole. It never replaces a folder that holds other programs, such as
-  `~/.local/bin`. Once a day it checks for a newer release.
+  failed update leaves the old installation whole. On Windows the install folder is a junction to a folder for each
+  release, and an update points the junction at the new one. It never replaces a folder that holds other programs,
+  such as `~/.local/bin`. Once a day it checks for a newer release.
 - **Finds what to index.** It finds the C# solutions, TypeScript and Angular workspaces, Maven and Gradle builds,
   Python projects, Go modules and Rust crates in the workspace. It groups them by the graph they feed: one graph
   for each git worktree. A solution hides the projects it lists; a project it does not list stays a target.
@@ -83,8 +84,11 @@ not, so the views show an error until you update.
    `codegraph-index` is already on `PATH`, the extension uses that one, following a link to the folder it points
    into. An update writes to that folder too. If the folder holds other programs, the update installs into the
    default folder instead and sets `codegraph.installDir` to it.
-   On Windows a running program cannot be replaced. If an MCP server or a daemon still runs from the folder, the
-   update stops before it changes anything and says so.
+   On Windows a folder that a program runs from cannot be moved. Thus the install folder is a junction to a folder
+   for each release, in `.codegraph.versions` beside it. An update unpacks the new release into a new folder and
+   points the junction at it. MCP servers and daemons that run keep the old release until they restart, and a later
+   update deletes the old folder. Only the first update of a real folder, from before this layout, must move it. If
+   an MCP server or a daemon still runs from that folder, the update stops before it changes anything and says so.
 3. Choose **Set up repository…** and pick your assistants. Claude Code is selected by default. VS Code's own chat
    gets the server from the extension (see [below](#github-copilot-and-other-chat-clients)).
 4. When the index is done, choose **Start Live Daemon**.
@@ -182,11 +186,14 @@ The indexer and the MCP server run on your machine, and the graph stays in `.cod
     the MCP step, on all three.
 - **Install test** (`CODEGRAPH_TEST_INSTALL_RELEASE=1 npm run test:install`): installs the 1.2.0 release with the
   extension's own code (download, checksum, unpack, swap), then updates it while `codegraph-mcp` runs from the
-  folder. On Windows the update must be refused with the folder unchanged. On macOS and Linux it must replace the
-  folder under the running program. With the program stopped, a second update must go through everywhere. It
-  downloads the release archive (89 to 115 MB), so it runs only when asked. CI run 44035151104 (commit `9b623cf`)
-  passed it on all three systems. Windows took the refused path and macOS and Linux the replaced one; on Windows
-  the test took 21.0 s. A folder holding another program is refused (a unit test).
+  folder. On macOS and Linux the update must replace the folder under the running program. On Windows it must
+  point the junction at a new release folder and keep the old one whole while the program runs. With the program
+  stopped, a second update must go through everywhere, and on Windows delete the old release folder. On Windows a
+  real folder from before the junction layout must be refused while a program runs from it, unchanged, and become a
+  junction when nothing runs. It downloads the release archive (89 to 115 MB), so it runs only when asked. CI run
+  44035151104 (commit `9b623cf`) passed the earlier version of this test on all three systems. On 19 November 2026
+  the junction version passed on Windows 11 in 36.2 s. A folder holding another program is refused, and the
+  junction layout installs, updates and deletes old releases on every system (unit tests).
 - **Not tested yet:**
   - An update from a published release that carries the extension: the first release with it will be the first.
   - GitHub Copilot listing and calling the server; CI cannot sign in to Copilot. To check it by hand, open a

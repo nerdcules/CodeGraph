@@ -104,9 +104,12 @@ function Confirm-Step([string] $question) {
     return $answer.Trim().ToLowerInvariant() -in @('y', 'yes')
 }
 
+# On Windows an install or update makes the install folder a junction to a folder per release, kept in $versions.
+$versions = Join-Path (Split-Path -Parent $InstallDir) ".$(Split-Path -Leaf $InstallDir).versions"
+
 # ---- running processes --------------------------------------------------------------------------------
 $running = Get-Process -Name 'codegraph-mcp', 'codegraph-index' -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -and $_.Path.StartsWith($InstallDir, [System.StringComparison]::OrdinalIgnoreCase) }
+    Where-Object { $_.Path -and ($_.Path.StartsWith($InstallDir, [System.StringComparison]::OrdinalIgnoreCase) -or $_.Path.StartsWith($versions, [System.StringComparison]::OrdinalIgnoreCase)) }
 if ($running) {
     if ($Force) {
         Step "Stopping $($running.Count) running codegraph process(es)"
@@ -119,17 +122,38 @@ if ($running) {
 }
 
 # ---- install folder -----------------------------------------------------------------------------------
-if (Test-Path $InstallDir) {
-    if (-not (Test-Path (Join-Path $InstallDir 'codegraph-mcp.dll')) -and -not (Test-Path (Join-Path $InstallDir 'codegraph-index.dll'))) {
+$installItem = Get-Item -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue
+if ($installItem) {
+    # A junction whose release folder is gone (a dangling link) is removed too; anything else must be a codegraph install.
+    $dangling = $installItem.LinkType -and -not (Test-Path -LiteralPath $InstallDir)
+    if (-not $dangling -and -not (Test-Path (Join-Path $InstallDir 'codegraph-mcp.dll')) -and -not (Test-Path (Join-Path $InstallDir 'codegraph-index.dll'))) {
         throw "$InstallDir does not look like a codegraph install (no codegraph-mcp.dll or codegraph-index.dll); not deleting it"
     }
     Step "Install folder: $InstallDir"
     if (Confirm-Step "Delete $InstallDir and everything in it?") {
-        Remove-Item -Recurse -Force $InstallDir
+        if ($installItem.LinkType) {
+            # The junction only: Remove-Item -Recurse on a junction can delete what it points at in Windows PowerShell 5.1.
+            $installItem.Delete()
+        } else {
+            Remove-Item -Recurse -Force $InstallDir
+        }
         Write-Host "deleted $InstallDir"
     }
 } else {
     Write-Host "no install folder at $InstallDir"
+}
+# The release folders, also when the junction is already gone. A folder that a program still uses stays, and the
+# script goes on to the PATH and the repositories.
+if (Test-Path -LiteralPath $versions) {
+    Step "Release folders: $versions"
+    if (Confirm-Step "Delete $versions and everything in it?") {
+        try {
+            Remove-Item -LiteralPath $versions -Recurse -Force -ErrorAction Stop
+            Write-Host "deleted $versions"
+        } catch {
+            Write-Warning "could not delete all of $versions ($($_.Exception.Message)). A program still runs from it; stop it and delete the folder."
+        }
+    }
 }
 
 # ---- PATH ---------------------------------------------------------------------------------------------

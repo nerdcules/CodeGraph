@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Cli, findOnPath } from './cli';
+import { samePath } from './platform';
 import { StatusReport } from './status';
 import { chooseTargets, classify, excludeGlob, indexedTargets, isInside, kindLanguages, Requirement, requirements, TargetKind, targetGlob } from './targets';
 
@@ -189,7 +190,4 @@ function missingTool(kind: TargetKind): Requirement | undefined {
   return names.some((n) => findOnPath(n)) ? undefined : requirement;
 }
 
-export function samePath(a: string, b: string): boolean {
-  const norm = (p: string) => path.resolve(p).replace(/\\/g, '/');
-  return process.platform === 'linux' ? norm(a) === norm(b) : norm(a).toLowerCase() === norm(b).toLowerCase();
-}
+export { samePath };

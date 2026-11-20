@@ -16,6 +16,20 @@ The executables report their version with `--version`; the MCP server shows it t
   - No call waits for the snapshot. The 2 s wait of the first tool call is gone. The 2 s wait for an argument with
     the shape of a handle is gone too; it also delayed a name of 8 lowercase letters such as `validate`.
   - `CODEGRAPH_SNAPSHOT=off` prints full ids, as in 1.5.0.
+- **Windows: an update no longer waits for running servers** ([#9](https://github.com/nerdcules/CodeGraph/issues/9)).
+  `codegraph-mcp` runs from the install folder for as long as an assistant session is open, and Windows cannot move
+  a folder that a program runs from. Thus an update from the VS Code extension stopped with "could not move … aside
+  (EPERM)". Now the install folder is a junction to a folder for each release, in `.codegraph.versions` beside it.
+  The extension and `install.ps1` unpack a new release into a new folder and point the junction at it. Programs that
+  run keep the old release until they restart, and a later update deletes each old folder that nothing runs from.
+  The path of the install folder does not change, so `PATH` and the MCP configs that name it stay correct. Only the
+  first update of a real folder must move it, once. `uninstall.ps1` removes the junction and the release folders.
+- **Windows: a program started through the junction runs from its release folder.** .NET loads files when they are
+  first used, through the path that the process started from. A 1.2.0 server that started through the junction
+  held files of the 1.5.0 folder after an update and six tool calls. Now `codegraph-mcp` and `codegraph-index`
+  start themselves again from the release folder that the junction points at, and wait for that child. `init`
+  still names the junction in the MCP configs.
+
 - The VS Code extension's icons show the same picture as the CodeGraph logo ([assets/logo.svg](assets/logo.svg)).
   The activity bar icon is now the logo itself as a one-colour mask: the logo's shapes, strokes, opacities and
   glow, in the square around its marks. Before, it was a copy with thicker strokes and larger nodes. VS Code draws
