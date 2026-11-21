@@ -5,7 +5,10 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased
+## 1.5.2
+
+A daemon for TypeScript, Python, Java, Go or Rust that is stopped during its first index exits cleanly instead of aborting,
+and a stopped daemon ends the indexer it started.
 
 - **The daemon for TypeScript, Python, Java, Go and Rust no longer aborts when it is stopped during its first index**
   ([#15](https://github.com/nerdcules/CodeGraph/issues/15)). A stop over the pipe, SIGTERM, SIGHUP or Ctrl+C that
