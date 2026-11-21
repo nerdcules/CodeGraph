@@ -146,6 +146,8 @@ internal static class TypeScriptExtractor
                 }
             };
             process.BeginErrorReadLine();
+            // A stopped daemon takes the extractor with it rather than leaving it running on its own.
+            await using var kill = cancellationToken.Register(() => ScipIndexers.KillTree(process));
             var batch = await Task.Run(() => GraphBatch.Read(process.StandardOutput), cancellationToken);
             await process.WaitForExitAsync(cancellationToken);
             if (process.ExitCode != 0)

@@ -359,7 +359,8 @@ to a minute, `live_status` says "loading" and the graph tools answer from the la
 Lifecycle:
 
 - **One per graph.** A second `--watch` on the same graph sees the first answering and exits.
-- **Clean stop.** Ctrl+C, SIGTERM and SIGHUP stop it gracefully and take the pipe down. A daemon killed with
+- **Clean stop.** Ctrl+C, SIGTERM, SIGHUP and `codegraph-index stop` stop it gracefully and take the pipe down, also
+  while an index runs; a SCIP indexer or the TypeScript extractor that is running is ended with it. A daemon killed with
   SIGKILL leaves its socket file; the next daemon removes it, and meanwhile the server's probe spends one
   150 ms timeout on it and then remembers it as dead for 3 s.
 - **Idle exit.** `--idle-exit <minutes>` stops it after that long with no save and no live request. The server
