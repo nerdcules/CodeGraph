@@ -266,6 +266,18 @@ internal static class ScipIndexers
 
     private sealed record Exit(int Code, string Stderr);
 
+    /// <summary>Ends an indexer process and its children, for a cancelled index; nothing when it has already exited.</summary>
+    internal static void KillTree(Process process)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (Exception e) when (e is InvalidOperationException or Win32Exception)
+        {
+        }
+    }
+
     /// <summary>Runs the indexer once, logging its output; null when it could not start. The index must appear at <paramref name="expected"/>.</summary>
     private static async Task<Exit?> RunAsync(Indexer indexer, string[] arguments, string workingDirectory, string expected, Action<string> log, CancellationToken cancellationToken)
     {
@@ -297,6 +309,8 @@ internal static class ScipIndexers
             process.ErrorDataReceived += (_, e) => { if (e.Data is { Length: > 0 } line) { log($"{indexer.Tool}: {line}"); stderr.AppendLine(line); } };
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
+            // A stopped daemon takes its indexer with it rather than leaving it running on its own.
+            await using var kill = cancellationToken.Register(() => KillTree(process));
             await process.WaitForExitAsync(cancellationToken);
             return new Exit(process.ExitCode == 0 && !File.Exists(expected) ? 1 : process.ExitCode, stderr.ToString());
         }

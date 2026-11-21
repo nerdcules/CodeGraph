@@ -5,6 +5,17 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+- **The daemon for TypeScript, Python, Java, Go and Rust no longer aborts when it is stopped during its first index**
+  ([#15](https://github.com/nerdcules/CodeGraph/issues/15)). A stop over the pipe, SIGTERM, SIGHUP or Ctrl+C that
+  came while the first index ran escaped as an unhandled exception, so the process aborted (SIGABRT) and the system
+  wrote a core dump. The graph on disk was not changed. Now the daemon logs `stopped` and exits 0, as it does for a
+  stop after the first index. The C# daemon was not affected.
+- **A cancelled index ends the indexer it started.** A SCIP indexer (scip-python, scip-java, scip-go, rust-analyzer)
+  or the TypeScript extractor that ran when the daemon stopped kept running on its own; now it is killed with its
+  child processes.
+
 ## 1.5.1
 
 Rows print handles on every read path, including the first answer of a session, and on Windows an update no longer stops while an

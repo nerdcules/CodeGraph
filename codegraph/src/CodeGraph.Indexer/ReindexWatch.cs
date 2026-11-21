@@ -102,7 +102,17 @@ internal sealed class ReindexWatch(string root, IReadOnlySet<string> extensions,
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
     {
-        await IndexOnceAsync([], cancellationToken);
+        try
+        {
+            await IndexOnceAsync([], cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // A stop during the first index (the pipe, SIGTERM, Ctrl+C) ends the watch like one during the loop,
+            // instead of escaping Main as an unhandled exception and aborting the process.
+            return LastExit;
+        }
+
         using var watcher = new FileSystemWatcher(root)
         {
             IncludeSubdirectories = true,
