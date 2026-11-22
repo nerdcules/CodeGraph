@@ -1,6 +1,7 @@
 // What codegraph-index can index, and which tool each kind of target needs. No VS Code imports.
 import * as fs from 'fs';
 import * as path from 'path';
+import { sameFile } from './platform';
 
 export type TargetKind = 'csharp' | 'typescript' | 'java' | 'python' | 'go' | 'rust';
 
@@ -168,7 +169,7 @@ export function daemonTargetOf<T extends { file: string; kind: TargetKind }>(
   const built = (headlineKind && held(headlineKind)) || headline;
   const builtKind = built ? classify(built) : undefined;
   return (
-    targets.find((t) => built && pathKey(t.file) === pathKey(built)) ??
+    targets.find((t) => built && sameFile(t.file, built)) ??
     (built && exists(built) ? { file: built, kind: builtKind ?? 'csharp' } : undefined) ??
     targets.find((t) => t.kind === 'csharp' && /\.slnx?$/i.test(t.file)) ??
     targets.find((t) => t.kind === 'csharp') ??

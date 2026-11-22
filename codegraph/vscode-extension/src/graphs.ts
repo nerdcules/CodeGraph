@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Cli, findOnPath } from './cli';
-import { samePath } from './platform';
+import { sameFile, samePath } from './platform';
 import { StatusReport } from './status';
 import { chooseTargets, classify, daemonTargetOf, excludeGlob, indexedTargets, isInside, kindLanguages, Requirement, requirements, TargetKind, targetGlob } from './targets';
 
@@ -195,7 +195,7 @@ export class Graphs implements vscode.Disposable {
       return indexed;
     }
     const held = this.held(graph, target.kind);
-    return held && !samePath(held, target.file) && fs.existsSync(held) ? { file: held, kind: target.kind } : undefined;
+    return held && fs.existsSync(held) && !sameFile(held, target.file) ? { file: held, kind: target.kind } : undefined;
   }
 
   /** The target a kind's rows in the graph were built from, as the graph records it. */

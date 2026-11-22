@@ -174,8 +174,8 @@ The indexer and the MCP server run on your machine, and the graph stays in `.cod
 
 ## Tested
 
-- **Unit tests** (`npm test`): 23 tests of the parts without VS Code. They cover target discovery, the projects a
-  `.sln` or `.slnx` lists, the one target of each language a graph takes, the target the daemon watches, which folders an update may replace,
+- **Unit tests** (`npm test`): 24 tests of the parts without VS Code. They cover target discovery, the projects a
+  `.sln` or `.slnx` lists, the one target of each language a graph takes, the target the daemon watches, one file reached by two paths, which folders an update may replace,
   release asset names, checksums, version order, status parsing and formatting.
 - **Integration test** (`npm run test:integration`): the current stable VS Code starts with the extension on a copy
   of a small C# solution and runs 8 steps against a real `codegraph-index` built from this repository. The extension finds the

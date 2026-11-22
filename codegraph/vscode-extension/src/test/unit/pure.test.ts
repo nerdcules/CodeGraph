@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { ago, bytes, count, languageName, plural, shortCommit } from '../../format';
-import { assetName, checksumFor, compareVersions, defaultInstallDir, executable, isInstallFolder, releaseToInstall, runtimeId } from '../../platform';
+import { assetName, checksumFor, compareVersions, defaultInstallDir, executable, isInstallFolder, releaseToInstall, runtimeId, sameFile } from '../../platform';
 import { daemonStateOf, healthOf, parseStatus, StatusReport } from '../../status';
 import { chooseTargets, classify, daemonTargetOf, indexedTargets, isInside, solutionProjects, sourceExtensions } from '../../targets';
 
@@ -170,6 +170,27 @@ test('daemonTargetOf watches the target that last indexed the headline\'s langua
   assert.deepEqual(daemonTargetOf([b, a], undefined, () => undefined, exists), b);
   // A headline that is gone falls back the same way.
   assert.deepEqual(daemonTargetOf([a], path.join(r, 'gone', 'package.json'), () => undefined, exists), a);
+});
+
+test('sameFile and daemonTargetOf see one file through two spellings of its path', () => {
+  const fs = require('fs') as typeof import('fs');
+  const os = require('os') as typeof import('os');
+  const real = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-samefile-'));
+  const link = real + '-link';
+  try {
+    fs.writeFileSync(path.join(real, 'App.sln'), '');
+    fs.symlinkSync(real, link, 'junction');
+    const discovered = path.join(link, 'App.sln');
+    const recorded = path.join(real, 'App.sln');
+    assert.ok(sameFile(discovered, recorded));
+    assert.ok(!sameFile(discovered, path.join(real, 'Other.sln')), 'a file that does not exist is not the same');
+    // The graph recorded the real path; the search listed the link: the daemon still watches the listed target.
+    const target = { file: discovered, kind: 'csharp' as const };
+    assert.equal(daemonTargetOf([target], recorded, () => recorded), target);
+  } finally {
+    fs.rmSync(link, { force: true });
+    fs.rmSync(real, { recursive: true, force: true });
+  }
 });
 
 test('solutionProjects reads the projects of a .sln and a .slnx', () => {

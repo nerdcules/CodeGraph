@@ -81,6 +81,22 @@ export function samePath(a: string, b: string): boolean {
   return process.platform === 'linux' ? norm(a) === norm(b) : norm(a).toLowerCase() === norm(b).toLowerCase();
 }
 
+/**
+ * True when two paths name one file: the same path (samePath), or, when both exist, the same real path. A path the
+ * graph recorded can spell a file differently from the one the workspace search returns: through a symlink (macOS
+ * /tmp is /private/tmp) or, on Windows, an 8.3 short name (C:\\Users\\RUNNER~1).
+ */
+export function sameFile(a: string, b: string): boolean {
+  if (samePath(a, b)) {
+    return true;
+  }
+  try {
+    return samePath(fs.realpathSync.native(a), fs.realpathSync.native(b));
+  } catch {
+    return false; // one of them does not exist
+  }
+}
+
 export function executable(name: 'codegraph-index' | 'codegraph-mcp', platform: NodeJS.Platform = process.platform): string {
   return platform === 'win32' ? `${name}.exe` : name;
 }
