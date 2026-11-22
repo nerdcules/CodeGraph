@@ -4,7 +4,7 @@ import * as cp from 'child_process';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Cli } from './cli';
-import { Graph, Graphs } from './graphs';
+import { Graph, Graphs, Target } from './graphs';
 
 export class Daemons implements vscode.Disposable {
   /**
@@ -29,11 +29,12 @@ export class Daemons implements vscode.Disposable {
     return this.started.has(graph.db);
   }
 
-  async start(graph: Graph): Promise<void> {
+  async start(graph: Graph, chosen?: Target): Promise<void> {
     if (graph.status?.daemon || this.started.has(graph.db)) {
       return;
     }
-    const target = this.graphs.daemonTarget(graph);
+    // A target just set up is the one to watch; else the graph's (Graphs.daemonTarget).
+    const target = chosen ?? this.graphs.daemonTarget(graph);
     if (!target) {
       throw new Error(`no target to watch for ${graph.name}`);
     }

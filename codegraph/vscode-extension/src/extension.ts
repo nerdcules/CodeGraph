@@ -114,7 +114,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
         'Start Live Daemon',
       );
       if (action) {
-        await daemons!.start(graph);
+        await daemons!.start(graph, target);
       }
     }
   };

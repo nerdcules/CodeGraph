@@ -9,7 +9,8 @@ The executables report their version with `--version`; the MCP server shows it t
 
 - **Plain JavaScript projects are indexed.** A `package.json` with no `tsconfig.json` or `jsconfig.json` beside it is
   now a plain JavaScript project: the TypeScript extractor compiles every JavaScript and TypeScript file under its
-  folder (outside `node_modules` and build output) with the options a `jsconfig.json` defaults to. Before, such a
+  folder (outside `node_modules` and build output, also when a source file imports from there) with the options a
+  `jsconfig.json` defaults to. Before, such a
   project could not be indexed: `codegraph-index package.json` stopped with "no tsconfig found", and neither `init`
   nor the VS Code extension found anything to index. `init` takes a folder's `package.json` last, after every other
   kind of target, so a `package.json` kept for tooling in a C#, Java, Python, Go or Rust repository does not take
@@ -19,6 +20,13 @@ The executables report their version with `--version`; the MCP server shows it t
 - **Choose What to Index… in the VS Code extension.** The Overview's "Nothing to index here" card and the Graphs
   view's welcome offer it, and it is in the Graphs view's menu: it asks for a solution, project or build file and
   sets it up like **Set Up Repository**. **Set Up Repository** in a workspace where nothing was found does the same.
+- **Set Up Repository asks before it replaces another target's rows**, as **Index Now** does: a graph holds one
+  target of each language, and setting up a second one replaced the first one's rows without a word. It also asks
+  when the graph's rows come from a target the search does not list. A re-index on save never replaces another
+  target's rows; it logs that it skipped.
+- **The live daemon watches the target whose rows the graph holds.** After a second target of the graph's first
+  language was set up or indexed, Start and Restart still watched the first one, and its first index put that
+  target's rows back over the second's.
 
 ## 1.5.2
 

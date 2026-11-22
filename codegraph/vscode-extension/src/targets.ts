@@ -152,6 +152,30 @@ export function indexedTargets<T extends { file: string; kind: TargetKind }>(tar
   return chosen;
 }
 
+/**
+ * The target the live daemon watches. The graph's headline target (`headline`, the first one indexed into it) unless
+ * a later index of another target of the same language replaced its rows (`held`: a second workspace set up, or one
+ * chosen by hand); watching the headline then would index it back over them. That file is used even before the
+ * search lists it, while it exists; else a C# solution, else a C# project, else the first target.
+ */
+export function daemonTargetOf<T extends { file: string; kind: TargetKind }>(
+  targets: readonly T[],
+  headline: string | undefined,
+  held: (kind: TargetKind) => string | undefined,
+  exists: (file: string) => boolean = fs.existsSync,
+): T | { file: string; kind: TargetKind } | undefined {
+  const headlineKind = headline ? classify(headline) : undefined;
+  const built = (headlineKind && held(headlineKind)) || headline;
+  const builtKind = built ? classify(built) : undefined;
+  return (
+    targets.find((t) => built && pathKey(t.file) === pathKey(built)) ??
+    (built && exists(built) ? { file: built, kind: builtKind ?? 'csharp' } : undefined) ??
+    targets.find((t) => t.kind === 'csharp' && /\.slnx?$/i.test(t.file)) ??
+    targets.find((t) => t.kind === 'csharp') ??
+    targets[0]
+  );
+}
+
 /** A path as a comparison key: absolute, forward slashes, lower case where the file system ignores case. */
 function pathKey(p: string): string {
   const key = path.resolve(p).replace(/\\/g, '/');

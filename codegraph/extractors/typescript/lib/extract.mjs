@@ -31,9 +31,10 @@ const posix = p => p.split(path.sep).join('/');
 const JSCONFIG_DEFAULTS = { allowJs: true, allowSyntheticDefaultImports: true, skipLibCheck: true };
 // A plain JavaScript project (a package.json with no tsconfig.json or jsconfig.json beside it): every JavaScript and
 // TypeScript file under its folder, resolved the way Node resolves them, outside dependencies and build output.
+const PLAIN_SKIP = ['node_modules', 'dist', 'out', 'build', 'coverage', '.git', 'bin', 'obj'];
 const PLAIN_JAVASCRIPT = {
   compilerOptions: { ...JSCONFIG_DEFAULTS, module: 'nodenext', target: 'es2023' },
-  exclude: ['**/node_modules', '**/dist', '**/out', '**/build', '**/coverage', '**/.git', '**/bin', '**/obj'],
+  exclude: PLAIN_SKIP.map(d => `**/${d}`),
 };
 
 /** The compiler's view of a config: a tsconfig as it is, a jsconfig.json over its defaults, a bare package.json as a plain JavaScript project. */
@@ -164,6 +165,9 @@ export class Extractor {
     this.edges = new Map();
     this.files = new Set();
     this.walked = new Set();
+    // Folders a plain JavaScript project leaves out (PLAIN_SKIP); set by its config. `exclude` only limits the
+    // compiler's root files, so a file there that a source file imports would otherwise still be walked.
+    this.skipped = new Set();
     this.terms = new Map();
     this.texts = new Map();
     this.angular = new AngularIndex(this);
@@ -203,7 +207,8 @@ export class Extractor {
   inSource(sf) {
     if (sf.isDeclarationFile || /[\\/]node_modules[\\/]/.test(sf.fileName)) return false;
     const rel = path.relative(this.root, sf.fileName);
-    return !rel.startsWith('..') && !path.isAbsolute(rel);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    return this.skipped.size === 0 || !rel.split(/[\\/]/).slice(0, -1).some(d => this.skipped.has(d));
   }
 
   addNode(record) {
@@ -266,6 +271,7 @@ export class Extractor {
     const host = { ...ts.sys, onUnRecoverableConfigFileDiagnostic: d => this.log(ts.flattenDiagnosticMessageText(d.messageText, '\n')) };
     const parsed = parseConfig(config, host);
     if (!parsed) return;
+    if (path.basename(config) === 'package.json') PLAIN_SKIP.forEach(d => this.skipped.add(d));
     const compilerHost = ts.createCompilerHost(parsed.options, true);
     // Referenced projects resolve to their sources, not to (possibly unbuilt) declaration output.
     compilerHost.useSourceOfProjectReferenceRedirect = () => true;

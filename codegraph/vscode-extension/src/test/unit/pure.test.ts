@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { ago, bytes, count, languageName, plural, shortCommit } from '../../format';
 import { assetName, checksumFor, compareVersions, defaultInstallDir, executable, isInstallFolder, releaseToInstall, runtimeId } from '../../platform';
 import { daemonStateOf, healthOf, parseStatus, StatusReport } from '../../status';
-import { chooseTargets, classify, indexedTargets, isInside, solutionProjects, sourceExtensions } from '../../targets';
+import { chooseTargets, classify, daemonTargetOf, indexedTargets, isInside, solutionProjects, sourceExtensions } from '../../targets';
 
 test('count writes thousands and compacts large numbers', () => {
   assert.equal(count(3276), '3,276');
@@ -149,6 +149,27 @@ test('chooseTargets keeps solutions over the projects they list and the outermos
   assert.ok(isInside(path.join(r, 'a', 'b'), r));
   assert.ok(isInside(r, r));
   assert.ok(!isInside(path.resolve('/repository'), r));
+});
+
+test('daemonTargetOf watches the target that last indexed the headline\'s language, not the headline over it', () => {
+  const r = path.resolve('/repo');
+  const a = { file: path.join(r, 'a', 'package.json'), kind: 'typescript' as const };
+  const b = { file: path.join(r, 'b', 'package.json'), kind: 'typescript' as const };
+  const sln = { file: path.join(r, 'App.sln'), kind: 'csharp' as const };
+  const exists = (file: string) => [a.file, b.file, sln.file].includes(file);
+  // Built from A, then B set up into the same graph: the TypeScript rows are B's.
+  assert.deepEqual(daemonTargetOf([a, b], a.file, () => b.file, exists), b);
+  // B chosen by hand and not listed by the search yet: still B, by its file.
+  assert.deepEqual(daemonTargetOf([a], a.file, () => b.file, exists), { file: b.file, kind: 'typescript' });
+  // Nothing replaced: the headline.
+  assert.deepEqual(daemonTargetOf([a, b], a.file, () => a.file, exists), a);
+  // A C# headline stays the solution while a front end of another language is indexed beside it.
+  assert.deepEqual(daemonTargetOf([sln, a], sln.file, (kind) => (kind === 'typescript' ? a.file : undefined), exists), sln);
+  // No status yet: a solution, else the first target.
+  assert.deepEqual(daemonTargetOf([a, sln], undefined, () => undefined, exists), sln);
+  assert.deepEqual(daemonTargetOf([b, a], undefined, () => undefined, exists), b);
+  // A headline that is gone falls back the same way.
+  assert.deepEqual(daemonTargetOf([a], path.join(r, 'gone', 'package.json'), () => undefined, exists), a);
 });
 
 test('solutionProjects reads the projects of a .sln and a .slnx', () => {

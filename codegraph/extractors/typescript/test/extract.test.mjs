@@ -181,6 +181,19 @@ test('a package.json with no tsconfig.json or jsconfig.json is a plain JavaScrip
   assert.equal(project?.language, 'javascript');
 }));
 
+test('a plain JavaScript project does not walk build output that a source file imports', () => withWorkspace({
+  'package.json': '{ "name": "imports-dist", "type": "module" }',
+  'src/main.js': "import { built } from '../dist/helper.js';\nexport function main() { return built(); }\n",
+  'dist/helper.js': 'export function built() { return 1; }\n',
+}, dir => {
+  const { out } = extract(dir);
+  const ids = out.filter(r => r.type === 'node').map(r => r.id);
+  assert.ok(ids.includes('ts:src/main.js#main'), ids.join('\n'));
+  // Not walked as source: no file or declaration nodes there. A call into it is an external, like one into a dependency.
+  assert.ok(!ids.some(i => i.startsWith('ts:dist/') || i.startsWith('ts:file:dist/')), ids.join('\n'));
+  assert.ok(ids.includes('ts:ext:dist/helper.js#built'), ids.join('\n'));
+}));
+
 test('a folder with only a package.json is that plain JavaScript project; one with none of the markers is refused', () => withWorkspace({
   'app/package.json': '{ "name": "app" }',
   'app/index.js': 'export const answer = 42;\n',

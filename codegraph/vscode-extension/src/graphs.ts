@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { Cli, findOnPath } from './cli';
 import { samePath } from './platform';
 import { StatusReport } from './status';
-import { chooseTargets, classify, excludeGlob, indexedTargets, isInside, kindLanguages, Requirement, requirements, TargetKind, targetGlob } from './targets';
+import { chooseTargets, classify, daemonTargetOf, excludeGlob, indexedTargets, isInside, kindLanguages, Requirement, requirements, TargetKind, targetGlob } from './targets';
 
 export interface Target {
   file: string;
@@ -173,14 +173,7 @@ export class Graphs implements vscode.Disposable {
    * solution, else the first target. One daemon serves each graph.
    */
   daemonTarget(graph: Graph): Target | undefined {
-    const built = graph.status?.graph?.solution;
-    return (
-      graph.targets.find((t) => built && samePath(t.file, built)) ??
-      graph.targets.find((t) => t.kind === 'csharp' && /\.slnx?$/i.test(t.file)) ??
-      graph.targets.find((t) => t.kind === 'csharp') ??
-      graph.targets[0] ??
-      (built && fs.existsSync(built) ? { file: built, kind: 'csharp' as TargetKind } : undefined)
-    );
+    return daemonTargetOf(graph.targets, graph.status?.graph?.solution, (kind) => this.held(graph, kind));
   }
 
   /**
@@ -191,10 +184,18 @@ export class Graphs implements vscode.Disposable {
     return indexedTargets(graph.targets, (kind) => this.held(graph, kind), this.daemonTarget(graph));
   }
 
-  /** The target of the same kind whose rows indexing `target` would replace, when it is not `target` itself. */
+  /**
+   * The target of the same kind whose rows indexing `target` would replace, when it is not `target` itself: the
+   * one the graph indexes of that kind, or the one its rows were built from when the search does not list that
+   * one but it still exists (a target chosen by hand). Status must be current for the second.
+   */
   replaces(graph: Graph, target: Target): Target | undefined {
     const indexed = this.indexed(graph).find((t) => t.kind === target.kind);
-    return indexed && !samePath(indexed.file, target.file) ? indexed : undefined;
+    if (indexed && !samePath(indexed.file, target.file)) {
+      return indexed;
+    }
+    const held = this.held(graph, target.kind);
+    return held && !samePath(held, target.file) && fs.existsSync(held) ? { file: held, kind: target.kind } : undefined;
   }
 
   /** The target a kind's rows in the graph were built from, as the graph records it. */
