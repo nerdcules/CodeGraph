@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { Cli } from './cli';
 import { Daemons } from './daemons';
-import { Graph, Graphs } from './graphs';
+import { Graph, graphFor, Graphs } from './graphs';
 import { Indexing } from './indexing';
 import { installRelease, isLinkedInstall, latestTag } from './install';
 import { McpOffer, registerMcp } from './mcp';
@@ -79,7 +79,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
     }
     if (all.length <= 1) {
       if (all.length === 0) {
-        void vscode.window.showInformationMessage('CodeGraph: no C#, TypeScript, Java, Python, Go or Rust project was found in this workspace.');
+        void vscode.window.showInformationMessage('CodeGraph: no C#, TypeScript, JavaScript, Java, Python, Go or Rust project was found in this workspace.');
       }
       return all[0];
     }
@@ -88,6 +88,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
       { placeHolder: 'Which graph?' },
     );
     return choice?.graph;
+  };
+
+  /** `codegraph-index init` on a target: which assistants get the server, then index, then offer the daemon. */
+  const setUp = async (graph: Graph, target: Graph['targets'][number] | undefined): Promise<void> => {
+    if (!target) {
+      return;
+    }
+    const preselected = new Set(vscode.workspace.getConfiguration('codegraph').get<string[]>('clients', ['claude']));
+    const chosen = await vscode.window.showQuickPick(
+      clientChoices.map((c) => ({ label: c.label, description: c.id, detail: c.detail, picked: preselected.has(c.id), id: c.id })),
+      {
+        canPickMany: true,
+        title: `Set up ${graph.name}`,
+        placeHolder: 'Which assistants should get the codegraph server? (VS Code chat clients get it from this extension already)',
+      },
+    );
+    if (!chosen) {
+      return;
+    }
+    const clients = chosen.length ? chosen.map((c) => c.id) : ['claude'];
+    if (await indexing.init(graph, target, clients)) {
+      const action = graph.status?.daemon ? undefined : await vscode.window.showInformationMessage(
+        `CodeGraph: ${graph.name} is indexed and set up for ${chosen.map((c) => c.label).join(', ') || 'Claude Code'}.`,
+        'Start Live Daemon',
+      );
+      if (action) {
+        await daemons!.start(graph);
+      }
+    }
+  };
+
+  /**
+   * Choose What to Index…: a file the user picks, for a layout the workspace search misses or a workspace where it
+   * found nothing. The graph is the one the indexer writes for that file by default.
+   */
+  const chooseTarget = async (): Promise<{ graph: Graph; target: Graph['targets'][number] } | undefined> => {
+    const folder = vscode.workspace.workspaceFolders?.find((f) => f.uri.scheme === 'file')?.uri;
+    const picked = await vscode.window.showOpenDialog({
+      title: 'Choose what CodeGraph indexes',
+      openLabel: 'Index this',
+      defaultUri: folder,
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { 'Solutions, projects and build files': ['sln', 'slnx', 'csproj', 'json', 'xml', 'gradle', 'kts', 'sbt', 'toml', 'py', 'mod', 'work'] },
+    });
+    const file = picked?.[0]?.fsPath;
+    if (!file) {
+      return undefined;
+    }
+    const found = graphFor(file);
+    if (!found) {
+      void vscode.window.showErrorMessage(
+        `CodeGraph cannot index ${path.basename(file)}. Choose a .sln, .slnx, .csproj, tsconfig.json, jsconfig.json, angular.json, nx.json, package.json, ` +
+          'pom.xml, build.gradle, build.sbt, pyproject.toml, setup.py, go.mod, go.work or Cargo.toml.',
+      );
+      return undefined;
+    }
+    // A graph already shown keeps its object: an index run in progress holds it.
+    return { graph: graphs.get(found.db) ?? found, target: found.targets[0] };
   };
 
   const needsInstall = async (): Promise<boolean> => {
@@ -124,35 +184,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ grap
       if (await needsInstall()) {
         return;
       }
+      // With nothing found in the workspace, set-up starts from a file the user picks.
+      if (!arg && graphs.all().length === 0) {
+        await vscode.commands.executeCommand('codegraph.chooseTarget');
+        return;
+      }
       const graph = await pick(arg);
-      if (!graph) {
+      if (graph) {
+        await setUp(graph, await pickTarget(graph, graphs));
+      }
+    }),
+
+    guard('codegraph.chooseTarget', async () => {
+      if (await needsInstall()) {
         return;
       }
-      const target = await pickTarget(graph, graphs);
-      if (!target) {
-        return;
-      }
-      const preselected = new Set(vscode.workspace.getConfiguration('codegraph').get<string[]>('clients', ['claude']));
-      const chosen = await vscode.window.showQuickPick(
-        clientChoices.map((c) => ({ label: c.label, description: c.id, detail: c.detail, picked: preselected.has(c.id), id: c.id })),
-        {
-          canPickMany: true,
-          title: `Set up ${graph.name}`,
-          placeHolder: 'Which assistants should get the codegraph server? (VS Code chat clients get it from this extension already)',
-        },
-      );
-      if (!chosen) {
-        return;
-      }
-      const clients = chosen.length ? chosen.map((c) => c.id) : ['claude'];
-      if (await indexing.init(graph, target, clients)) {
-        const action = graph.status?.daemon ? undefined : await vscode.window.showInformationMessage(
-          `CodeGraph: ${graph.name} is indexed and set up for ${chosen.map((c) => c.label).join(', ') || 'Claude Code'}.`,
-          'Start Live Daemon',
-        );
-        if (action) {
-          await daemons!.start(graph);
-        }
+      const chosen = await chooseTarget();
+      if (chosen) {
+        graphs.remember(chosen.target);
+        await setUp(chosen.graph, chosen.target);
+        await graphs.discover();
       }
     }),
 

@@ -83,6 +83,45 @@ public sealed class RepoSetupTests : IDisposable
         Assert.Null(RepoSetup.FindTarget(_root, out var problem));
         Assert.Contains("no .slnx", problem);
         Assert.Contains("angular.json", problem);
+        Assert.Contains("package.json", problem);
+    }
+
+    [Fact]
+    public void A_folder_with_only_a_package_json_is_a_plain_JavaScript_project()
+    {
+        var manifest = Touch("package.json");
+        Touch("src", "main.js");
+        Assert.Equal(manifest, RepoSetup.FindTarget(_root, out var problem));
+        Assert.Null(problem);
+    }
+
+    [Fact]
+    public void A_tsconfig_or_jsconfig_beside_the_package_json_is_the_workspace_tsconfig_first()
+    {
+        Touch("package.json");
+        var jsconfig = Touch("jsconfig.json");
+        Assert.Equal(jsconfig, RepoSetup.FindTarget(_root, out _));
+        var tsconfig = Touch("tsconfig.json");
+        Assert.Equal(tsconfig, RepoSetup.FindTarget(_root, out _));
+    }
+
+    [Fact]
+    public void A_jsconfig_project_below_the_folder_is_found_like_a_tsconfig_one()
+    {
+        Touch("web", "package.json");
+        var jsconfig = Touch("web", "jsconfig.json");
+        Assert.Equal(jsconfig, RepoSetup.FindTarget(_root, out _));
+    }
+
+    [Theory]
+    [InlineData("App.csproj")]
+    [InlineData("pyproject.toml")]
+    [InlineData("go.mod")]
+    public void A_package_json_kept_for_tooling_does_not_take_the_place_of_another_language(string marker)
+    {
+        Touch("package.json");
+        var build = Touch(marker);
+        Assert.Equal(build, RepoSetup.FindTarget(_root, out _));
     }
 
     [Fact]

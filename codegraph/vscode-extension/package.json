@@ -39,6 +39,8 @@
     "workspaceContains:**/tsconfig.json",
     "workspaceContains:**/angular.json",
     "workspaceContains:**/nx.json",
+    "workspaceContains:**/jsconfig.json",
+    "workspaceContains:package.json",
     "workspaceContains:**/pom.xml",
     "workspaceContains:**/build.gradle",
     "workspaceContains:**/build.gradle.kts",
@@ -78,7 +80,7 @@
       },
       {
         "view": "codegraph.graphs",
-        "contents": "No C#, TypeScript, Java, Python, Go or Rust project was found in this workspace.\n[Refresh](command:codegraph.refresh)",
+        "contents": "No C#, TypeScript, JavaScript, Java, Python, Go or Rust project was found in this workspace.\n[Choose What to Index…](command:codegraph.chooseTarget)\n[Search Again](command:codegraph.refresh)",
         "when": "codegraph.ready && codegraph.installed && !codegraph.hasGraphs"
       }
     ],
@@ -94,6 +96,12 @@
         "title": "Set Up Repository…",
         "category": "CodeGraph",
         "icon": "$(rocket)"
+      },
+      {
+        "command": "codegraph.chooseTarget",
+        "title": "Choose What to Index…",
+        "category": "CodeGraph",
+        "icon": "$(folder-opened)"
       },
       {
         "command": "codegraph.index",
@@ -161,6 +169,11 @@
           "command": "codegraph.init",
           "when": "view == codegraph.graphs",
           "group": "navigation@2"
+        },
+        {
+          "command": "codegraph.chooseTarget",
+          "when": "view == codegraph.graphs",
+          "group": "0_setup"
         },
         {
           "command": "codegraph.install",

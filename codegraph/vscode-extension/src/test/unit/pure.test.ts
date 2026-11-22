@@ -89,7 +89,33 @@ test('classify knows every marker the indexer accepts', () => {
   assert.equal(classify('/r/pyproject.toml'), 'python');
   assert.equal(classify('/r/go.work'), 'go');
   assert.equal(classify('/r/Cargo.toml'), 'rust');
-  assert.equal(classify('/r/package.json'), undefined);
+  assert.equal(classify('/r/jsconfig.json'), 'typescript');
+  assert.equal(classify('/r/package.json'), 'typescript');
+  assert.equal(classify('/r/README.md'), undefined);
+});
+
+test('chooseTargets takes a package.json only where no other marker is, and a tsconfig.json over a jsconfig.json', () => {
+  const r = path.resolve('/repo');
+  const rel = (files: string[]) => chooseTargets(files).map((t) => [t.kind, path.relative(r, t.file)]);
+  // A plain JavaScript project; nested package.json files (fixtures, workspaces) are inside it.
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'test', 'fixtures', 'a', 'package.json')]), [['typescript', 'package.json']]);
+  // Beside a tsconfig.json or jsconfig.json, the package.json is that workspace's.
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'tsconfig.json')]), [['typescript', 'tsconfig.json']]);
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'jsconfig.json')]), [['typescript', 'jsconfig.json']]);
+  assert.deepEqual(rel([path.join(r, 'jsconfig.json'), path.join(r, 'tsconfig.json')]), [['typescript', 'tsconfig.json']]);
+  // A monorepo root's package.json gives way to the workspaces below it.
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'packages', 'a', 'package.json'), path.join(r, 'packages', 'a', 'tsconfig.json')]), [
+    ['typescript', path.join('packages', 'a', 'tsconfig.json')],
+  ]);
+  // In a C#, Python or Go repository it is there for tooling.
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'src', 'App.csproj')]), [['csharp', path.join('src', 'App.csproj')]]);
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'pyproject.toml')]), [['python', 'pyproject.toml']]);
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'go.mod')]), [['go', 'go.mod']]);
+  // A plain JavaScript project in its own folder beside one of another language stays.
+  assert.deepEqual(rel([path.join(r, 'api', 'go.mod'), path.join(r, 'web', 'package.json')]), [
+    ['go', path.join('api', 'go.mod')],
+    ['typescript', path.join('web', 'package.json')],
+  ]);
 });
 
 test('chooseTargets keeps solutions over the projects they list and the outermost marker of each language', () => {

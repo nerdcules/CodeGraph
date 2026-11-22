@@ -26,6 +26,7 @@ export interface OverviewState {
 const allowed = new Set([
   'codegraph.install',
   'codegraph.init',
+  'codegraph.chooseTarget',
   'codegraph.index',
   'codegraph.rebuild',
   'codegraph.startDaemon',

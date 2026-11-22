@@ -5,6 +5,21 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+- **Plain JavaScript projects are indexed.** A `package.json` with no `tsconfig.json` or `jsconfig.json` beside it is
+  now a plain JavaScript project: the TypeScript extractor compiles every JavaScript and TypeScript file under its
+  folder (outside `node_modules` and build output) with the options a `jsconfig.json` defaults to. Before, such a
+  project could not be indexed: `codegraph-index package.json` stopped with "no tsconfig found", and neither `init`
+  nor the VS Code extension found anything to index. `init` takes a folder's `package.json` last, after every other
+  kind of target, so a `package.json` kept for tooling in a C#, Java, Python, Go or Rust repository does not take
+  their place; the extension shows one only where no other project file is in or below its folder.
+- **A `jsconfig.json` is a target** like a `tsconfig.json`, with `allowJs` on unless it says otherwise. A
+  `tsconfig.json` beside it wins.
+- **Choose What to Index… in the VS Code extension.** The Overview's "Nothing to index here" card and the Graphs
+  view's welcome offer it, and it is in the Graphs view's menu: it asks for a solution, project or build file and
+  sets it up like **Set Up Repository**. **Set Up Repository** in a workspace where nothing was found does the same.
+
 ## 1.5.2
 
 A daemon for TypeScript, Python, Java, Go or Rust that is stopped during its first index exits cleanly instead of aborting,

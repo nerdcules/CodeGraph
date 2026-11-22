@@ -33,8 +33,10 @@ tokens of VS Code's Dark Modern and Light Modern themes.*
   failed update leaves the old installation whole. On Windows the install folder is a junction to a folder for each
   release, and an update points the junction at the new one. It never replaces a folder that holds other programs,
   such as `~/.local/bin`. Once a day it checks for a newer release.
-- **Finds what to index.** It finds the C# solutions, TypeScript and Angular workspaces, Maven and Gradle builds,
-  Python projects, Go modules and Rust crates in the workspace. It groups them by the graph they feed: one graph
+- **Finds what to index.** It finds the C# solutions, TypeScript and Angular workspaces, JavaScript projects (a
+  `jsconfig.json`, or a `package.json` with no other project file in or below its folder), Maven and Gradle builds,
+  Python projects, Go modules and Rust crates in the workspace. Where it finds nothing, or misses a layout,
+  **Choose what to index…** sets up from a file you pick. It groups them by the graph they feed: one graph
   for each git worktree. A solution hides the projects it lists; a project it does not list stays a target.
 - **One target per language.** Indexing a target replaces every row of its language in the graph. So a graph
   takes one target of each language: the one it was built from, else the daemon's, else a solution. A second
@@ -138,6 +140,7 @@ one. Turn it off with `codegraph.registerMcpServer`.
 |---|---|
 | CodeGraph: Install or Update CodeGraph | Downloads and installs the latest release after checking it against `SHA256SUMS`; while the extension is newer than that release, its own release instead |
 | CodeGraph: Set Up Repository… | `codegraph-index init <target> --client <your picks>` |
+| CodeGraph: Choose What to Index… | Asks for a solution, project or build file, then sets it up like **Set Up Repository** |
 | CodeGraph: Index Now | `codegraph-index <target>` for the graph's target of each language, only the files that changed |
 | CodeGraph: Rebuild Graph | The same with `--full` for C# |
 | CodeGraph: Start / Stop / Restart Live Daemon | `codegraph-index --watch`, `codegraph-index stop` |
@@ -170,7 +173,7 @@ The indexer and the MCP server run on your machine, and the graph stays in `.cod
 
 ## Tested
 
-- **Unit tests** (`npm test`): 13 tests of the parts without VS Code. They cover target discovery, the projects a
+- **Unit tests** (`npm test`): 22 tests of the parts without VS Code. They cover target discovery, the projects a
   `.sln` or `.slnx` lists, the one target of each language a graph takes, which folders an update may replace,
   release asset names, checksums, version order, status parsing and formatting.
 - **Integration test** (`npm run test:integration`): VS Code 1.146.0 starts with the extension on a copy of a small

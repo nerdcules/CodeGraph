@@ -15,7 +15,7 @@ export interface Requirement {
 
 /** The glob the workspace search uses: every file name `classify` accepts. */
 export const targetGlob =
-  '**/{*.sln,*.slnx,*.csproj,tsconfig.json,angular.json,nx.json,pom.xml,build.gradle,build.gradle.kts,build.sbt,pyproject.toml,setup.py,go.work,go.mod,Cargo.toml}';
+  '**/{*.sln,*.slnx,*.csproj,tsconfig.json,angular.json,nx.json,jsconfig.json,package.json,pom.xml,build.gradle,build.gradle.kts,build.sbt,pyproject.toml,setup.py,go.work,go.mod,Cargo.toml}';
 
 /** Folders never searched for targets: dependencies, build output, and the graph itself. */
 export const excludeGlob = '**/{node_modules,bin,obj,dist,out,build,target,.git,.codegraph,.venv,venv,vendor,.vscode-test}/**';
@@ -26,7 +26,8 @@ export function classify(file: string): TargetKind | undefined {
   if (name.endsWith('.sln') || name.endsWith('.slnx') || name.endsWith('.csproj')) {
     return 'csharp';
   }
-  if (name === 'tsconfig.json' || name === 'angular.json' || name === 'nx.json') {
+  // A package.json is a plain JavaScript project only where no other marker is (chooseTargets).
+  if (name === 'tsconfig.json' || name === 'angular.json' || name === 'nx.json' || name === 'jsconfig.json' || name === 'package.json') {
     return 'typescript';
   }
   if (['pom.xml', 'build.gradle', 'build.gradle.kts', 'build.sbt'].includes(name)) {
@@ -68,12 +69,20 @@ export const sourceExtensions: Record<TargetKind, string[]> = {
  * Which targets to show, from every marker file found. A solution covers the projects it lists, so those .csproj
  * files are dropped (a project no solution lists, or one in another repository of the same folder, stays); a
  * tsconfig.json beside an angular.json or nx.json is the same workspace; nested markers of one SCIP language (a Maven
- * module inside a Maven build) are covered by the outermost one. `projectsOf` reads a solution's project paths.
+ * module inside a Maven build) are covered by the outermost one. A jsconfig.json beside a tsconfig.json gives way
+ * to it, and a package.json is a target (a plain JavaScript project) only when no other marker of any language is in
+ * its folder or below it: one beside a tsconfig.json is that workspace's, and one at the root of a monorepo or of a
+ * C#, Java, Python, Go or Rust repository is there for tooling. `projectsOf` reads a solution's project paths.
  */
 export function chooseTargets(files: string[], projectsOf: (solution: string) => string[] = readSolutionProjects): { file: string; kind: TargetKind }[] {
-  const found = files
+  const classified = files
     .map((file) => ({ file, kind: classify(file) }))
-    .filter((t): t is { file: string; kind: TargetKind } => t.kind !== undefined)
+    .filter((t): t is { file: string; kind: TargetKind } => t.kind !== undefined);
+  const named = (t: { file: string }, name: string) => path.basename(t.file).toLowerCase() === name;
+  const others = classified.filter((t) => !named(t, 'package.json'));
+  const found = classified
+    .filter((t) => !named(t, 'package.json') || !others.some((o) => isInside(path.dirname(o.file), path.dirname(t.file))))
+    .filter((t) => !named(t, 'jsconfig.json') || !others.some((o) => named(o, 'tsconfig.json') && samePlace(path.dirname(o.file), path.dirname(t.file))))
     .sort((a, b) => a.file.length - b.file.length || a.file.localeCompare(b.file));
 
   const inSolutions = new Set(found.filter((t) => /\.slnx?$/i.test(t.file)).flatMap((t) => projectsOf(t.file)).map(pathKey));
@@ -147,6 +156,10 @@ export function indexedTargets<T extends { file: string; kind: TargetKind }>(tar
 function pathKey(p: string): string {
   const key = path.resolve(p).replace(/\\/g, '/');
   return process.platform === 'linux' ? key : key.toLowerCase();
+}
+
+function samePlace(a: string, b: string): boolean {
+  return pathKey(a) === pathKey(b);
 }
 
 /** True when `child` is `parent` or below it. */

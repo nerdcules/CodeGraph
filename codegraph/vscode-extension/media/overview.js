@@ -168,8 +168,9 @@
         h('section', { class: 'card empty' },
           logo(),
           h('h1', {}, 'Nothing to index here'),
-          h('p', {}, 'No .sln, .slnx, .csproj, tsconfig.json, angular.json, pom.xml, build.gradle, pyproject.toml, go.mod or Cargo.toml was found in this workspace.'),
+          h('p', {}, 'No .sln, .slnx, .csproj, tsconfig.json, jsconfig.json, angular.json, package.json, pom.xml, build.gradle, pyproject.toml, go.mod or Cargo.toml was found in this workspace.'),
           h('div', { class: 'actions', style: { justifyContent: 'center' } },
+            h('button', { class: 'btn primary', onclick: () => run('codegraph.chooseTarget') }, 'Choose what to index…'),
             h('button', { class: 'btn', onclick: () => run('codegraph.refresh') }, 'Search again'))),
       );
       children.push(footer(state));

@@ -32,14 +32,17 @@ The target tells the indexer which language route to use.
 | Target | Language | Route |
 |---|---|---|
 | `App.sln`, `App.slnx`, `App.csproj` | C# | Roslyn |
-| `tsconfig.json`, `angular.json`, `nx.json`, `package.json` | TypeScript, JavaScript, Angular | codegraph-ts |
+| `tsconfig.json`, `angular.json`, `nx.json`, `jsconfig.json`, `package.json` | TypeScript, JavaScript, Angular | codegraph-ts |
 | `pom.xml`, `build.gradle`, `build.gradle.kts`, `build.sbt` | Java, Kotlin, Scala | scip-java |
 | `go.mod`, `go.work` | Go | scip-go |
 | `Cargo.toml` | Rust | rust-analyzer |
 | `pyproject.toml`, `setup.py`, `setup.cfg` | Python | scip-python |
 
-For TypeScript and the SCIP languages, a folder is also a target: one that holds `angular.json`, `nx.json` or
-`tsconfig.json`, or one of the build files above.
+For TypeScript and the SCIP languages, a folder is also a target: one that holds `angular.json`, `nx.json`,
+`tsconfig.json` or `jsconfig.json`, or one of the build files above.
+A `package.json` with no `tsconfig.json` or `jsconfig.json` beside it is a plain JavaScript project. It is indexed
+with the options a `jsconfig.json` defaults to: every JavaScript and TypeScript file under its folder, outside
+`node_modules` and build output. A folder that holds only a `package.json` is that project.
 For C#, give the `.sln`, `.slnx` or `.csproj` file. `codegraph-index init` also finds it in a folder.
 
 1. Go to the repository.

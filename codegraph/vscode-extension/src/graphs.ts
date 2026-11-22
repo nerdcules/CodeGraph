@@ -46,11 +46,27 @@ export function defaultDb(targetFile: string): string {
   return path.join(rootOf(dir) ?? dir, '.codegraph', 'graph.db');
 }
 
+/**
+ * The graph a chosen target file goes into when the search did not find it (Choose What to Index…): the graph the
+ * indexer writes by default, with that one target. Undefined when the file is not a marker the indexer accepts.
+ */
+export function graphFor(file: string): Graph | undefined {
+  const kind = classify(file);
+  if (!kind) {
+    return undefined;
+  }
+  const db = defaultDb(file);
+  const root = path.dirname(path.dirname(db));
+  return { db, root, name: path.basename(root), targets: [{ file, kind, missing: missingTool(kind) }] };
+}
+
 export class Graphs implements vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changed.event;
   private graphs: Graph[] = [];
   private discovering: Promise<void> | undefined;
+  /** Targets chosen with Choose What to Index…, shown with the ones the search finds until the window closes. */
+  private readonly chosen = new Map<string, Target>();
 
   constructor(private readonly cli: Cli) {}
 
@@ -71,6 +87,11 @@ export class Graphs implements vscode.Disposable {
 
   fire(): void {
     this.changed.fire();
+  }
+
+  /** Keeps a chosen target in every later discovery, so its graph shows even where the search would not find it. */
+  remember(target: Target): void {
+    this.chosen.set(path.resolve(target.file), target);
   }
 
   /** Finds targets and graphs in every workspace folder, then reads each graph's status. */
@@ -103,6 +124,12 @@ export class Graphs implements vscode.Disposable {
       const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, targetGlob), excludeGlob, 500);
       for (const target of chooseTargets(uris.map((u) => u.fsPath))) {
         add(defaultDb(target.file)).push({ ...target, missing: missingTool(target.kind) });
+      }
+    }
+    for (const target of [...this.chosen.values()].filter((t) => fs.existsSync(t.file))) {
+      const targets = add(defaultDb(target.file));
+      if (!targets.some((t) => samePath(t.file, target.file))) {
+        targets.push(target);
       }
     }
 

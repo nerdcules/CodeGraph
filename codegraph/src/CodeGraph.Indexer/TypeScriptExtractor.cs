@@ -11,9 +11,9 @@ namespace CodeGraph.Indexer;
 /// </summary>
 internal static class TypeScriptExtractor
 {
-    private static readonly string[] WorkspaceFiles = ["angular.json", "nx.json", "tsconfig.json"];
+    private static readonly string[] WorkspaceFiles = ["angular.json", "nx.json", "tsconfig.json", "jsconfig.json"];
 
-    /// <summary>A target this extractor handles: a tsconfig, angular.json, nx.json or package.json, or a folder with one of the first three.</summary>
+    /// <summary>A target this extractor handles: a tsconfig, angular.json, nx.json, jsconfig.json or package.json, or a folder with one of the first four.</summary>
     public static bool IsTarget(string path)
     {
         if (Directory.Exists(path))
@@ -22,11 +22,19 @@ internal static class TypeScriptExtractor
         }
 
         var name = Path.GetFileName(path);
-        return name is "angular.json" or "nx.json" or "package.json"
+        return name is "angular.json" or "nx.json" or "jsconfig.json" or "package.json"
             || (name.StartsWith("tsconfig", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>A folder's workspace file, angular.json before nx.json before tsconfig.json; the path itself otherwise.</summary>
+    /// <summary>
+    /// A plain JavaScript project in a folder: its package.json when it has no workspace file (the extractor compiles
+    /// it with jsconfig.json's defaults); null otherwise. Callers try it after every other kind of target, so a
+    /// package.json kept for tooling in a C#, Java, Python, Go or Rust repository does not take its place.
+    /// </summary>
+    public static string? PlainJavaScript(string folder) =>
+        Directory.Exists(folder) && !IsTarget(folder) && Path.Combine(folder, "package.json") is var manifest && File.Exists(manifest) ? manifest : null;
+
+    /// <summary>A folder's workspace file, angular.json before nx.json before tsconfig.json before jsconfig.json; the path itself otherwise.</summary>
     public static string WorkspaceFile(string path) =>
         Directory.Exists(path)
             ? WorkspaceFiles.Select(f => Path.Combine(path, f)).FirstOrDefault(File.Exists) ?? path
@@ -34,7 +42,7 @@ internal static class TypeScriptExtractor
 
     /// <summary>
     /// TypeScript workspaces in a repo beside a C# solution (an Angular ClientApp, a web/ folder): every angular.json
-    /// or nx.json, and every tsconfig.json with a package.json beside it, up to three levels down, outside
+    /// or nx.json, and every tsconfig.json or jsconfig.json with a package.json beside it, up to three levels down, outside
     /// node_modules and build output, and not inside another workspace already found.
     /// </summary>
     public static IReadOnlyList<string> WorkspacesUnder(string root)
@@ -43,7 +51,8 @@ internal static class TypeScriptExtractor
         void Walk(DirectoryInfo dir, int depth)
         {
             if (WorkspaceFiles.Take(2).Select(f => Path.Combine(dir.FullName, f)).FirstOrDefault(File.Exists) is { } workspace
-                || (File.Exists(Path.Combine(dir.FullName, "package.json")) && File.Exists(workspace = Path.Combine(dir.FullName, "tsconfig.json"))))
+                || (File.Exists(Path.Combine(dir.FullName, "package.json"))
+                    && (File.Exists(workspace = Path.Combine(dir.FullName, "tsconfig.json")) || File.Exists(workspace = Path.Combine(dir.FullName, "jsconfig.json")))))
             {
                 found.Add(workspace);
                 return; // one workspace per subtree

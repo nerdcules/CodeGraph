@@ -26,6 +26,35 @@ const MEMBERS_WITHOUT_NODES = new Set([
 
 const posix = p => p.split(path.sep).join('/');
 
+// What a jsconfig.json defaults to (TypeScript's own defaults for one, less maxNodeModuleJsDepth: the walk keeps to
+// the workspace's files anyway). Its compilerOptions override these.
+const JSCONFIG_DEFAULTS = { allowJs: true, allowSyntheticDefaultImports: true, skipLibCheck: true };
+// A plain JavaScript project (a package.json with no tsconfig.json or jsconfig.json beside it): every JavaScript and
+// TypeScript file under its folder, resolved the way Node resolves them, outside dependencies and build output.
+const PLAIN_JAVASCRIPT = {
+  compilerOptions: { ...JSCONFIG_DEFAULTS, module: 'nodenext', target: 'es2023' },
+  exclude: ['**/node_modules', '**/dist', '**/out', '**/build', '**/coverage', '**/.git', '**/bin', '**/obj'],
+};
+
+/** The compiler's view of a config: a tsconfig as it is, a jsconfig.json over its defaults, a bare package.json as a plain JavaScript project. */
+function parseConfig(config, host) {
+  const existing = { noEmit: true };
+  const base = path.basename(config);
+  if (base === 'package.json') {
+    return ts.parseJsonConfigFileContent(PLAIN_JAVASCRIPT, host, path.dirname(config), existing, config);
+  }
+  if (base === 'jsconfig.json') {
+    const read = ts.readConfigFile(config, host.readFile);
+    if (read.error) {
+      host.onUnRecoverableConfigFileDiagnostic(read.error);
+      return undefined;
+    }
+    const json = { ...read.config, compilerOptions: { ...JSCONFIG_DEFAULTS, ...read.config?.compilerOptions } };
+    return ts.parseJsonConfigFileContent(json, host, path.dirname(config), existing, config);
+  }
+  return ts.getParsedCommandLineOfConfigFile(config, existing, host);
+}
+
 function propertyName(name) {
   if (!name) return undefined;
   if (ts.isIdentifier(name) || ts.isPrivateIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
@@ -232,10 +261,10 @@ export class Extractor {
     return symbol;
   }
 
-  /** Runs one tsconfig's program; files another config already walked are skipped. */
+  /** Runs one config's program (a tsconfig, a jsconfig.json, or a plain JavaScript project's package.json); files another config already walked are skipped. */
   runConfig({ name, config }) {
     const host = { ...ts.sys, onUnRecoverableConfigFileDiagnostic: d => this.log(ts.flattenDiagnosticMessageText(d.messageText, '\n')) };
-    const parsed = ts.getParsedCommandLineOfConfigFile(config, { noEmit: true }, host);
+    const parsed = parseConfig(config, host);
     if (!parsed) return;
     const compilerHost = ts.createCompilerHost(parsed.options, true);
     // Referenced projects resolve to their sources, not to (possibly unbuilt) declaration output.
