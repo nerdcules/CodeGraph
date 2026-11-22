@@ -190,7 +190,8 @@ You can set up a repository at any time after the installation.
 
 `init` finds the project from the current folder.
 It looks for a `.slnx` or `.sln` file first.
-It then looks for `angular.json`, `tsconfig.json` or a build file such as `pom.xml`, `go.mod`, `Cargo.toml` or `pyproject.toml`.
+It then looks for `angular.json`, `tsconfig.json`, `jsconfig.json` or a build file such as `pom.xml`, `go.mod`, `Cargo.toml` or `pyproject.toml`.
+Last, it takes the folder's `package.json` as a plain JavaScript project.
 If it finds two candidates, it stops and shows both.
 Then give the one that you want:
 

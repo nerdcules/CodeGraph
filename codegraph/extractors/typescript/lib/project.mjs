@@ -77,7 +77,9 @@ function withReferences(config, seen = new Set()) {
 }
 
 /**
- * The workspace for a target: a tsconfig file, an angular.json, a package.json, or a folder holding one of them.
+ * The workspace for a target: a tsconfig file, an angular.json, an nx.json, a jsconfig.json, a package.json, or a
+ * folder holding one of them. A package.json is compiled through the tsconfig.json or jsconfig.json beside it; with
+ * neither, it is a plain JavaScript project, compiled with the options a jsconfig.json would default to (extract.mjs).
  * Returns the root (paths in ids are relative to it), the target to record, and the configs, deduplicated.
  */
 export function discover(targetArg) {
@@ -91,8 +93,12 @@ export function discover(targetArg) {
       target = path.join(target, 'tsconfig.json');
     } else if (fs.existsSync(path.join(target, 'nx.json'))) {
       target = path.join(target, 'nx.json');
+    } else if (fs.existsSync(path.join(target, 'jsconfig.json'))) {
+      target = path.join(target, 'jsconfig.json');
+    } else if (fs.existsSync(path.join(target, 'package.json'))) {
+      target = path.join(target, 'package.json');
     } else {
-      throw new Error(`no angular.json, tsconfig.json or nx.json in ${target}`);
+      throw new Error(`no angular.json, tsconfig.json, nx.json, jsconfig.json or package.json in ${target}`);
     }
   }
 
@@ -102,7 +108,11 @@ export function discover(targetArg) {
   } else if (base === 'nx.json') {
     configs = nxConfigs(root);
   } else if (base === 'package.json') {
-    configs = withReferences(path.join(root, 'tsconfig.json'));
+    const tsconfig = path.join(root, 'tsconfig.json');
+    const jsconfig = path.join(root, 'jsconfig.json');
+    configs = fs.existsSync(tsconfig) ? withReferences(tsconfig)
+      : fs.existsSync(jsconfig) ? withReferences(jsconfig)
+      : [{ name: path.basename(root), config: target }];
   } else {
     configs = withReferences(target);
   }

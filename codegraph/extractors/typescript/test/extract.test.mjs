@@ -137,3 +137,95 @@ test('a file the parser cannot read is counted and named, and the rest of the wo
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/** A throwaway workspace from a map of relative path to contents; `body` gets its folder. */
+async function withWorkspace(files, body) {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-ts-js-'));
+  try {
+    for (const [file, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      fs.writeFileSync(path.join(dir, file), text);
+    }
+    await body(dir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const extract = dir => {
+  const ws = discover(dir);
+  const x = new Extractor({ root: ws.root, log: () => {} });
+  for (const config of ws.configs) x.runConfig(config);
+  return { ws, x, out: [...x.records({ target: ws.target, tool: 'test' })] };
+};
+
+test('a package.json with no tsconfig.json or jsconfig.json is a plain JavaScript project', () => withWorkspace({
+  'package.json': '{ "name": "plain", "type": "module" }',
+  'src/main.js': "import { helper } from './util.js';\nexport function main() { return helper(); }\n",
+  'src/util.js': 'export function helper() { return 1; }\n',
+  'lib/legacy.cjs': 'function old() { return 2; }\nmodule.exports = { old };\n',
+  'node_modules/dep/index.js': 'export function dependency() {}\n',
+  'dist/bundle.js': 'export function built() {}\n',
+}, dir => {
+  const { ws, out } = extract(dir);
+  assert.equal(path.basename(ws.target), 'package.json');
+  assert.deepEqual(ws.configs.map(c => path.basename(c.config)), ['package.json']);
+  const ids = out.filter(r => r.type === 'node').map(r => r.id);
+  assert.ok(ids.includes('ts:src/util.js#helper'), ids.join('\n'));
+  assert.ok(ids.includes('ts:lib/legacy.cjs#old'), 'a .cjs file is walked');
+  assert.ok(out.some(r => r.type === 'edge' && r.kind === 'Calls' && r.from === 'ts:src/main.js#main' && r.to === 'ts:src/util.js#helper'));
+  assert.ok(!ids.some(i => i.includes('node_modules') || i.includes('dist/')), 'dependencies and build output are not walked');
+  const project = out.find(r => r.type === 'node' && r.kind === 'Project' && r.fullName === 'package.json');
+  assert.equal(project?.language, 'javascript');
+}));
+
+test('a plain JavaScript project does not walk build output that a source file imports', () => withWorkspace({
+  'package.json': '{ "name": "imports-dist", "type": "module" }',
+  'src/main.js': "import { built } from '../dist/helper.js';\nexport function main() { return built(); }\n",
+  'dist/helper.js': 'export function built() { return 1; }\n',
+}, dir => {
+  const { out } = extract(dir);
+  const ids = out.filter(r => r.type === 'node').map(r => r.id);
+  assert.ok(ids.includes('ts:src/main.js#main'), ids.join('\n'));
+  // Not walked as source: no file or declaration nodes there. A call into it is an external, like one into a dependency.
+  assert.ok(!ids.some(i => i.startsWith('ts:dist/') || i.startsWith('ts:file:dist/')), ids.join('\n'));
+  assert.ok(ids.includes('ts:ext:dist/helper.js#built'), ids.join('\n'));
+}));
+
+test('a folder with only a package.json is that plain JavaScript project; one with none of the markers is refused', () => withWorkspace({
+  'app/package.json': '{ "name": "app" }',
+  'app/index.js': 'export const answer = 42;\n',
+  'empty/readme.txt': 'nothing here',
+}, dir => {
+  assert.equal(path.basename(discover(path.join(dir, 'app')).target), 'package.json');
+  assert.throws(() => discover(path.join(dir, 'empty')), /no angular\.json, tsconfig\.json, nx\.json, jsconfig\.json or package\.json/);
+}));
+
+test('a jsconfig.json compiles JavaScript without saying allowJs, and wins over the bare package.json beside it', () => withWorkspace({
+  'package.json': '{ "name": "withjsconfig" }',
+  'jsconfig.json': '{ "compilerOptions": { "module": "commonjs" }, "include": ["src"] }',
+  'src/a.js': 'function a() { return b(); }\nfunction b() { return 1; }\nmodule.exports = { a };\n',
+  'other/skipped.js': 'function skipped() {}\n',
+}, dir => {
+  const { ws, out } = extract(path.join(dir, 'package.json'));
+  assert.deepEqual(ws.configs.map(c => path.basename(c.config)), ['jsconfig.json']);
+  const ids = out.filter(r => r.type === 'node').map(r => r.id);
+  assert.ok(ids.includes('ts:src/a.js#a') && ids.includes('ts:src/a.js#b'), ids.join('\n'));
+  assert.ok(!ids.some(i => i.startsWith('ts:other/')), "the jsconfig's include applies");
+  assert.equal(path.basename(discover(dir).target), 'jsconfig.json', 'a folder prefers its jsconfig.json to its package.json');
+}));
+
+test('a package.json beside a tsconfig.json is still compiled through the tsconfig', () => withWorkspace({
+  'package.json': '{ "name": "typed" }',
+  'tsconfig.json': '{ "compilerOptions": { "module": "es2022", "target": "es2022", "noEmit": true }, "include": ["src"] }',
+  'src/t.ts': 'export function typed(): number { return 1; }\n',
+  'loose.js': 'export function loose() {}\n',
+}, dir => {
+  const { ws, out } = extract(path.join(dir, 'package.json'));
+  assert.deepEqual(ws.configs.map(c => path.basename(c.config)), ['tsconfig.json']);
+  const ids = out.filter(r => r.type === 'node').map(r => r.id);
+  assert.ok(ids.includes('ts:src/t.ts#typed'));
+  assert.ok(!ids.some(i => i.startsWith('ts:loose.js')), 'no allowJs is added to a tsconfig');
+}));

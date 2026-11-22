@@ -31,17 +31,8 @@ export class Indexing implements vscode.Disposable {
       return false;
     }
     for (const target of targets) {
-      const replaced = this.graphs.replaces(graph, target);
-      if (replaced) {
-        const choice = await vscode.window.showWarningMessage(
-          `Index ${path.basename(target.file)} into ${graph.name}? Its ${target.kind} rows come from ${path.relative(graph.root, replaced.file) || replaced.file}, ` +
-            `and an index replaces all of a language's rows: one ${target.kind} target per graph.`,
-          { modal: true },
-          'Replace',
-        );
-        if (choice !== 'Replace') {
-          return false;
-        }
+      if (!(await this.mayReplace(graph, target, options.quiet))) {
+        return false;
       }
     }
     const title = `${options.full ? 'Rebuilding' : 'Indexing'} ${graph.name}`;
@@ -85,8 +76,39 @@ export class Indexing implements vscode.Disposable {
     });
   }
 
-  /** `codegraph-index init`: writes each chosen assistant's MCP config and .gitignore entry, then indexes. */
-  init(graph: Graph, target: Target, clients: string[]): Promise<boolean> {
+  /**
+   * True when indexing `target` replaces no other target's rows, or the user agrees that it may. A quiet run (a
+   * save) never asks and never replaces: it logs and skips.
+   */
+  private async mayReplace(graph: Graph, target: Target, quiet = false): Promise<boolean> {
+    const replaced = this.graphs.replaces(graph, target);
+    if (!replaced) {
+      return true;
+    }
+    const from = path.relative(graph.root, replaced.file) || replaced.file;
+    if (quiet) {
+      this.output.info(`not re-indexing ${path.basename(target.file)}: ${graph.name}'s ${target.kind} rows come from ${from}`);
+      return false;
+    }
+    const choice = await vscode.window.showWarningMessage(
+      `Index ${path.basename(target.file)} into ${graph.name}? Its ${target.kind} rows come from ${from}, ` +
+        `and an index replaces all of a language's rows: one ${target.kind} target per graph.`,
+      { modal: true },
+      'Replace',
+    );
+    return choice === 'Replace';
+  }
+
+  /**
+   * `codegraph-index init`: writes each chosen assistant's MCP config and .gitignore entry, then indexes. Like an
+   * index, it asks first when the graph's rows of the target's language come from another target.
+   */
+  async init(graph: Graph, target: Target, clients: string[]): Promise<boolean> {
+    // The graph file may hold rows the search did not show (a graph a chosen target goes into): read them first.
+    await this.graphs.refresh(graph, false);
+    if (!(await this.mayReplace(graph, target))) {
+      return false;
+    }
     return this.enqueue(graph, async () => {
       graph.busy = 'setting up';
       this.graphs.fire();

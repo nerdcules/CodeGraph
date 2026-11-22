@@ -3,9 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Cli, findOnPath } from './cli';
-import { samePath } from './platform';
+import { sameFile, samePath } from './platform';
 import { StatusReport } from './status';
-import { chooseTargets, classify, excludeGlob, indexedTargets, isInside, kindLanguages, Requirement, requirements, TargetKind, targetGlob } from './targets';
+import { chooseTargets, classify, daemonTargetOf, excludeGlob, indexedTargets, isInside, kindLanguages, Requirement, requirements, TargetKind, targetGlob } from './targets';
 
 export interface Target {
   file: string;
@@ -46,11 +46,27 @@ export function defaultDb(targetFile: string): string {
   return path.join(rootOf(dir) ?? dir, '.codegraph', 'graph.db');
 }
 
+/**
+ * The graph a chosen target file goes into when the search did not find it (Choose What to Index…): the graph the
+ * indexer writes by default, with that one target. Undefined when the file is not a marker the indexer accepts.
+ */
+export function graphFor(file: string): Graph | undefined {
+  const kind = classify(file);
+  if (!kind) {
+    return undefined;
+  }
+  const db = defaultDb(file);
+  const root = path.dirname(path.dirname(db));
+  return { db, root, name: path.basename(root), targets: [{ file, kind, missing: missingTool(kind) }] };
+}
+
 export class Graphs implements vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changed.event;
   private graphs: Graph[] = [];
   private discovering: Promise<void> | undefined;
+  /** Targets chosen with Choose What to Index…, shown with the ones the search finds until the window closes. */
+  private readonly chosen = new Map<string, Target>();
 
   constructor(private readonly cli: Cli) {}
 
@@ -71,6 +87,11 @@ export class Graphs implements vscode.Disposable {
 
   fire(): void {
     this.changed.fire();
+  }
+
+  /** Keeps a chosen target in every later discovery, so its graph shows even where the search would not find it. */
+  remember(target: Target): void {
+    this.chosen.set(path.resolve(target.file), target);
   }
 
   /** Finds targets and graphs in every workspace folder, then reads each graph's status. */
@@ -103,6 +124,12 @@ export class Graphs implements vscode.Disposable {
       const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, targetGlob), excludeGlob, 500);
       for (const target of chooseTargets(uris.map((u) => u.fsPath))) {
         add(defaultDb(target.file)).push({ ...target, missing: missingTool(target.kind) });
+      }
+    }
+    for (const target of [...this.chosen.values()].filter((t) => fs.existsSync(t.file))) {
+      const targets = add(defaultDb(target.file));
+      if (!targets.some((t) => samePath(t.file, target.file))) {
+        targets.push(target);
       }
     }
 
@@ -146,14 +173,7 @@ export class Graphs implements vscode.Disposable {
    * solution, else the first target. One daemon serves each graph.
    */
   daemonTarget(graph: Graph): Target | undefined {
-    const built = graph.status?.graph?.solution;
-    return (
-      graph.targets.find((t) => built && samePath(t.file, built)) ??
-      graph.targets.find((t) => t.kind === 'csharp' && /\.slnx?$/i.test(t.file)) ??
-      graph.targets.find((t) => t.kind === 'csharp') ??
-      graph.targets[0] ??
-      (built && fs.existsSync(built) ? { file: built, kind: 'csharp' as TargetKind } : undefined)
-    );
+    return daemonTargetOf(graph.targets, graph.status?.graph?.solution, (kind) => this.held(graph, kind));
   }
 
   /**
@@ -164,10 +184,18 @@ export class Graphs implements vscode.Disposable {
     return indexedTargets(graph.targets, (kind) => this.held(graph, kind), this.daemonTarget(graph));
   }
 
-  /** The target of the same kind whose rows indexing `target` would replace, when it is not `target` itself. */
+  /**
+   * The target of the same kind whose rows indexing `target` would replace, when it is not `target` itself: the
+   * one the graph indexes of that kind, or the one its rows were built from when the search does not list that
+   * one but it still exists (a target chosen by hand). Status must be current for the second.
+   */
   replaces(graph: Graph, target: Target): Target | undefined {
     const indexed = this.indexed(graph).find((t) => t.kind === target.kind);
-    return indexed && !samePath(indexed.file, target.file) ? indexed : undefined;
+    if (indexed && !samePath(indexed.file, target.file)) {
+      return indexed;
+    }
+    const held = this.held(graph, target.kind);
+    return held && fs.existsSync(held) && !sameFile(held, target.file) ? { file: held, kind: target.kind } : undefined;
   }
 
   /** The target a kind's rows in the graph were built from, as the graph records it. */

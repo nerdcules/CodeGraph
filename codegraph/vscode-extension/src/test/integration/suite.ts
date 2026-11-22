@@ -183,7 +183,8 @@ const steps: [string, (ctx: { graphs: Graphs; cli: Cli; mcp: McpOffer; graph: ()
     async ({ graphs, graph }) => {
       await vscode.commands.executeCommand('codegraph.rebuild', graph());
       await graphs.refresh(graph());
-      assert.equal(graph().status?.graph?.mode, 'full');
+      // On a miss, the paths: a recorded path spelled unlike the listed target once made the rebuild ask (Windows 8.3).
+      assert.equal(graph().status?.graph?.mode, 'full', `graph records ${graph().status?.graph?.solution}; targets ${graph().targets.map((t) => t.file).join(', ')}`);
       assert.equal(graph().status?.graph?.stale, false);
     },
   ],

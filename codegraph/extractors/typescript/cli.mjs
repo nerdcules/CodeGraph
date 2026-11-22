@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // codegraph-ts: TypeScript and Angular extractor for CodeGraph.
 //
-//   codegraph-ts <tsconfig.json | angular.json | nx.json | folder> [--out records.ndjson]
+//   codegraph-ts <tsconfig.json | angular.json | nx.json | jsconfig.json | package.json | folder> [--out records.ndjson]
 //
 // Prints the graph as newline-delimited JSON records (CodeGraph's EXTRACTORS.md contract) on stdout, or into
 // --out; progress goes to stderr. codegraph-index runs it and pipes the records into `codegraph-index import`.
@@ -29,7 +29,7 @@ for (let i = 0; i < args.length; i++) {
 }
 
 if (!target) {
-  console.error('usage: codegraph-ts <tsconfig.json | angular.json | nx.json | folder> [--out records.ndjson]');
+  console.error('usage: codegraph-ts <tsconfig.json | angular.json | nx.json | jsconfig.json | package.json | folder> [--out records.ndjson]');
   process.exit(1);
 }
 

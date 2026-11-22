@@ -138,7 +138,8 @@ internal static class RepoSetup
     /// What to index from a file or a directory: the file itself; else the one solution in the directory; else the
     /// one solution below it (three levels, skipping build output and hidden folders); else, from a subfolder of a
     /// repo, the one solution at or below the worktree root; else the one project in the directory; else a TypeScript
-    /// workspace (angular.json, nx.json, or tsconfig.json) in it or below it.
+    /// or JavaScript workspace (angular.json, nx.json, tsconfig.json or jsconfig.json) in it or below it; else a SCIP
+    /// build file; else the directory's package.json, as a plain JavaScript project.
     /// When <c>App.sln</c> and <c>App.slnx</c> sit side by side the .slnx wins. Null with <paramref name="problem"/> set otherwise.
     /// </summary>
     public static string? FindTarget(string path, out string? problem)
@@ -168,10 +169,12 @@ internal static class RepoSetup
         }
 
         candidates.Add(() => Directory.GetFiles(full, "*.csproj").Order(StringComparer.Ordinal).ToList());
-        // No C#: a TypeScript or Angular workspace (angular.json, nx.json, tsconfig.json) here or below.
+        // No C#: a TypeScript, JavaScript or Angular workspace (angular.json, nx.json, tsconfig.json, jsconfig.json) here or below.
         candidates.Add(() => TypeScriptExtractor.IsTarget(full) ? [TypeScriptExtractor.WorkspaceFile(full)] : TypeScriptExtractor.WorkspacesUnder(full).ToList());
         // Then a project a SCIP indexer handles: Maven or Gradle, Python, Go, Rust.
         candidates.Add(() => ScipIndexers.For(full) is { } scip ? [scip.Marker] : []);
+        // Last: a plain JavaScript project, a package.json with no tsconfig.json or jsconfig.json.
+        candidates.Add(() => TypeScriptExtractor.PlainJavaScript(full) is { } manifest ? [manifest] : []);
         foreach (var search in candidates)
         {
             var found = search();
@@ -187,7 +190,7 @@ internal static class RepoSetup
             }
         }
 
-        problem = $"no .slnx, .sln, .csproj, angular.json, tsconfig.json, pom.xml, build.gradle, pyproject.toml, go.mod or Cargo.toml in {full}; pass what to index";
+        problem = $"no .slnx, .sln, .csproj, angular.json, tsconfig.json, jsconfig.json, pom.xml, build.gradle, pyproject.toml, go.mod, Cargo.toml or package.json in {full}; pass what to index";
         return null;
     }
 

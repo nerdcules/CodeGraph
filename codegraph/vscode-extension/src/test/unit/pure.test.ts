@@ -5,9 +5,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { ago, bytes, count, languageName, plural, shortCommit } from '../../format';
-import { assetName, checksumFor, compareVersions, defaultInstallDir, executable, isInstallFolder, releaseToInstall, runtimeId } from '../../platform';
+import { assetName, checksumFor, compareVersions, defaultInstallDir, executable, isInstallFolder, releaseToInstall, runtimeId, sameFile } from '../../platform';
 import { daemonStateOf, healthOf, parseStatus, StatusReport } from '../../status';
-import { chooseTargets, classify, indexedTargets, isInside, solutionProjects, sourceExtensions } from '../../targets';
+import { chooseTargets, classify, daemonTargetOf, indexedTargets, isInside, solutionProjects, sourceExtensions } from '../../targets';
 
 test('count writes thousands and compacts large numbers', () => {
   assert.equal(count(3276), '3,276');
@@ -89,7 +89,33 @@ test('classify knows every marker the indexer accepts', () => {
   assert.equal(classify('/r/pyproject.toml'), 'python');
   assert.equal(classify('/r/go.work'), 'go');
   assert.equal(classify('/r/Cargo.toml'), 'rust');
-  assert.equal(classify('/r/package.json'), undefined);
+  assert.equal(classify('/r/jsconfig.json'), 'typescript');
+  assert.equal(classify('/r/package.json'), 'typescript');
+  assert.equal(classify('/r/README.md'), undefined);
+});
+
+test('chooseTargets takes a package.json only where no other marker is, and a tsconfig.json over a jsconfig.json', () => {
+  const r = path.resolve('/repo');
+  const rel = (files: string[]) => chooseTargets(files).map((t) => [t.kind, path.relative(r, t.file)]);
+  // A plain JavaScript project; nested package.json files (fixtures, workspaces) are inside it.
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'test', 'fixtures', 'a', 'package.json')]), [['typescript', 'package.json']]);
+  // Beside a tsconfig.json or jsconfig.json, the package.json is that workspace's.
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'tsconfig.json')]), [['typescript', 'tsconfig.json']]);
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'jsconfig.json')]), [['typescript', 'jsconfig.json']]);
+  assert.deepEqual(rel([path.join(r, 'jsconfig.json'), path.join(r, 'tsconfig.json')]), [['typescript', 'tsconfig.json']]);
+  // A monorepo root's package.json gives way to the workspaces below it.
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'packages', 'a', 'package.json'), path.join(r, 'packages', 'a', 'tsconfig.json')]), [
+    ['typescript', path.join('packages', 'a', 'tsconfig.json')],
+  ]);
+  // In a C#, Python or Go repository it is there for tooling.
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'src', 'App.csproj')]), [['csharp', path.join('src', 'App.csproj')]]);
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'pyproject.toml')]), [['python', 'pyproject.toml']]);
+  assert.deepEqual(rel([path.join(r, 'package.json'), path.join(r, 'go.mod')]), [['go', 'go.mod']]);
+  // A plain JavaScript project in its own folder beside one of another language stays.
+  assert.deepEqual(rel([path.join(r, 'api', 'go.mod'), path.join(r, 'web', 'package.json')]), [
+    ['go', path.join('api', 'go.mod')],
+    ['typescript', path.join('web', 'package.json')],
+  ]);
 });
 
 test('chooseTargets keeps solutions over the projects they list and the outermost marker of each language', () => {
@@ -123,6 +149,48 @@ test('chooseTargets keeps solutions over the projects they list and the outermos
   assert.ok(isInside(path.join(r, 'a', 'b'), r));
   assert.ok(isInside(r, r));
   assert.ok(!isInside(path.resolve('/repository'), r));
+});
+
+test('daemonTargetOf watches the target that last indexed the headline\'s language, not the headline over it', () => {
+  const r = path.resolve('/repo');
+  const a = { file: path.join(r, 'a', 'package.json'), kind: 'typescript' as const };
+  const b = { file: path.join(r, 'b', 'package.json'), kind: 'typescript' as const };
+  const sln = { file: path.join(r, 'App.sln'), kind: 'csharp' as const };
+  const exists = (file: string) => [a.file, b.file, sln.file].includes(file);
+  // Built from A, then B set up into the same graph: the TypeScript rows are B's.
+  assert.deepEqual(daemonTargetOf([a, b], a.file, () => b.file, exists), b);
+  // B chosen by hand and not listed by the search yet: still B, by its file.
+  assert.deepEqual(daemonTargetOf([a], a.file, () => b.file, exists), { file: b.file, kind: 'typescript' });
+  // Nothing replaced: the headline.
+  assert.deepEqual(daemonTargetOf([a, b], a.file, () => a.file, exists), a);
+  // A C# headline stays the solution while a front end of another language is indexed beside it.
+  assert.deepEqual(daemonTargetOf([sln, a], sln.file, (kind) => (kind === 'typescript' ? a.file : undefined), exists), sln);
+  // No status yet: a solution, else the first target.
+  assert.deepEqual(daemonTargetOf([a, sln], undefined, () => undefined, exists), sln);
+  assert.deepEqual(daemonTargetOf([b, a], undefined, () => undefined, exists), b);
+  // A headline that is gone falls back the same way.
+  assert.deepEqual(daemonTargetOf([a], path.join(r, 'gone', 'package.json'), () => undefined, exists), a);
+});
+
+test('sameFile and daemonTargetOf see one file through two spellings of its path', () => {
+  const fs = require('fs') as typeof import('fs');
+  const os = require('os') as typeof import('os');
+  const real = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-samefile-'));
+  const link = real + '-link';
+  try {
+    fs.writeFileSync(path.join(real, 'App.sln'), '');
+    fs.symlinkSync(real, link, 'junction');
+    const discovered = path.join(link, 'App.sln');
+    const recorded = path.join(real, 'App.sln');
+    assert.ok(sameFile(discovered, recorded));
+    assert.ok(!sameFile(discovered, path.join(real, 'Other.sln')), 'a file that does not exist is not the same');
+    // The graph recorded the real path; the search listed the link: the daemon still watches the listed target.
+    const target = { file: discovered, kind: 'csharp' as const };
+    assert.equal(daemonTargetOf([target], recorded, () => recorded), target);
+  } finally {
+    fs.rmSync(link, { force: true });
+    fs.rmSync(real, { recursive: true, force: true });
+  }
 });
 
 test('solutionProjects reads the projects of a .sln and a .slnx', () => {
