@@ -5,7 +5,11 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased
+## 1.5.3
+
+Plain JavaScript projects (a `package.json` with no `tsconfig.json`) and `jsconfig.json` projects are indexed, and the VS Code
+extension can set up a file you choose when its search finds nothing. Set-up asks before it replaces another target's rows,
+and the live daemon watches the target whose rows the graph holds.
 
 - **Plain JavaScript projects are indexed.** A `package.json` with no `tsconfig.json` or `jsconfig.json` beside it is
   now a plain JavaScript project: the TypeScript extractor compiles every JavaScript and TypeScript file under its

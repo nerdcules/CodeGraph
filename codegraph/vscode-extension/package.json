@@ -2,7 +2,7 @@
   "name": "codegraph",
   "displayName": "CodeGraph",
   "description": "Build, watch and inspect CodeGraph indexes from VS Code: the compiler's answers for your AI coding assistant.",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "publisher": "nerdcules",
   "license": "MIT",
   "icon": "media/icon.png",
