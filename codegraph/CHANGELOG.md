@@ -12,6 +12,10 @@ The executables report their version with `--version`; the MCP server shows it t
   reused a name or id from an earlier result (a heuristic). `report.md` gains a question-shape section;
   `modebench reshape <dir>` back-fills older results from their transcripts; `plan.json` records the CodeGraph
   commit the run used.
+- **`codegraph hook` and `codegraph questions`** (Part 2): an opt-in Claude Code hook that logs each question's
+  shape to `.codegraph/questions.jsonl`, and a command that reads it back with tokens from the session transcript.
+  See [MCP-SERVER.md, Question log](MCP-SERVER.md#question-log-opt-in-claude-code). The shape logic moved to
+  `CodeGraph.Client` (`QuestionShape`) so the harness and the hook share it.
 - **lite-cli without `codegraph --help`** (Part 0): the lite-cli snippet carries a command reference instead.
   Measured in [bench/results/part0-lite-cli.md](bench/results/part0-lite-cli.md).
 

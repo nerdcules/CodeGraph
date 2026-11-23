@@ -9,7 +9,7 @@ using CodeGraph.Contracts;
 // codegraph <command> [arguments] [options]: one ICodeGraph call, its result as JSON on stdout. Errors go to stderr
 // with exit code 1 (2 for a usage error). Hand-rolled parsing: ten commands and a few options need no library, and
 // nothing here uses reflection, so the Native AOT publish stays warning-free.
-return await CodeGraphCli.RunAsync(args, Console.Out, Console.Error);
+return await CodeGraphCli.RunAsync(args, Console.Out, Console.Error, Console.In);
 
 internal static class CodeGraphCli
 {
@@ -33,13 +33,21 @@ internal static class CodeGraphCli
           query <sql> [--timeout S]       {columns, items: rows as arrays, total, truncated}: one read-only SELECT
           schema                          {tables: [{name, columns}], nodeKinds, edgeKinds, notes}
           status                          {db, root, nodes, edges, schemaVersion, indexedAt, commit, languages}
+          questions                       {log, summary, items, total, truncated}: the question log (see hook) with tokens per question
+          hook                            a Claude Code hook (UserPromptSubmit, PostToolUse, Stop) that logs each question's shape
+                                          to questions.jsonl beside the graph; reads the event on stdin, prints nothing, exits 0
 
         Options: --limit N, --db PATH (else CODEGRAPH_DB, codegraph.client.json, or the worktree's .codegraph/graph.db).
         Example: codegraph callers IUserManager.GetUserById --depth 2 --limit 0 | jq -c '[.hits.items[].symbol.project] | group_by(.) | map({(.[0] // "?"): length}) | add'
         """;
 
-    public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr)
+    public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr, TextReader? stdin = null)
     {
+        if (args is ["hook"])
+        {
+            return await CodeGraph.Cli.QuestionLog.HookAsync(stdin ?? TextReader.Null, stderr);
+        }
+
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
             await stdout.WriteLineAsync(Help);
@@ -64,6 +72,14 @@ internal static class CodeGraphCli
         {
             await stderr.WriteLineAsync($"codegraph: {e.Message}. Run codegraph --help.");
             return 2;
+        }
+
+        if (parsed.Command == "questions")
+        {
+            // The log sits beside the graph; reading it does not open the graph.
+            var folder = Path.GetDirectoryName(CodeGraphClient.Locate(parsed.Option("db")))!;
+            await stdout.WriteLineAsync(CodeGraph.Cli.QuestionLog.Read(folder, parsed.Limit).ToJsonString(new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+            return 0;
         }
 
         try
@@ -153,6 +169,7 @@ internal sealed class Arguments
         ["query"] = ["timeout"],
         ["schema"] = [],
         ["status"] = [],
+        ["questions"] = [],
     };
 
     private static readonly string[] Common = ["limit", "db"];
@@ -202,7 +219,7 @@ internal sealed class Arguments
             }
         }
 
-        var wanted = command is "schema" or "status" ? 0 : 1;
+        var wanted = command is "schema" or "status" or "questions" ? 0 : 1;
         if (parsed._positional.Count != wanted)
         {
             throw new UsageException(wanted == 0

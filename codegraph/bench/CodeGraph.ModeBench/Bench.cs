@@ -201,7 +201,7 @@ internal static partial class Bench
         Need(result.CacheCreationTokens, "cache_creation_input_tokens");
         Need(result.CostUsd, "total_cost_usd");
         Need(result.Turns, "num_turns");
-        var shape = QuestionShape.Of(result.Tools, task.FullPrompt(answerFormat));
+        var shape = Shape(result.Tools, task.FullPrompt(answerFormat));
         return new RunRecord(
             runId, started, task.Id, task.Category, mode, rep, config.Model, result.Subtype, result.IsError, result.TimedOut, failure,
             result.InputTokens, result.OutputTokens, result.CacheReadTokens, result.CacheCreationTokens, result.TotalTokens,
@@ -218,23 +218,16 @@ internal static partial class Bench
             shape.GraphCalls, shape.LargestResultChars, shape.TotalResultChars, shape.Chained);
     }
 
-    internal static bool IsScript(string? command) => command is not null && ScriptRun().IsMatch(command);
+    internal static bool IsScript(string? command) => QuestionShape.IsScript(command);
 
     /// <summary>How many pipeline segments of a command start with the codegraph CLI.</summary>
-    internal static int CliCount(string? command) =>
-        command is null ? 0 : Segments().Split(command).Count(s => CliStart().IsMatch(s));
+    internal static int CliCount(string? command) => QuestionShape.CliCount(command);
 
     internal static bool IsCompileFailure(string result) =>
         result.Contains(": error CS", StringComparison.Ordinal) || result.Contains("The build failed", StringComparison.Ordinal);
 
-    [GeneratedRegex(@"(^|[;&|]\s*)dotnet\s+run\b")]
-    private static partial Regex ScriptRun();
-
-    [GeneratedRegex(@"\|\||&&|[|;&\n]")]
-    private static partial Regex Segments();
-
-    [GeneratedRegex(@"^\s*(\S*/)?codegraph(\s|$)")]
-    private static partial Regex CliStart();
+    internal static QuestionShape Shape(IReadOnlyList<ToolCall> tools, string prompt) =>
+        QuestionShape.Of(tools.Select(t => new ShapeCall(t.Name, t.Name == "Bash" ? t.Input : null, t.Arguments, t.Result)).ToList(), prompt);
 
     /// <summary>The repo as git sees it (HEAD, status) plus the graph file's size and time: any write shows here.</summary>
     private static string RepoState(BenchConfig config)

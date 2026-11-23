@@ -1,0 +1,27 @@
+{
+  "Model": "claude-sonnet-5-5",
+  "RepoPath": "~/Projects/gh/jellyfin",
+  "Commit": "1fbd8739292cce610231be93daf43368733edf63",
+  "Db": "~/Projects/gh/jellyfin/.codegraph/graph.db",
+  "MaxTurns": 30,
+  "TimeoutSeconds": 600,
+  "Modes": [
+    "direct",
+    "lite",
+    "lite-cli"
+  ],
+  "Repetitions": 5,
+  "Baseline": true,
+  "Tasks": [
+    "where-defined",
+    "signature",
+    "impact-tests",
+    "callers-by-project",
+    "only-test-callers",
+    "interface-callers",
+    "dead-code",
+    "project-cycles"
+  ],
+  "ClaudeVersion": "2.1.330 (Claude Code)",
+  "DotnetVersion": "10.0.113"
+}

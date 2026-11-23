@@ -64,6 +64,10 @@ public sealed class CodeGraphClient : ICodeGraph
     public static string Locate(string? path = null) =>
         Locate(path, Environment.GetEnvironmentVariable("CODEGRAPH_DB"), Environment.GetEnvironmentVariable("CODEGRAPH_ROOT"), Directory.GetCurrentDirectory());
 
+    /// <summary>Like <see cref="Locate(string?)"/>, from another folder than the current one (a hook's session cwd).</summary>
+    public static string LocateFrom(string workingDirectory) =>
+        Locate(null, Environment.GetEnvironmentVariable("CODEGRAPH_DB"), Environment.GetEnvironmentVariable("CODEGRAPH_ROOT"), workingDirectory);
+
     internal static string Locate(string? path, string? environmentDb, string? environmentRoot, string workingDirectory)
     {
         if (!string.IsNullOrWhiteSpace(path))

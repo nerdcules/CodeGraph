@@ -315,6 +315,33 @@ answer names, each counted once per call. It is a size, not what a session witho
 that is not recorded. `usage_stats` turns the file into per-tool totals. The file
 never leaves the machine; `CODEGRAPH_TELEMETRY=off` disables it.
 
+### Question log (opt-in, Claude Code)
+
+The telemetry above has one line per tool call and no question. To see which questions take one graph call and
+which take several (issue #18), register the `codegraph` CLI as a Claude Code hook. It writes one line per question
+to `.codegraph/questions.jsonl` beside the graph. Add this to the project's `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "codegraph hook" }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "codegraph hook" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "codegraph hook" }] }]
+  }
+}
+```
+
+Each line holds the prompt, `CODEGRAPH_MODE` as the session saw it, the graph steps (codegraph MCP tool calls,
+`codegraph` CLI invocations and `dotnet run` scripts), the largest and total result size in characters, whether a
+later step reused an id or name from an earlier result (a heuristic), and the tool calls by name. Tool results are
+kept in `.codegraph/questions-pending/` only until the question ends. `codegraph questions` prints the log with
+each question's tokens, read from the session transcript, and a median per mode and number of graph steps. In a
+test session the tokens it read (9,047) equalled the usage Claude Code reported for that session.
+
+The log stays on the machine and holds your prompts. The hook prints nothing and always exits 0, so it cannot
+change a session; it writes nothing when `CODEGRAPH_TELEMETRY=off` or when no graph is found from the session's
+folder. Tested with Claude Code 2.1.330 on Linux only.
+
 ## Semantic search
 
 `search_code` is lexical by default: BM25 over the words in names, comments and bodies. With an embeddings

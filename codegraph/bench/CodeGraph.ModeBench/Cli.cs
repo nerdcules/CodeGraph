@@ -108,7 +108,7 @@ internal static class Cli
                     }
 
                     var task = r.Task == BenchTask.Baseline ? BenchTask.NoOp : all.Single(t => t.Id == r.Task);
-                    var shape = QuestionShape.Of(ClaudeRunner.Replay(transcript).Tools, task.FullPrompt(answerFormat));
+                    var shape = Bench.Shape(ClaudeRunner.Replay(transcript).Tools, task.FullPrompt(answerFormat));
                     return r with { GraphCalls = shape.GraphCalls, LargestResultChars = shape.LargestResultChars, TotalResultChars = shape.TotalResultChars, Chained = shape.Chained };
                 }).ToList();
                 await File.WriteAllLinesAsync(Path.Combine(rest[1], "runs.jsonl"), records.Select(r => System.Text.Json.JsonSerializer.Serialize(r)));

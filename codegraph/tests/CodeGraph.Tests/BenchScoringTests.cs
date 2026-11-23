@@ -1,3 +1,4 @@
+using CodeGraph.Client;
 using CodeGraph.ModeBench;
 
 namespace CodeGraph.Tests;
@@ -89,7 +90,7 @@ public sealed class BenchScoringTests
     [Fact]
     public void One_mcp_call_is_a_single_unchained_step()
     {
-        var shape = QuestionShape.Of(
+        var shape = Bench.Shape(
         [
             new ToolCall("ToolSearch", "select:mcp__codegraph__find_symbol", 0.1, false, "loaded", """{"query":"select:mcp__codegraph__find_symbol"}"""),
             new ToolCall("mcp__codegraph__find_symbol", null, 0.2, false, "type  Shop.Orders.OrderService  src/Orders.cs:12  [a1b2c3d4]", """{"query":"OrderService"}"""),
@@ -102,17 +103,17 @@ public sealed class BenchScoringTests
     {
         var find = new ToolCall("mcp__codegraph__find_symbol", null, 0.2, false, "method  Shop.Orders.OrderService.Place  [a1b2c3d4]", """{"query":"Place"}""");
         var handle = new ToolCall("mcp__codegraph__callers_of", null, 0.2, false, "3 callers", """{"symbol":"a1b2c3d4"}""");
-        Assert.True(QuestionShape.Of([find, handle], "Who calls Place?").Chained);
+        Assert.True(Bench.Shape([find, handle], "Who calls Place?").Chained);
         var name = handle with { Arguments = """{"symbol":"Shop.Orders.OrderService.Place"}""" };
-        Assert.True(QuestionShape.Of([find, name], "Who calls Place?").Chained);
+        Assert.True(Bench.Shape([find, name], "Who calls Place?").Chained);
         // A name the prompt already gave is not something the first result supplied.
-        Assert.False(QuestionShape.Of([find, name], "Who calls Shop.Orders.OrderService.Place?").Chained);
+        Assert.False(Bench.Shape([find, name], "Who calls Shop.Orders.OrderService.Place?").Chained);
     }
 
     [Fact]
     public void Cli_pipeline_segments_and_script_runs_are_graph_steps_and_reads_are_not()
     {
-        var shape = QuestionShape.Of(
+        var shape = Bench.Shape(
         [
             new ToolCall("Bash", "codegraph --help", 0.1, false, new string('h', 100)),
             new ToolCall("Bash", "codegraph find X | jq -c .items; codegraph outline Y", 0.1, false, "{}"),
@@ -122,7 +123,7 @@ public sealed class BenchScoringTests
         Assert.Equal(100, shape.LargestResultChars);
         Assert.Equal(102, shape.TotalResultChars);
 
-        var script = QuestionShape.Of(
+        var script = Bench.Shape(
         [
             new ToolCall("Bash", "dotnet run scratch/a.cs", 1, false, "Found Shop.Orders.OrderService.Place"),
             new ToolCall("Write", "scratch/b.cs", 0.1, false, "ok", """{"file_path":"scratch/b.cs","content":"await g.CallersAsync(\"Shop.Orders.OrderService.Place\")"}"""),

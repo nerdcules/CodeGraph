@@ -1,0 +1,142 @@
+{
+  "where-defined": {
+    "Items": [
+      "Emby.Server.Implementations/EntryPoints/LibraryChangedNotifier.cs"
+    ],
+    "Counts": null,
+    "How": "file of T:Emby.Server.Implementations.EntryPoints.LibraryChangedNotifier"
+  },
+  "signature": {
+    "Items": [
+      "public int GetVideoBitrateParamValue(BaseEncodingJobOptions request, MediaStream videoStream, string outputVideoCodec)"
+    ],
+    "Counts": null,
+    "How": "signature of M:MediaBrowser.Controller.MediaEncoding.EncodingHelper.GetVideoBitrateParamValue(MediaBrowser.Controller.MediaEncoding.BaseEncodingJobOptions,MediaBrowser.Model.Entities.MediaStream,System.String)"
+  },
+  "impact-tests": {
+    "Items": [
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_NonStubItemPopulatedProviderRemote_DownloadsIfNecessary(MediaBrowser.Model.Entities.ImageType, int, bool)",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolderWithMixedExtras_FindsCorrectExtras()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolderWithMixedExtras_FindsOnlyExtrasInMovieFolder()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolderWithParts_FindsCorrectExtras()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolder_CleanExtraNames()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolder_FindsCorrectExtras()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeriesWithTrailers_FindsCorrectExtras()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_WrongExtensions_FindsNoExtras()",
+      "Jellyfin.MediaEncoding.Subtitles.Tests.SubtitleEncoderTests.GetReadableFile_Valid_Success(MediaBrowser.Model.Dto.MediaSourceInfo, MediaBrowser.Model.Entities.MediaStream, MediaBrowser.MediaEncoding.Subtitles.SubtitleEncoder.SubtitleInfo)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_EmptyItemPopulatedProviderDynamic_AddsImages(MediaBrowser.Model.Entities.ImageType, int, bool, MediaBrowser.Model.MediaInfo.MediaProtocol)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_EmptyItemPopulatedProviderRemoteExtras_LimitsImages(MediaBrowser.Model.Entities.ImageType, int)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_PopulatedItemEmptyProviderRemoteFullRefresh_DoesntClearImages(MediaBrowser.Model.Entities.ImageType, int)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_PopulatedItemPopulatedProviderDynamic_UpdatesImagesIfForced(MediaBrowser.Model.Entities.ImageType, int, bool)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_PopulatedItemPopulatedProviderRemote_UpdatesImagesIfForced(MediaBrowser.Model.Entities.ImageType, int, bool)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_ProviderRemote_FiltersByWidth(int?, bool)",
+      "Jellyfin.Providers.Tests.MediaInfo.EmbeddedImageProviderTests.GetImage_Attachment_ReturnsCorrectSelection(string, string?, int, MediaBrowser.Model.Entities.ImageType, MediaBrowser.Model.Drawing.ImageFormat?)",
+      "Jellyfin.Providers.Tests.MediaInfo.EmbeddedImageProviderTests.GetImage_Embedded_ReturnsCorrectSelection(string?, string?, int, MediaBrowser.Model.Entities.ImageType, MediaBrowser.Model.Drawing.ImageFormat?)",
+      "Jellyfin.Providers.Tests.MediaInfo.VideoImageProviderTests.GetImage_DefaultVideoStreams_ReturnsCorrectStreamImage(int, int)",
+      "Jellyfin.Providers.Tests.MediaInfo.VideoImageProviderTests.GetImage_TimeSpan_SelectsCorrectTime(int?, long)",
+      "Jellyfin.Providers.Tests.Manager.ProviderManagerTests.RefreshSingleItem_ServiceOrdering_FollowsPriority(Moq.Mock\u003CMediaBrowser.Controller.Providers.IMetadataService\u003E[], int)"
+    ],
+    "Counts": null,
+    "How": "ImpactAsync(M:MediaBrowser.Model.IO.IFileSystem.GetFileInfo(System.String), depth 5).Tests; 136 dependents"
+  },
+  "callers-by-project": {
+    "Items": [
+      "Emby.Server.Implementations",
+      "Jellyfin.Api",
+      "Jellyfin.LiveTv",
+      "Jellyfin.LiveTv.Tests",
+      "Jellyfin.MediaEncoding.Hls",
+      "Jellyfin.Networking",
+      "Jellyfin.Networking.Tests",
+      "Jellyfin.Server",
+      "Jellyfin.Server.Implementations",
+      "Jellyfin.Server.Tests",
+      "Jellyfin.XbmcMetadata.Tests",
+      "MediaBrowser.Common",
+      "MediaBrowser.Controller",
+      "MediaBrowser.MediaEncoding",
+      "MediaBrowser.Providers",
+      "MediaBrowser.XbmcMetadata"
+    ],
+    "Counts": {
+      "Jellyfin.Api": 17,
+      "Jellyfin.LiveTv.Tests": 1,
+      "Jellyfin.Networking.Tests": 11,
+      "Jellyfin.Server.Tests": 3,
+      "Jellyfin.XbmcMetadata.Tests": 37,
+      "MediaBrowser.Common": 4,
+      "Jellyfin.LiveTv": 24,
+      "Jellyfin.Server.Implementations": 1,
+      "MediaBrowser.Controller": 5,
+      "MediaBrowser.Providers": 7,
+      "MediaBrowser.XbmcMetadata": 7,
+      "Emby.Server.Implementations": 6,
+      "Jellyfin.MediaEncoding.Hls": 1,
+      "Jellyfin.Networking": 7,
+      "Jellyfin.Server": 7,
+      "MediaBrowser.MediaEncoding": 4
+    },
+    "How": "CallersAsync(M:MediaBrowser.Common.Configuration.IConfigurationManager.GetConfiguration(System.String), depth 3) grouped by Symbol.Project; 142 callers"
+  },
+  "only-test-callers": {
+    "Items": [
+      "Emby.Server.Implementations.Session.SessionManager.DisposeAsync()",
+      "Emby.Server.Implementations.Sorting.AiredEpisodeOrderComparer.Compare(MediaBrowser.Controller.Entities.BaseItem?, MediaBrowser.Controller.Entities.BaseItem?)",
+      "Emby.Server.Implementations.Sorting.IndexNumberComparer.Compare(MediaBrowser.Controller.Entities.BaseItem?, MediaBrowser.Controller.Entities.BaseItem?)",
+      "Emby.Server.Implementations.Sorting.ParentIndexNumberComparer.Compare(MediaBrowser.Controller.Entities.BaseItem?, MediaBrowser.Controller.Entities.BaseItem?)",
+      "Emby.Server.Implementations.Sorting.PremiereDateComparer.Compare(MediaBrowser.Controller.Entities.BaseItem?, MediaBrowser.Controller.Entities.BaseItem?)"
+    ],
+    "Counts": null,
+    "How": "public ordinary methods of Emby.Server.Implementations whose CallersAsync(depth 1) hits are all tests (541 checked)"
+  },
+  "interface-callers": {
+    "Items": [
+      "Emby.Server.Implementations.Library.MediaSourceManager.SetDefaultAudioAndSubtitleStreamIndices(MediaBrowser.Controller.Entities.BaseItem, MediaBrowser.Model.Dto.MediaSourceInfo, Jellyfin.Database.Implementations.Entities.User)",
+      "Emby.Server.Implementations.Session.SessionManager.OnPlaybackProgress(Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Entities.BaseItem, MediaBrowser.Model.Session.PlaybackProgressInfo)",
+      "Emby.Server.Implementations.Session.SessionManager.OnPlaybackStart(Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Entities.BaseItem)",
+      "Emby.Server.Implementations.Session.SessionManager.OnPlaybackStopped(Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Entities.BaseItem, long?, bool)",
+      "Emby.Server.Implementations.Sorting.DatePlayedComparer.GetDate(MediaBrowser.Controller.Entities.BaseItem)",
+      "Emby.Server.Implementations.Sorting.PlayCountComparer.GetValue(MediaBrowser.Controller.Entities.BaseItem)",
+      "Emby.Server.Implementations.TV.TVSeriesManager.GetNextUp(string, Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Dto.DtoOptions, bool, bool)",
+      "Jellyfin.Api.Controllers.UserLibraryController.MarkFavorite(Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Entities.BaseItem, bool)",
+      "Jellyfin.Api.Controllers.UserLibraryController.UpdateUserItemRatingInternal(Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Entities.BaseItem, bool?)",
+      "Jellyfin.LiveTv.Channels.ChannelManager.GetChannelsInternalAsync(MediaBrowser.Model.Channels.ChannelQuery)",
+      "Jellyfin.LiveTv.LiveTvManager.GetRecommendationScore(MediaBrowser.Controller.LiveTv.LiveTvProgram, Jellyfin.Database.Implementations.Entities.User, bool)",
+      "Jellyfin.XbmcMetadata.Tests.Parsers.MovieNfoParserTests.Fetch_Valid_Success()",
+      "Jellyfin.XbmcMetadata.Tests.Parsers.MovieNfoParserTests.MovieNfoParserTests()",
+      "MediaBrowser.Controller.Entities.BaseItem.IsFavoriteOrLiked(Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Entities.UserItemData)",
+      "MediaBrowser.Controller.Entities.BaseItem.IsPlayed(Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Entities.UserItemData)",
+      "MediaBrowser.Controller.Entities.BaseItem.IsUnplayed(Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Entities.UserItemData)",
+      "MediaBrowser.Controller.Entities.BaseItem.MarkPlayed(Jellyfin.Database.Implementations.Entities.User, System.DateTime?, bool)",
+      "MediaBrowser.Controller.Entities.BaseItem.MarkUnplayed(Jellyfin.Database.Implementations.Entities.User)",
+      "MediaBrowser.Controller.Entities.UserViewBuilder.Filter(MediaBrowser.Controller.Entities.BaseItem, Jellyfin.Database.Implementations.Entities.User, MediaBrowser.Controller.Entities.InternalItemsQuery, MediaBrowser.Controller.Library.IUserDataManager, MediaBrowser.Controller.Library.ILibraryManager)",
+      "MediaBrowser.XbmcMetadata.Parsers.BaseNfoParser\u003CT\u003E.FetchDataFromXmlNode(System.Xml.XmlReader, MediaBrowser.Controller.Providers.MetadataResult\u003CT\u003E)",
+      "MediaBrowser.XbmcMetadata.Savers.BaseNfoSaver.AddUserData(MediaBrowser.Controller.Entities.BaseItem, System.Xml.XmlWriter, MediaBrowser.Controller.Library.IUserManager, MediaBrowser.Controller.Library.IUserDataManager, MediaBrowser.Model.Configuration.XbmcMetadataOptions)"
+    ],
+    "Counts": null,
+    "How": "CallersAsync(M:MediaBrowser.Controller.Library.IUserDataManager.GetUserData(Jellyfin.Database.Implementations.Entities.User,MediaBrowser.Controller.Entities.BaseItem), depth 1)"
+  },
+  "dead-code": {
+    "Items": [
+      "Jellyfin.LiveTv.DefaultLiveTvService.OnTimerManagerTimerFired(object, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerInfo\u003E)",
+      "Jellyfin.LiveTv.IO.EncodedRecorder.Stop()",
+      "Jellyfin.LiveTv.LiveTvManager.GetServiceInfo(MediaBrowser.Controller.LiveTv.ILiveTvService)",
+      "Jellyfin.LiveTv.LiveTvManager.IsLiveTvEnabled(Jellyfin.Database.Implementations.Entities.User)",
+      "Jellyfin.LiveTv.LiveTvManager.OnEmbyTvTimerCancelled(object, Jellyfin.Data.Events.GenericEventArgs\u003Cstring\u003E)",
+      "Jellyfin.LiveTv.LiveTvManager.OnEmbyTvTimerCreated(object, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingNotifier.OnLiveTvManagerSeriesTimerCancelled(object?, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerEventInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingNotifier.OnLiveTvManagerSeriesTimerCreated(object?, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerEventInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingNotifier.OnLiveTvManagerTimerCancelled(object?, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerEventInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingNotifier.OnLiveTvManagerTimerCreated(object?, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerEventInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingsManager.OnNamedConfigurationUpdated(object?, MediaBrowser.Common.Configuration.ConfigurationUpdateEventArgs)",
+      "Jellyfin.LiveTv.Timers.TimerManager.TimerCallback(object?)"
+    ],
+    "Counts": null,
+    "How": "reference SQL in tasks.json"
+  },
+  "project-cycles": {
+    "Items": [],
+    "Counts": null,
+    "How": "projects in strongly connected components of size \u003E 1 over 376 DependsOn edges"
+  }
+}
