@@ -14,6 +14,12 @@ when every MCP tool result enters its context? Three modes, one setting, `CODEGR
 Claude Code also runs some read-only commands without a rule (`ls` ran in the lite permissions probe); writes,
 redirects outside the scratch folder, `dotnet build` and other commands were refused in that probe.
 
+**Result** ([full run, 2026-11-23](results/20261123-085549/report.md): 8 tasks, 3 modes, 5 repetitions, 135 runs, none
+failed). The CLI used fewer tokens than the MCP tools on single lookups (−24%) and analytical questions (−61%);
+C# scripts used more on single lookups (+98%) and fewer on analytical ones (−53%); each with min–max ranges that do
+not overlap. Multi-hop medians fell too, but the ranges overlap. The CLI scored F1 1.00 in every run. One model,
+one repository: read the report's limits.
+
 All three call the same `ICodeGraph` implementation (`CodeGraphClient`), so they answer from the same queries.
 Nothing writes to the repository being analysed: the profiles deny it, the MCP server runs with telemetry off,
 and every run checks the repo's git status and the graph file before and after.

@@ -31,7 +31,8 @@ The snippet measured 416 tokens with `--help` (`overhead-20261122-205829`), 726 
   no dependent is a test), the pilot's 2 and 2 (`--help`, then one `impact`).
 
 Decision: keep v2. It used fewer tokens on 2 of the 3 tasks and correctness held; impact-tests is measured
-again with 5 repetitions in the full run. Two repetitions per cell, on different days from the pilot, so this
+again with 5 repetitions in the full run. (Full run, `20261123-085549`: lite-cli impact-tests 15,244 median,
+15,143–40,675; direct 39,509–39,825, so the ranges overlap.) Two repetitions per cell, on different days from the pilot, so this
 is a direction, not a result.
 
 ---

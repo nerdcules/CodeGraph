@@ -176,6 +176,14 @@ internal static class Report
             }
         }
 
+        var written = Path.Combine(outDir, "conclusion.md");
+        if (File.Exists(written))
+        {
+            md.AppendLine();
+            md.AppendLine(File.ReadAllText(written).Trim());
+            md.AppendLine();
+        }
+
         var estimate = Path.Combine(outDir, "estimate.md");
         if (File.Exists(estimate))
         {

@@ -5,7 +5,12 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased (branch code-mode-lite)
+## Unreleased
+
+- **The full lite benchmark** ([bench/results/20261123-085549](bench/results/20261123-085549/report.md)): 135
+  runs, none failed. Against the MCP tools, the CLI used fewer tokens on single lookups (−24%) and analytical
+  questions (−61%), C# scripts more on single lookups (+98%) and fewer on analytical ones (−53%), each with
+  non-overlapping min–max ranges; multi-hop ranges overlap.
 
 - **Question shape in the lite benchmark** (issue #18, Part 1): each run records its graph steps (MCP tool calls,
   `codegraph` invocations, `dotnet run` scripts), the largest and total result size, and whether a later step
