@@ -15,6 +15,7 @@ internal static class Cli
                                                 headless Claude Code once per task x mode x repetition, interleaved
           run --pilot                           one task per category, every mode, 2 repetitions, then the full-matrix estimate
           report <results dir>                  rewrite summary.csv and report.md from runs.jsonl
+          reshape <results dir>                 recompute the question-shape fields from the saved transcripts, then report
         """;
 
     public static async Task<int> RunAsync(string[] args)
@@ -83,7 +84,7 @@ internal static class Cli
                 {
                     var estimate = Report.Estimate(config, Report.Read(outDir), all);
                     await File.WriteAllTextAsync(Path.Combine(outDir, "estimate.md"), estimate + "\n");
-                    await File.AppendAllTextAsync(Path.Combine(outDir, "report.md"), "\n## Full-matrix estimate\n\n" + estimate + "\n");
+                    Report.Write(config, outDir, Report.Read(outDir), Report.ReadTruth(outDir), Report.ReadPlan(config, outDir));
                     Console.WriteLine(estimate);
                 }
 
@@ -94,6 +95,29 @@ internal static class Cli
                 Report.Write(config, rest[1], Report.Read(rest[1]), Report.ReadTruth(rest[1]), Report.ReadPlan(config, rest[1]));
                 Console.WriteLine(Path.Combine(rest[1], "report.md"));
                 return 0;
+            case "reshape" when rest.Count == 2:
+            {
+                var (answerFormat, all) = Tasks.Load(config);
+                var records = Report.Read(rest[1]).Select(r =>
+                {
+                    var transcript = Path.Combine(rest[1], "runs", r.RunId + ".stream.jsonl");
+                    if (!File.Exists(transcript))
+                    {
+                        Console.Error.WriteLine($"{r.RunId}: no transcript; shape left as recorded");
+                        return r;
+                    }
+
+                    var task = r.Task == BenchTask.Baseline ? BenchTask.NoOp : all.Single(t => t.Id == r.Task);
+                    var shape = QuestionShape.Of(ClaudeRunner.Replay(transcript).Tools, task.FullPrompt(answerFormat));
+                    return r with { GraphCalls = shape.GraphCalls, LargestResultChars = shape.LargestResultChars, TotalResultChars = shape.TotalResultChars, Chained = shape.Chained };
+                }).ToList();
+                await File.WriteAllLinesAsync(Path.Combine(rest[1], "runs.jsonl"), records.Select(r => System.Text.Json.JsonSerializer.Serialize(r)));
+                await File.WriteAllLinesAsync(Path.Combine(rest[1], "raw.csv"), records.Select(Csv.Row).Prepend(Csv.Header));
+                Report.Write(config, rest[1], records, Report.ReadTruth(rest[1]), Report.ReadPlan(config, rest[1]));
+                Console.WriteLine(Path.Combine(rest[1], "report.md"));
+                return 0;
+            }
+
             default:
                 Console.Error.WriteLine(Usage);
                 return 2;

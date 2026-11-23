@@ -5,6 +5,16 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased (branch code-mode-lite)
+
+- **Question shape in the lite benchmark** (issue #18, Part 1): each run records its graph steps (MCP tool calls,
+  `codegraph` invocations, `dotnet run` scripts), the largest and total result size, and whether a later step
+  reused a name or id from an earlier result (a heuristic). `report.md` gains a question-shape section;
+  `modebench reshape <dir>` back-fills older results from their transcripts; `plan.json` records the CodeGraph
+  commit the run used.
+- **lite-cli without `codegraph --help`** (Part 0): the lite-cli snippet carries a command reference instead.
+  Measured in [bench/results/part0-lite-cli.md](bench/results/part0-lite-cli.md).
+
 ## 1.6.0-beta.1
 
 A pre-release of a prototype, from branch `code-mode-lite`: does "code mode lite" (an agent writes a C# script or

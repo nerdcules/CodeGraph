@@ -156,6 +156,7 @@ internal static class Report
             $"{m}: " + string.Join(", ", records.Where(r => r.Mode == m).SelectMany(r => r.ToolCalls).GroupBy(kv => kv.Key).OrderBy(g => g.Key, StringComparer.Ordinal)
                 .Select(g => $"{g.Key} {g.Sum(kv => kv.Value)}")))) + ".");
         md.AppendLine();
+        Shape(md, records, plan, modes, Counted);
         AppendFile(md, "## Static overhead (Stage 4)", Latest(config, "overhead-*", "overhead.md"));
         AppendFile(md, "## Start-up (Stages 2 and 3)", Path.Combine(config.BenchDir, "results", "startup.md"));
 
@@ -175,7 +176,85 @@ internal static class Report
             }
         }
 
+        var estimate = Path.Combine(outDir, "estimate.md");
+        if (File.Exists(estimate))
+        {
+            md.AppendLine();
+            md.AppendLine("## Full-matrix estimate");
+            md.AppendLine();
+            md.AppendLine(File.ReadAllText(estimate).Trim());
+        }
+
         File.WriteAllText(Path.Combine(outDir, "report.md"), md.ToString());
+    }
+
+    /// <summary>
+    /// Question shape (issue #18). Each task is placed by how direct mode answered it (graph calls, largest result,
+    /// chained), since that is what a router would have to predict; then each mode's tokens for that task.
+    /// </summary>
+    private static void Shape(StringBuilder md, IReadOnlyList<RunRecord> records, Bench.Plan plan, IReadOnlyList<string> modes, Func<RunRecord, bool> counted)
+    {
+        md.AppendLine("## Question shape (issue #18)");
+        md.AppendLine();
+        md.AppendLine("A graph step is one codegraph MCP tool call, one `codegraph` CLI invocation or one `dotnet run` of a script. Result size is the "
+                      + "characters the step's tool call returned. Chained is a heuristic: a later step's input reuses an id, a handle or a dotted name "
+                      + "from an earlier step's result that is not in the prompt. Figures are median (min–max) over all finished runs; tokens over counted runs.");
+        md.AppendLine();
+        md.AppendLine("| task | mode | runs | graph steps | largest result, chars | total result, chars | chained |");
+        md.AppendLine("|---|---|---:|---|---|---|---:|");
+        foreach (var task in plan.Tasks)
+        {
+            foreach (var mode in modes)
+            {
+                var runs = records.Where(r => r.Task == task.Id && r.Mode == mode && r.Failure is null).ToList();
+                md.AppendLine(CultureInfo.InvariantCulture, $"| {task.Id} | {mode} | {runs.Count} | {Stats.Range(runs.Select(r => (double)r.GraphCalls), "F0")} | "
+                    + $"{Stats.Range(runs.Where(r => r.LargestResultChars is not null).Select(r => (double)r.LargestResultChars!.Value), "N0")} | "
+                    + $"{Stats.Range(runs.Where(r => r.TotalResultChars is not null).Select(r => (double)r.TotalResultChars!.Value), "N0")} | "
+                    + $"{runs.Count(r => r.Chained == true)} of {runs.Count} |");
+            }
+        }
+
+        if (!modes.Contains(CodeGraphMode.Direct))
+        {
+            md.AppendLine();
+            return;
+        }
+
+        md.AppendLine();
+        md.AppendLine("### Tokens by the shape direct mode needed");
+        md.AppendLine();
+        md.AppendLine("Tasks ordered by direct mode's median graph steps. A mode is named cheaper only when its token range does not overlap direct's.");
+        md.AppendLine();
+        md.AppendLine("| task | direct steps | direct largest result | " + string.Join(" | ", modes.Select(m => $"{m} tokens")) + " | " + string.Join(" | ", modes.Where(m => m != CodeGraphMode.Direct).Select(m => $"{m} vs direct")) + " |");
+        md.AppendLine("|---|---:|---:|" + string.Concat(modes.Select(_ => "---|")) + string.Concat(modes.Where(m => m != CodeGraphMode.Direct).Select(_ => "---|")));
+        var ordered = plan.Tasks
+            .Select(t => (Task: t, Direct: records.Where(r => r.Task == t.Id && r.Mode == CodeGraphMode.Direct && r.Failure is null).ToList()))
+            .OrderBy(x => Stats.Median(x.Direct.Select(r => (double)r.GraphCalls)) ?? double.MaxValue)
+            .ThenBy(x => Stats.Median(x.Direct.Where(r => r.LargestResultChars is not null).Select(r => (double)r.LargestResultChars!.Value)) ?? double.MaxValue);
+        foreach (var (task, direct) in ordered)
+        {
+            List<double> TokensOf(string mode) => records.Where(r => r.Task == task.Id && r.Mode == mode && counted(r) && r.TotalTokens is not null)
+                .Select(r => (double)r.TotalTokens!.Value).ToList();
+            var steps = Stats.Median(direct.Select(r => (double)r.GraphCalls));
+            var largest = Stats.Median(direct.Where(r => r.LargestResultChars is not null).Select(r => (double)r.LargestResultChars!.Value));
+            md.AppendLine($"| {task.Id} | {steps?.ToString("F1", Inv) ?? "–"} | {largest?.ToString("N0", Inv) ?? "–"} | "
+                + string.Join(" | ", modes.Select(m => Stats.Range(TokensOf(m), "N0"))) + " | "
+                + string.Join(" | ", modes.Where(m => m != CodeGraphMode.Direct).Select(m => Short(TokensOf(CodeGraphMode.Direct), TokensOf(m)))) + " |");
+        }
+
+        md.AppendLine();
+    }
+
+    /// <summary>The verdict in a table cell: fewer, more, or overlap, with the median change.</summary>
+    private static string Short(IReadOnlyList<double> direct, IReadOnlyList<double> mode)
+    {
+        if (direct.Count == 0 || mode.Count == 0)
+        {
+            return "–";
+        }
+
+        var change = ((Stats.Median(mode)!.Value / Stats.Median(direct)!.Value - 1) * 100).ToString("+0;-0", Inv) + "%";
+        return mode.Max() < direct.Min() ? $"fewer ({change})" : mode.Min() > direct.Max() ? $"more ({change})" : $"overlap ({change})";
     }
 
     /// <summary>The median score of each task's finished direct runs.</summary>

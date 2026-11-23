@@ -9,7 +9,7 @@ when every MCP tool result enters its context? Three modes, one setting, `CODEGR
 |---|---|---|
 | `direct` (default) | calls the codegraph MCP tools | the server's 35 tools (deferred behind ToolSearch, as Claude Code does by default) |
 | `lite` | writes a C# file-based app and runs it with `dotnet run` | `docs/codegraph-lite.md` (the API, a template, three rules); the allow rules let Bash run only `dotnet run` on scripts in its scratch folder |
-| `lite-cli` | calls the Native AOT `codegraph` CLI and filters its JSON with jq | `codegraph --help`; the allow rules let Bash run codegraph, jq, grep, head, tail, wc, cut and tr |
+| `lite-cli` | calls the Native AOT `codegraph` CLI and filters its JSON with jq | a command reference in its CLAUDE.md (`codegraph --help` on demand; see [Part 0](results/part0-lite-cli.md)); the allow rules let Bash run codegraph, jq, grep, head, tail, wc, cut and tr |
 
 Claude Code also runs some read-only commands without a rule (`ls` ran in the lite permissions probe); writes,
 redirects outside the scratch folder, `dotnet build` and other commands were refused in that probe.

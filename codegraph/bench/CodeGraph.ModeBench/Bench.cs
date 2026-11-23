@@ -46,7 +46,11 @@ internal sealed record RunRecord(
     int TruthItems,
     string? Answer,
     IReadOnlyList<string> Models,
-    IReadOnlyList<string> MissingFields);
+    IReadOnlyList<string> MissingFields,
+    int GraphCalls = 0,
+    long? LargestResultChars = null,
+    long? TotalResultChars = null,
+    bool? Chained = null);
 
 internal static partial class Bench
 {
@@ -75,6 +79,9 @@ internal static partial class Bench
             config.Model, RepoPath = BenchConfig.Shown(config.RepoPath), config.Commit, Db = BenchConfig.Shown(config.Db), config.MaxTurns, config.TimeoutSeconds,
             plan.Modes, plan.Repetitions, plan.Baseline, Tasks = plan.Tasks.Select(t => t.Id),
             ClaudeVersion = Version(config.Claude, "--version"), DotnetVersion = Version(config.Dotnet, "--version"),
+            // The profiles, tasks and harness this run used: the CodeGraph commit, and whether bench/ had uncommitted changes.
+            BenchCommit = Git(config.BenchDir, "rev-parse", "HEAD").Trim(),
+            BenchDirty = Git(config.BenchDir, "status", "--porcelain", "--", ".").Length > 0,
         }, Indented), cancellationToken);
 
         var work = Path.Combine(config.WorkRoot, Path.GetFileName(outDir));
@@ -194,6 +201,7 @@ internal static partial class Bench
         Need(result.CacheCreationTokens, "cache_creation_input_tokens");
         Need(result.CostUsd, "total_cost_usd");
         Need(result.Turns, "num_turns");
+        var shape = QuestionShape.Of(result.Tools, task.FullPrompt(answerFormat));
         return new RunRecord(
             runId, started, task.Id, task.Category, mode, rep, config.Model, result.Subtype, result.IsError, result.TimedOut, failure,
             result.InputTokens, result.OutputTokens, result.CacheReadTokens, result.CacheCreationTokens, result.TotalTokens,
@@ -206,7 +214,8 @@ internal static partial class Bench
             result.PermissionDenials.Count,
             changed,
             score?.F1, score?.Precision, score?.Recall, score?.CountAccuracy, score?.AnswerItems ?? 0, score?.TruthItems ?? 0,
-            result.Answer, result.Models, missing);
+            result.Answer, result.Models, missing,
+            shape.GraphCalls, shape.LargestResultChars, shape.TotalResultChars, shape.Chained);
     }
 
     internal static bool IsScript(string? command) => command is not null && ScriptRun().IsMatch(command);
@@ -271,7 +280,8 @@ internal static class Csv
     public const string Header =
         "run_id,started_at,task,category,mode,rep,model,subtype,failure,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,total_tokens,"
         + "cost_usd,turns,api_calls,first_context_tokens,wall_s,tool_calls,scripts,cli_invocations,compile_failures,s_in_scripts_or_cli,"
-        + "permission_denials,repo_changed,score,precision,recall,count_accuracy,answer_items,truth_items,missing_fields";
+        + "permission_denials,repo_changed,score,precision,recall,count_accuracy,answer_items,truth_items,missing_fields,"
+        + "graph_calls,largest_result_chars,total_result_chars,chained";
 
     public static string Row(RunRecord r) => string.Join(',',
         r.RunId, r.StartedAt, r.Task, r.Category, r.Mode, N(r.Repetition), r.Model, Q(r.Subtype), Q(r.Failure),
@@ -280,7 +290,8 @@ internal static class Csv
         Q(string.Join(' ', r.ToolCalls.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}"))),
         N(r.Scripts), N(r.CliInvocations), N(r.CompileFailures), N(r.SecondsInScriptsOrCli), N(r.PermissionDenials),
         r.RepoChanged ? "true" : "false", N(r.Score), N(r.Precision), N(r.Recall), N(r.CountAccuracy), N(r.AnswerItems), N(r.TruthItems),
-        Q(string.Join(' ', r.MissingFields)));
+        Q(string.Join(' ', r.MissingFields)),
+        N(r.GraphCalls), N(r.LargestResultChars), N(r.TotalResultChars), r.Chained is { } c ? (c ? "true" : "false") : "null");
 
     /// <summary>A number, or "null" when the CLI did not print the field.</summary>
     public static string N<T>(T? value) where T : struct, IFormattable =>

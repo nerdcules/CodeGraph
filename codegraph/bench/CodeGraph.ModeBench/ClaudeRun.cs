@@ -9,8 +9,9 @@ namespace CodeGraph.ModeBench;
 /// <summary>One headless Claude Code session: how it is launched for a mode, and what its stream-json said.</summary>
 internal sealed record ClaudeLaunch(string Prompt, string Mode, string WorkingDirectory, int MaxTurns, TimeSpan Timeout, bool LoadMcp = true, string? ToolsOverride = null);
 
-/// <summary>A tool call: its name, its input (a Bash command or a file path), how long until its result arrived, and the result.</summary>
-internal sealed record ToolCall(string Name, string? Input, double Seconds, bool IsError, string Result);
+/// <summary>A tool call: its name, its input (a Bash command or a file path), how long until its result arrived, the
+/// result, and the whole input as JSON (for the question's shape: which later call reused what).</summary>
+internal sealed record ToolCall(string Name, string? Input, double Seconds, bool IsError, string Result, string? Arguments = null);
 
 /// <summary>
 /// Everything recorded about a session. Token and cost fields come from the final result message of
@@ -156,10 +157,23 @@ internal static class ClaudeRunner
         || (name.StartsWith("CLAUDE_CODE_", StringComparison.OrdinalIgnoreCase)
             && !KeptPrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)));
 
+    /// <summary>Parses a saved transcript (each line "seconds\tjson") again: tool calls and figures, not timing.</summary>
+    public static ClaudeResult Replay(string transcriptPath)
+    {
+        var parse = new StreamParse(new Stopwatch());
+        foreach (var line in File.ReadLines(transcriptPath))
+        {
+            var tab = line.IndexOf('\t', StringComparison.Ordinal);
+            parse.Line(tab >= 0 ? line[(tab + 1)..] : line);
+        }
+
+        return parse.Result(false, 0, 0, null);
+    }
+
     /// <summary>Reads stream-json lines as they arrive; a tool's time is from its tool_use line to its tool_result line.</summary>
     private sealed class StreamParse(Stopwatch watch)
     {
-        private readonly Dictionary<string, (string Name, string? Input, double Start)> _pending = [];
+        private readonly Dictionary<string, (string Name, string? Input, double Start, string? Arguments)> _pending = [];
         private readonly List<ToolCall> _tools = [];
         private readonly HashSet<string> _calls = [];
         private readonly HashSet<string> _models = [];
@@ -197,7 +211,7 @@ internal static class ClaudeRunner
                         {
                             var input = block["input"] as JsonObject;
                             var text = input?["command"]?.GetValue<string>() ?? input?["file_path"]?.GetValue<string>() ?? input?["query"]?.ToString();
-                            _pending[toolId] = (block["name"]?.GetValue<string>() ?? "?", text, watch.Elapsed.TotalSeconds);
+                            _pending[toolId] = (block["name"]?.GetValue<string>() ?? "?", text, watch.Elapsed.TotalSeconds, input?.ToJsonString());
                         }
                     }
 
@@ -214,7 +228,7 @@ internal static class ClaudeRunner
                                 _ => "",
                             };
                             _tools.Add(new ToolCall(call.Name, call.Input, watch.Elapsed.TotalSeconds - call.Start,
-                                block["is_error"]?.GetValue<bool>() ?? false, result));
+                                block["is_error"]?.GetValue<bool>() ?? false, result, call.Arguments));
                         }
                     }
 
@@ -232,7 +246,7 @@ internal static class ClaudeRunner
             var denials = _result?["permission_denials"]?.AsArray().OfType<JsonObject>()
                 .Select(d => $"{d["tool_name"]}: {(d["tool_input"]?["command"] ?? d["tool_input"]?["file_path"])}").ToList() ?? [];
             // A tool whose result never came (a timeout, the turn cap) still counts as a call.
-            var tools = _tools.Concat(_pending.Values.Select(p => new ToolCall(p.Name, p.Input, wallSeconds - p.Start, true, "(no result)"))).ToList();
+            var tools = _tools.Concat(_pending.Values.Select(p => new ToolCall(p.Name, p.Input, wallSeconds - p.Start, true, "(no result)", p.Arguments))).ToList();
             return new ClaudeResult(
                 _result?["subtype"]?.GetValue<string>(),
                 _result?["is_error"]?.GetValue<bool>() ?? true,

@@ -71,6 +71,32 @@ Fields missing from the CLI's JSON (logged as null): none.
 
 Tool calls by type, summed per mode: direct: ToolSearch 9, mcp__codegraph__dead_code_report 2, mcp__codegraph__find_symbol 2, mcp__codegraph__impact_of 2, mcp__codegraph__outline 1, mcp__codegraph__snippet 7; lite: Bash 8, Read 6, Write 8; lite-cli: Bash 15.
 
+## Question shape (issue #18)
+
+A graph step is one codegraph MCP tool call, one `codegraph` CLI invocation or one `dotnet run` of a script. Result size is the characters the step's tool call returned. Chained is a heuristic: a later step's input reuses an id, a handle or a dotted name from an earlier step's result that is not in the prompt. Figures are median (min–max) over all finished runs; tokens over counted runs.
+
+| task | mode | runs | graph steps | largest result, chars | total result, chars | chained |
+|---|---|---:|---|---|---|---:|
+| where-defined | direct | 2 | 1 (1–1) | 1,028 (1,028–1,028) | 1,028 (1,028–1,028) | 0 of 2 |
+| where-defined | lite | 2 | 1 (1–1) | 131 (131–131) | 131 (131–131) | 0 of 2 |
+| where-defined | lite-cli | 2 | 2 (2–2) | 2,077 (2,077–2,077) | 2,227 (2,211–2,243) | 0 of 2 |
+| impact-tests | direct | 2 | 1 (1–1) | 43,366 (43,366–43,366) | 43,366 (43,366–43,366) | 0 of 2 |
+| impact-tests | lite | 2 | 1 (1–1) | 3,262 (3,244–3,279) | 3,262 (3,244–3,279) | 0 of 2 |
+| impact-tests | lite-cli | 2 | 2 (2–2) | 3,296 (3,261–3,332) | 5,374 (5,338–5,409) | 0 of 2 |
+| dead-code | direct | 2 | 5 (4–6) | 31,291 (31,291–31,291) | 35,287 (33,941–36,633) | 0 of 2 |
+| dead-code | lite | 2 | 2 (2–2) | 5,710 (2,705–8,714) | 8,087 (3,837–12,337) | 1 of 2 |
+| dead-code | lite-cli | 2 | 4 (4–5) | 2,365 (2,306–2,424) | 6,450 (6,012–6,887) | 0 of 2 |
+
+### Tokens by the shape direct mode needed
+
+Tasks ordered by direct mode's median graph steps. A mode is named cheaper only when its token range does not overlap direct's.
+
+| task | direct steps | direct largest result | direct tokens | lite tokens | lite-cli tokens | lite vs direct | lite-cli vs direct |
+|---|---:|---:|---|---|---|---|---|
+| where-defined | 1.0 | 1,028 | 16,238 (16,222–16,255) | 23,058 (23,055–23,061) | 18,333 (18,320–18,346) | more (+42%) | more (+13%) |
+| impact-tests | 1.0 | 43,366 | 39,825 (39,622–40,028) | 34,910 (34,848–34,971) | 21,696 (21,671–21,720) | fewer (-12%) | fewer (-46%) |
+| dead-code | 5.0 | 31,291 | 91,903 (71,068–112,738) | 57,509 (45,716–69,302) | 33,889 (29,463–38,315) | fewer (-37%) | fewer (-63%) |
+
 ## Static overhead (Stage 4)
 
 From `overhead-20261122-205829/overhead.md`:
