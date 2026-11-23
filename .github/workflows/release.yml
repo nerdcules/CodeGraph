@@ -1,4 +1,4 @@
-# A tag v<version> builds, tests and packages codegraph-index and codegraph-mcp for six platforms, and publishes
+# A tag v<version> builds, tests and packages codegraph-index, codegraph-mcp and the codegraph CLI for six platforms, and publishes
 # them as a GitHub Release with checksums, beside the VS Code extension (codegraph-vscode.vsix). The version in the
 # executables and the extension comes from the tag; a tag with a "-suffix" is published as a pre-release.
 name: Release

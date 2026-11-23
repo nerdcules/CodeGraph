@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs codegraph-index and codegraph-mcp from the latest GitHub release, sets up repos to use them, and can add
+# Installs codegraph-index and codegraph-mcp (and, from 1.6.0-beta.1, the codegraph CLI) from the latest GitHub release, sets up repos to use them, and can add
 # the VS Code extension (macOS / Linux). No build tools needed: the archive carries its own .NET runtime.
 #
 #   curl -fsSL https://raw.githubusercontent.com/nerdcules/CodeGraph/main/codegraph/install.sh | bash

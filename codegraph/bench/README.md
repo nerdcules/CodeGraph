@@ -45,6 +45,8 @@ alias modebench='dotnet bench/CodeGraph.ModeBench/bin/Debug/net10.0/codegraph-mo
 The CLI publish fails on any trim or AOT warning. win-x64 must be published on Windows (Native AOT does not
 cross-compile between operating systems; it needs the Visual Studio C++ build tools):
 `dotnet publish src/CodeGraph.Cli -c Release -r win-x64 -o bench/.out/cli`. Not yet built or measured.
+The release archives (from 1.6.0-beta.1) carry `codegraph` ReadyToRun, not Native AOT; the start-up figures in
+`results/startup.md` are for the source-built binaries, not that one.
 
 ## The command for each stage
 

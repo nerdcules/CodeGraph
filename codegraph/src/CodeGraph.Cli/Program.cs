@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -47,7 +48,10 @@ internal static class CodeGraphCli
 
         if (args[0] is "--version")
         {
-            await stdout.WriteLineAsync(typeof(CodeGraphClient).Assembly.GetName().Version?.ToString(3) ?? "0.0.0");
+            // The informational version keeps a pre-release suffix (1.6.0-beta.1); strip the source-link hash after '+'.
+            var assembly = typeof(CodeGraphCli).Assembly;
+            var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0];
+            await stdout.WriteLineAsync(string.IsNullOrEmpty(informational) ? assembly.GetName().Version?.ToString(3) ?? "0.0.0" : informational);
             return 0;
         }
 

@@ -5,10 +5,11 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased (branch code-mode-lite)
+## 1.6.0-beta.1
 
-A prototype to measure whether "code mode lite" (an agent writes a C# script or calls a CLI, and prints only a
-summary) uses fewer tokens than the MCP tools. See [bench/README.md](bench/README.md).
+A pre-release of a prototype, from branch `code-mode-lite`: does "code mode lite" (an agent writes a C# script or
+calls a CLI, and prints only a summary) use fewer tokens than the MCP tools? See [bench/README.md](bench/README.md).
+Only a pilot has run (one task per category, 2 repetitions); the full benchmark has not, so no saving is claimed.
 
 - **`ICodeGraph` and `CodeGraphClient`.** `CodeGraph.Contracts` holds the typed API (records and one interface, one
   method per operation); `CodeGraph.Client` implements it over `GraphStore`. find_symbol, outline, callers_of,
@@ -21,7 +22,10 @@ summary) uses fewer tokens than the MCP tools. See [bench/README.md](bench/READM
   a row cap and a timeout.
 - **`codegraph`, a Native AOT CLI** (`src/CodeGraph.Cli`): find, outline, snippet, callers, callees, impact, tests,
   query, schema, status. It pins ILCompiler and the NativeAOT runtime pack to 10.0.15: the 10.0.13 packs of the
-  10.0.113 SDK are listed as vulnerable by GHSA-p3jp-9v83-76w9.
+  10.0.113 SDK are listed as vulnerable by GHSA-p3jp-9v83-76w9. The release archives carry it as `codegraph`,
+  published ReadyToRun like the other two executables, not Native AOT (linux-arm64 Native AOT on the x64 runner needs
+  a cross toolchain the workflow does not install); its start-up in that form is not measured. Native AOT was built and measured for linux-x64 only,
+  from source.
 - **`CODEGRAPH_MODE=lite|lite-cli`** makes the MCP server advertise no tools and no instructions.
 - **`AnswerPaths` moved to CodeGraph.Core** so the client prints paths relative to the same root as the server.
 
