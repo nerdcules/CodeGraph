@@ -5,6 +5,20 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+- **`install.sh --from-source` and `install.ps1 -FromSource` publish the `codegraph` CLI** (ReadyToRun), as the
+  release archives carry it; before, a source install had no `codegraph`, so the question-log hook could not run.
+  Checked on Linux by running the publish command and `codegraph status`; the PowerShell path was not run.
+- **Updating with `nerdcules-update`**: README and installation notes.
+- **Docs for code mode lite**: the architecture page and diagram show the `codegraph` CLI and C# scripts beside the
+  MCP server, with a section on the three modes; usage has a CLI section, `CODEGRAPH_MODE` and the question log;
+  measured results and the roadmap carry the lite benchmark's result; performance has the CLI's start-up, with the
+  v1.6.0 archive's ReadyToRun build measured (`codegraph status` median 82.5 ms, 20 runs,
+  [bench/results/startup.md](bench/results/startup.md)).
+- **The VS Code extension's screenshot** shows release 1.6.0, made by `vscode-extension/scripts/screenshot.py`.
+- The uninstall scripts name the question log among what `.codegraph/` holds.
+
 ## 1.6.0
 
 The first full release with code mode lite: the `codegraph` CLI in every archive, `CODEGRAPH_MODE`, and the

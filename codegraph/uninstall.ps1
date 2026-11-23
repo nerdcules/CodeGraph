@@ -229,7 +229,7 @@ foreach ($dir in $Repo) {
 
     $graphDir = Join-Path $dir '.codegraph'
     if (Test-Path $graphDir) {
-        if (Confirm-Step "Delete the graph and telemetry in $graphDir?") {
+        if (Confirm-Step "Delete the graph, telemetry and question log in $graphDir?") {
             Remove-Item -Recurse -Force $graphDir
             Write-Host "deleted $graphDir"
         }

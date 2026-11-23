@@ -75,8 +75,13 @@ means here, and where it stands.
     ([measured](measured-results.md#four-public-repositories)), Claude Code answered sooner with the graph on all
     four and made fewer model calls in all 12 rounds, but the server's tool definitions and instructions made each
     session start 8,681 tokens larger, and every model call carries them. So the median input tokens and cost were
-    higher on all four. Shorter tool descriptions, or fewer tools offered at the start, would shrink that start;
-    how much has not been measured.
+    higher on all four. Shorter tool descriptions would shrink that start; how much has not been measured.
+    Offering no tools was measured in 1.6.0: with `CODEGRAPH_MODE=lite-cli` and the `codegraph` CLI, Claude Code
+    used 24% fewer tokens than with the tools on single lookups and 61% fewer on analytical questions, on one
+    repository with one model ([measured](measured-results.md#code-mode-lite)). Still open: the CLI's instructions
+    are in the benchmark's profile, not set up by `init`; no other assistant and no other repository was measured;
+    and the [question log](../MCP-SERVER.md#question-log-opt-in-claude-code) has not yet recorded real sessions
+    to show which questions are single lookups.
 
 ## How to help
 

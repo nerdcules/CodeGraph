@@ -11,6 +11,7 @@
 - [Summary](#summary)
 - [Index time](#index-time)
 - [Tool calls](#tool-calls)
+- [The codegraph CLI](#the-codegraph-cli)
 - [Large graphs](#large-graphs)
 - [Answer size](#answer-size)
 - [The live daemon](#the-live-daemon)
@@ -26,7 +27,8 @@
 - For C#, with the live daemon, a save reaches a fresh answer in 0.9 to 1.3 s on this repository. A later run on a busy machine had a median of 1.4 s.
 - A walk answer lists the nearest 200 rows (50 for tests) and counts the rest. From a hub on a 55,000-node graph, that is about 3,300 to 4,100 tokens.
 
-All values in this page come from [BENCHMARKS.md](../BENCHMARKS.md) and from the generated corpus.
+All values in this page come from [BENCHMARKS.md](../BENCHMARKS.md), from the generated corpus, and, for the CLI,
+from [bench/results/startup.md](../bench/results/startup.md).
 Your values depend on your machine and your code.
 
 ## Index time
@@ -72,6 +74,22 @@ See [The graph in memory](how-it-works.md#the-graph-in-memory).
 
 On this repository (2,885 nodes then), `impact_of` at depth 20 went from 31 ms to 1.8 ms.
 On 14 November 2026, with 3,119 nodes, each graph tool call took 1.2 to 3.5 ms at the same pace.
+
+## The codegraph CLI
+
+Each `codegraph` command is a new process: it opens the graph, answers with SQL and stops.
+On the Jellyfin graph (21,174 nodes) on this Linux machine:
+
+| Build of `codegraph` | `codegraph status` | `callers ... --depth 2 --limit 0` | Measured |
+|---|---|---|---|
+| ReadyToRun, from the v1.6.0 archive | 82.5 ms (79.5–84.6) | 245.1 ms (236.3–273.1) | 23 November 2026 |
+| Native AOT, built from source | 51.7 ms (47.6–67.1) | 317.7 ms (257.9–332.0) | 22 November 2026 |
+| JIT, framework-dependent | 209.8 ms (186.9–268.8) | 473.6 ms (400.2–601.0) | 22 November 2026 |
+
+Each value is the median of 20 runs, with the minimum and maximum.
+The rows come from two days: the load average was 5.02 at the end of the 23 November runs, and the load on
+22 November was not recorded. Thus the rows are not a strict comparison.
+A C# script through `dotnet run` took 639 ms when it was built already, and 3,777 ms for a new script (medians of 10 runs, 22 November).
 
 ## Large graphs
 

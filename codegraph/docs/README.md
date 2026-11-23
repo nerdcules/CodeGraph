@@ -10,8 +10,9 @@ CodeGraph gives your AI coding assistant the compiler's answers: who calls this,
 it, which tests guard it.
 The indexer reads your code with the compiler of the language and writes a graph file.
 The MCP server answers questions from that file, for Claude Code, GitHub Copilot, Codex, Cursor, the Gemini CLI, Roo Code, Kilo Code, Continue or any other MCP client.
+The `codegraph` CLI answers the same questions from the shell, as JSON.
 
-![Architecture: extractors write graph.db, the MCP server reads it, the live daemon keeps it current](images/architecture.svg)
+![Architecture: extractors write graph.db, the MCP server and the codegraph CLI read it, the live daemon keeps it current](images/architecture.svg)
 
 ## Start with the page for you
 
@@ -44,6 +45,7 @@ Reference pages outside this folder:
 - [MCP-SERVER.md](../MCP-SERVER.md) gives the arguments of all 35 tools.
 - [EXTRACTORS.md](../EXTRACTORS.md) gives the record format for a new language.
 - [BENCHMARKS.md](../BENCHMARKS.md) gives all the measurements, round by round.
+- [bench/README.md](../bench/README.md) is the lite benchmark: the MCP tools, the CLI and C# scripts compared.
 - [PROMPTS.md](../PROMPTS.md) gives prompts that make the client use the tools.
 - [CHANGELOG.md](../CHANGELOG.md) lists each release.
 - [plugin/README.md](../plugin/README.md) is the Claude Code plugin.
@@ -75,6 +77,7 @@ A word has one meaning in all pages:
 |---|---|
 | the indexer | The `codegraph-index` executable. |
 | the server | The `codegraph-mcp` executable, an MCP server. |
+| the CLI | The `codegraph` executable. It answers one question from the graph as JSON. |
 | the graph | The `.codegraph/graph.db` file of a worktree. |
 | the live daemon | The indexer when it runs with `--watch`. |
 | the client | The assistant that calls the tools: Claude Code, GitHub Copilot, Codex, Cursor, the Gemini CLI, an AI extension such as Roo Code, Kilo Code or Continue, or another MCP client. |

@@ -32,6 +32,10 @@ CodeGraph has two paths:
 The two paths share only the graph file.
 The server never writes to the graph.
 
+The `codegraph` CLI and C# scripts also read the graph, through `CodeGraphClient`.
+They open the file read-only, answer with SQL, and do not check freshness.
+[Three ways to ask](architecture.md#three-ways-to-ask) compares them with the server.
+
 ## Read the code with the compiler
 
 The indexer does not search text.

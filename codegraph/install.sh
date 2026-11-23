@@ -478,6 +478,7 @@ install_from_release() {
     find "$install_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
     tar -xzf "$tmp/$asset" -C "$install_dir"
     chmod +x "$install_dir/codegraph-index" "$install_dir/codegraph-mcp"
+    [ ! -f "$install_dir/codegraph" ] || chmod +x "$install_dir/codegraph"   # the CLI, in releases from 1.6.0-beta.1
     # A browser download would be quarantined on macOS; curl's is not, but clearing the flag costs nothing.
     if [ "$os" = osx ] && command -v xattr >/dev/null; then
         xattr -dr com.apple.quarantine "$install_dir" 2>/dev/null || true
@@ -518,7 +519,11 @@ install_from_source() {
     for project in src/CodeGraph.Indexer src/CodeGraph.Mcp; do
         dotnet publish "$root/$project" -c Release -r "$source_rid" --self-contained false -p:PublishReadyToRun=true -o "$install_dir" --nologo
     done
-    chmod +x "$install_dir/codegraph-index" "$install_dir/codegraph-mcp"
+    # The codegraph CLI is a Native AOT project; here it is published ReadyToRun like the release archives carry it,
+    # so a source install needs no C toolchain.
+    dotnet publish "$root/src/CodeGraph.Cli" -c Release -r "$source_rid" --self-contained false -p:PublishAot=false \
+        -p:PublishReadyToRun=true -o "$install_dir" --nologo
+    chmod +x "$install_dir/codegraph-index" "$install_dir/codegraph-mcp" "$install_dir/codegraph"
     if [ "$has_node" = true ]; then
         # codegraph-index looks for extractors/typescript/cli.mjs beside itself.
         rm -rf "$install_dir/extractors/typescript"

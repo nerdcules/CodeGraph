@@ -119,7 +119,8 @@ In a terminal without cursor control (`TERM=dumb`), the list becomes a numbered 
    An upgrade unpacks the new release into a new folder and points the junction at it.
    A `codegraph-mcp` that runs keeps the old release until it restarts, and a later upgrade deletes the old folder.
    The path of the install folder does not change, so `PATH` and the MCP configs stay correct.
-4. It makes sure that both executables start.
+4. It makes sure that `codegraph-index` and `codegraph-mcp` start.
+   From release 1.6.0, the archive also holds the `codegraph` CLI. The script does not start it.
 5. It runs `codegraph-index init` on each repository.
 6. If you chose the extension, it downloads `codegraph-vscode.vsix` from the same release, checks it, and installs
    it with `code --install-extension`.
@@ -374,6 +375,9 @@ Those files follow the documentation and source code of each product, but they a
 4. Ask the assistant: "Use codegraph graph_stats."
 5. Make sure that the answer shows a node count and an edge count.
 
+To check the graph from the shell, run `codegraph status` in the repository (release 1.6.0 and later).
+It prints the node count, the edge count and the commit of the graph as JSON.
+
 If the answer says "no code graph", build the graph:
 
 ```bash
@@ -449,6 +453,9 @@ Releases from 1.3.0 on carry it as `codegraph-vscode.vsix` (the pre-release 1.3.
 
 The plugin updates with `/plugin update codegraph@codegraph`.
 
+[`nerdcules-update`](https://github.com/nerdcules/nerdcules#updates) can do the upgrade: `nerdcules-update apply codegraph` runs `install.sh --version <tag> --yes --no-vscode`, and `nerdcules-update rollback codegraph` installs the release from before.
+It runs the bash install script (tested on Linux, 23 November 2026), and it does not update the VS Code extension.
+
 ## Build from source
 
 You need the .NET 10 SDK, git, and a clone of the repository.
@@ -484,7 +491,7 @@ The script removes the install folder and the PATH entry.
 For each repository that you give, it removes the `codegraph` entry from `.mcp.json` and from the files of the other assistants that `init` sets up.
 If Codex has a `codegraph` entry, it removes that entry too.
 If `code` or `code-insiders` lists the CodeGraph extension, it uninstalls the extension.
-It also removes the `.codegraph/` folder of that repository.
+It also removes the `.codegraph/` folder of that repository: the graph, the telemetry and the question log.
 It asks before each removal.
 Give `--yes` or `-Yes` to remove without questions.
 
