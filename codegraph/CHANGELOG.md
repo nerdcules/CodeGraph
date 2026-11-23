@@ -5,13 +5,17 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
-## Unreleased
+## 1.6.0
+
+The first full release with code mode lite: the `codegraph` CLI in every archive, `CODEGRAPH_MODE`, and the
+typed `ICodeGraph` client. It came in the pre-release 1.6.0-beta.1 (23 November 2026); that section lists what it
+does. GitHub's latest release moves from 1.5.3 to 1.6.0, so the install one-liners and the Claude Code plugin now
+install 1.6.0. Since the beta:
 
 - **The full lite benchmark** ([bench/results/20261123-085549](bench/results/20261123-085549/report.md)): 135
   runs, none failed. Against the MCP tools, the CLI used fewer tokens on single lookups (−24%) and analytical
   questions (−61%), C# scripts more on single lookups (+98%) and fewer on analytical ones (−53%), each with
   non-overlapping min–max ranges; multi-hop ranges overlap.
-
 - **Question shape in the lite benchmark** (issue #18, Part 1): each run records its graph steps (MCP tool calls,
   `codegraph` invocations, `dotnet run` scripts), the largest and total result size, and whether a later step
   reused a name or id from an earlier result (a heuristic). `report.md` gains a question-shape section;
