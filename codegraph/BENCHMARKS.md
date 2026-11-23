@@ -2,6 +2,9 @@
 
 [CodeGraph](README.md) · [Docs](docs/README.md) · [MCP server](MCP-SERVER.md) · [Extractors](EXTRACTORS.md) · **Benchmarks** · [Prompts](PROMPTS.md) · [Changelog](CHANGELOG.md) · [Claude Code plugin](plugin/README.md) · [VS Code extension](vscode-extension/README.md)
 
+The token benchmark of the three ways to ask (the MCP tools, the `codegraph` CLI and C# scripts) has its own page:
+[bench/README.md](bench/README.md).
+
 Numbers from `codegraph-bench` (tools/CodeGraph.Bench) against this repository's own graph, Release build,
 Linux x64, .NET 10. Query figures are the median of 7 runs after a warm-up. The bench takes 3 for the snapshot
 load, the cold freshness check (no warm-up), the live `check_change` and whole-solution diagnostics, and, with

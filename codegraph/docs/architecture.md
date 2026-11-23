@@ -12,6 +12,7 @@
 - [Source layout](#source-layout)
 - [Processes](#processes)
 - [The graph file](#the-graph-file)
+- [Three ways to ask](#three-ways-to-ask)
 - [Language routes](#language-routes)
 - [The record contract](#the-record-contract)
 - [The live protocol](#the-live-protocol)
@@ -23,7 +24,7 @@
 
 ## Components
 
-![Components: repository, codegraph-index, graph.db, codegraph-mcp, the client and the live daemon](images/architecture.svg)
+![Components: repository, codegraph-index, graph.db, codegraph-mcp, the codegraph CLI, the client and the live daemon](images/architecture.svg)
 
 | Component | Function |
 |---|---|
@@ -31,7 +32,9 @@
 | `codegraph-ts` | A Node.js extractor for TypeScript, JavaScript and Angular. The indexer starts it. |
 | SCIP indexers | External tools: scip-java, scip-go, rust-analyzer and scip-python. The indexer starts them and imports their output. |
 | `graph.db` | One DuckDB file for each worktree. It holds all languages. |
-| `codegraph-mcp` | The MCP server. It keeps a copy of the graph in memory and answers 35 tools over stdio. |
+| `codegraph-mcp` | The MCP server. It keeps a copy of the graph in memory and answers 35 tools over stdio. With `CODEGRAPH_MODE=lite` or `lite-cli`, it offers no tools. |
+| `codegraph` | The command-line tool. It opens the graph read-only, answers one question as JSON on stdout, and stops. In the lite-cli mode, the client calls it from the shell. `codegraph hook` writes the [question log](../MCP-SERVER.md#question-log-opt-in-claude-code). |
+| C# scripts | A C# file that references `CodeGraph.Client` and calls `CodeGraphClient`. In the lite mode, the client writes one and runs it with `dotnet run`. |
 | The live daemon | Keeps the code loaded. It indexes each save and answers the live tools over a local pipe. |
 | Language servers | typescript-language-server, jdtls, gopls, pyright or rust-analyzer. The live daemon uses them for languages other than C#. |
 
@@ -43,12 +46,13 @@
 | `src/CodeGraph.Indexer` | `codegraph-index`: the Roslyn extractor, the record and SCIP import, the export, the LSP bridge and the live daemon. |
 | `src/CodeGraph.Contracts` | `ICodeGraph` and its records: the typed API that the MCP server, C# scripts and the `codegraph` CLI share. No dependencies. |
 | `src/CodeGraph.Client` | `CodeGraphClient`, the one `ICodeGraph` implementation, over `GraphStore`. `Open()` reads the graph through a read-only `[LibraryImport]` binding to the DuckDB C library. No Roslyn; trim- and AOT-safe. |
-| `src/CodeGraph.Cli` | `codegraph`: a Native AOT command-line tool over the client, JSON on stdout. A prototype for [the lite benchmark](../bench/README.md). |
+| `src/CodeGraph.Cli` | `codegraph`: the command-line tool over the client, JSON on stdout, and the question-log hook. The project builds Native AOT; the release archives carry it ReadyToRun. |
 | `src/CodeGraph.Mcp` | `codegraph-mcp`: the MCP server and its tools. find_symbol, outline, callers_of, callees_of, impact_of, tests_for and snippet take their data from `CodeGraphClient`. |
 | `src/CodeGraph.Web` | The graph viewer for `codegraph-mcp --web`. |
 | `extractors/typescript` | `codegraph-ts`: the TypeScript and Angular extractor, with typescript-language-server. |
 | `obsidian-plugin` | The Obsidian plugin (retired; kept in the repo). Plain CommonJS with no dependencies, bundled into `main.js`. |
 | `tests/CodeGraph.Tests` | The .NET test suite. |
+| `bench` | The [lite benchmark](../bench/README.md): `codegraph-modebench`, its tasks, the profile of each mode and the results. |
 | `tools/CodeGraph.Bench` | The benchmark tool. |
 | `tools/corpus` | The generated codebases and the Docker test matrix. |
 | `tools/obsidian-e2e` | The plugin tests in real Obsidian, headless in Docker, and the screenshot script (retired; kept in the repo). |
@@ -64,6 +68,7 @@ The store and the server do not depend on a language.
 | `codegraph-index` (one run) | You, or `init` | After the index | Source files | The graph |
 | `codegraph-index --watch` | You, or the server | Ctrl+C, a signal, or the idle time | Source files | The graph |
 | `codegraph-mcp` | The client | When the client stops | The graph | Telemetry only |
+| `codegraph` | You, a script, or the client's shell | After one answer | The graph | Nothing. `codegraph hook` writes the question log. |
 | `codegraph-ts`, SCIP indexer | The indexer | After the index | Source files | Records on stdout, or an index file |
 | Language server | The live daemon | With the live daemon | Source files | Nothing |
 
@@ -83,6 +88,27 @@ The graph is a DuckDB file at `<worktree root>/.codegraph/graph.db`.
 
 The schema version is 6.
 When the version changes, the indexer builds the graph again from the start.
+
+## Three ways to ask
+
+The client can reach the graph in three ways.
+`CODEGRAPH_MODE` on `codegraph-mcp` selects the way, and the client gets the instructions for that way.
+
+| Mode | The client | What enters the context of the client |
+|---|---|---|
+| `direct` (the default) | Calls the MCP tools. | Each tool answer. |
+| `lite-cli` | Runs `codegraph` in the shell and filters the JSON with `jq`. | Only what the shell command prints. |
+| `lite` | Writes a C# script that calls `CodeGraphClient`, and runs it with `dotnet run`. | Only what the script prints. |
+
+All three use the same API, `ICodeGraph` in `src/CodeGraph.Contracts`, and its one implementation, `CodeGraphClient`.
+The MCP tools find_symbol, outline, callers_of, callees_of, impact_of, tests_for and snippet format the answers of `CodeGraphClient`.
+Thus the three modes answer from the same queries, and only the way to ask is different.
+
+The MCP server walks its copy of the graph in memory.
+`codegraph` and the scripts open the file read-only through the DuckDB C library and answer with SQL.
+They do not mark stale rows.
+
+[Measured results](measured-results.md#code-mode-lite) gives what each mode cost in tokens.
 
 ## Language routes
 
@@ -154,6 +180,8 @@ This check does not connect, so it takes microseconds when no live daemon runs.
 - The server only reads the graph. It does not change your files.
 - The live tools `check_change` and `rename_preview` do their work in memory. They do not write to disk.
 - The pipe is local. It does not open a network port.
+- `codegraph` and `CodeGraphClient` open the graph read-only. `QueryAsync` and `codegraph query` run one SELECT with external access off, a row limit and a time limit.
+- The question log is off until you add the hooks. It holds your prompts, in `.codegraph/questions.jsonl` on your machine.
 
 ## Design decisions
 
@@ -165,6 +193,9 @@ This check does not connect, so it takes microseconds when no live daemon runs.
 | The server walks a copy in memory | DuckDB is made for scans, not for walks from node to node. A recursive SQL walk read the edge table again at each depth. The arrays in memory are 10 to 5,000 times faster, and the SQL stays as the reference for the tests. |
 | The live daemon is optional | The graph tools work without it. The live tools add positions, diagnostics and what-if compiles. |
 | Short walk answers | A large answer fills the context of the client. 200 rows and the counts are enough to decide. |
+| One typed API for all readers | `ICodeGraph` serves the MCP server, the CLI and C# scripts. A benchmark of the modes then compares only the way to ask. |
+| The client binds the DuckDB C library itself | The reader of DuckDB.NET.Data gives trim and AOT warnings. A small `[LibraryImport]` binding lets the CLI build Native AOT. Writes still use DuckDB.NET. |
+| The archives carry the CLI ReadyToRun | Native AOT for linux-arm64 on the x64 build machine needs a cross toolchain. The start-up time of the ReadyToRun CLI is not measured. |
 | SCIP for breadth | One importer gives six languages. A language that needs more gets its own extractor, as TypeScript did. |
 | TypeScript 6 for the extractor | TypeScript 7 is the native compiler. It has no compiler API that a Node.js program can use. |
 

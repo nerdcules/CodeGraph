@@ -51,6 +51,11 @@ executables into the install folder, exactly like a release but from your workin
 (`setup.ps1`) skips publishing: it writes the repo's `.mcp.json` to run the server with `dotnet run
 --no-build` from the checkout, so a `git pull` and a build is an upgrade.
 
+`--from-source` publishes the `codegraph` CLI ReadyToRun, as the release archives carry it.
+A Native AOT build of the CLI (`dotnet publish src/CodeGraph.Cli -c Release -r linux-x64`) needs clang and the
+zlib headers on Linux, and the Visual Studio C++ build tools on Windows; [bench/README.md](../bench/README.md#build)
+has the commands.
+
 ```bash
 ./install.sh --from-source ~/dev/App       # publish this checkout to ~/.codegraph/bin
 ./setup.sh --solution ~/dev/App/App.sln     # or point the repo at the checkout
@@ -60,6 +65,9 @@ executables into the install folder, exactly like a release but from your workin
 
 ```
 src/CodeGraph.Core      model, DuckDB store, traversals, full-text search, telemetry, live protocol
+src/CodeGraph.Contracts ICodeGraph and its records: the typed API of the server, the CLI and C# scripts (no dependencies)
+src/CodeGraph.Client    CodeGraphClient: ICodeGraph over the store, read-only through the DuckDB C library; QuestionShape
+src/CodeGraph.Cli       codegraph: the command-line tool (Native AOT project), the question-log hook
 src/CodeGraph.Indexer   codegraph-index: Roslyn extractor, record and SCIP import, watch mode, live daemon, exports
 extractors/typescript   codegraph-ts: TypeScript and Angular extractor (Node), with typescript-language-server
 src/CodeGraph.Mcp       codegraph-mcp: stdio MCP server over graph.db
@@ -68,6 +76,7 @@ obsidian-plugin         Obsidian plugin (retired; kept in the repo): the graph a
 plugin                  Claude Code plugin: the server, a skill, and a launcher that installs the release
 tests/CodeGraph.Tests   store, search, telemetry, extraction, incremental and watch-mode sync, live daemon, exports
 tools/CodeGraph.Bench   codegraph-bench: the numbers in BENCHMARKS.md
+bench                   codegraph-modebench: the lite benchmark of the MCP tools, the CLI and C# scripts
 tools/corpus            generated codebases in eight languages, run in Docker, with answer keys
 tools/eval              runs of four assistants with and without CodeGraph, scored against a run-time answer key
 tools/obsidian-e2e      the Obsidian plugin end to end in real Obsidian, headless (retired; kept in the repo)

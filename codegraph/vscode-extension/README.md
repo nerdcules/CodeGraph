@@ -8,6 +8,10 @@ the graph fresh. It also shows how each graph stands, in a sidebar and in the st
 
 ![The Overview view of this repository's graph, in the Dark Modern and Light Modern colours](media/screenshot-overview.png)
 
+*This repository's graph on 23 November 2026 (release 1.6.0, a live daemon started from a terminal, no tool calls
+that week). Rendered from the extension's own `media/overview.js` and `overview.css` with VS Code 1.146's Dark Modern
+and Light Modern colours, outside VS Code, by [`scripts/screenshot.py`](scripts/screenshot.py).*
+
 *The Overview of this repository's graph at commit `63f502c`, with its daemon running. It was drawn from the output
 of `codegraph-index status --json` by the extension's own page script and stylesheet, in a browser, with the colour
 tokens of VS Code's Dark Modern and Light Modern themes.*
@@ -154,7 +158,7 @@ one. Turn it off with `codegraph.registerMcpServer`.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `codegraph.installDir` | empty | The folder with `codegraph-index` and `codegraph-mcp`. When it is empty, the extension uses `codegraph-index` on `PATH`, else the installers' folder. |
+| `codegraph.installDir` | empty | The folder with `codegraph-index` and `codegraph-mcp` (and, from release 1.6.0, `codegraph`). When it is empty, the extension uses `codegraph-index` on `PATH`, else the installers' folder. |
 | `codegraph.daemon.autoStart` | `true` | Start a daemon for each graph that exists when the workspace opens. |
 | `codegraph.daemon.idleExitMinutes` | `120` | A daemon the extension starts stops after this long unused. |
 | `codegraph.reindexOnSave` | `true` | Re-index the targets no daemon watches when you save one of their files. |

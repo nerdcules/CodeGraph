@@ -142,6 +142,32 @@ same machine.
 
 Four questions, three sessions each: a direction, not a general result.
 
+## Code mode lite
+
+Each MCP tool answer enters the context of the client in full.
+In the lite modes, the client asks the graph through code and prints only the summary
+(see [Three ways to ask](architecture.md#three-ways-to-ask)).
+The [lite benchmark](../bench/README.md) measured the three modes on 23 November 2026:
+Claude Code with `claude-sonnet-5-5`, the Jellyfin graph, 8 tasks, 5 repetitions, 135 runs, none failed.
+
+Median total tokens of a question (min–max), from [the report](../bench/results/20261123-085549/report.md):
+
+| Question | MCP tools (`direct`) | CLI (`lite-cli`) | C# script (`lite`) |
+|---|---|---|---|
+| Single lookup (2 tasks) | 15,716 (15,213–16,231) | 11,936 (11,865–12,091), −24% | 31,094 (22,895–31,791), +98% |
+| Several steps (4 tasks) | 37,677 (18,704–1,662,363) | 23,263 (12,548–40,675), −38% | 35,371 (26,094–310,423), −6% |
+| Analytical (2 tasks) | 81,338 (68,951–146,348) | 32,072 (22,314–40,862), −61% | 38,558 (23,796–56,145), −53% |
+
+- The CLI used fewer tokens than the MCP tools for single lookups and analytical questions, and the ranges do not overlap.
+- For questions with several steps, the medians fell, but the ranges overlap. Thus no saving is claimed for them.
+- The CLI found the correct answer (F1 1.00) in all 40 scored runs.
+  On one task (test methods that are the only callers), the MCP tools scored 0 in 3 of 5 runs.
+- Limits: one model, one repository, 5 repetitions.
+  [The conclusion](../bench/results/20261123-085549/conclusion.md) gives the details.
+
+The MCP tools stay the default: no other client was measured in the lite modes.
+To try the CLI, see [Usage](usage.md#the-codegraph-cli).
+
 ## Where the savings come from
 
 Small answers and fewer model calls come from a few design choices:

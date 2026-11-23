@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" width="960" height="500" role="img" aria-labelledby="title desc">
 <title id="title">CodeGraph architecture</title>
-<desc id="desc">Extractors read the repository and write graph.db. The MCP server loads graph.db into memory, answers from it and talks to the client. The live daemon keeps the code loaded, re-indexes on save and answers live tools over a local pipe.</desc>
+<desc id="desc">Extractors read the repository and write graph.db. The MCP server loads graph.db into memory, answers from it and talks to the client. In the lite modes the client runs the codegraph CLI or a C# script instead, which read graph.db through CodeGraphClient. The live daemon keeps the code loaded, re-indexes on save and answers live tools over a local pipe.</desc>
 <style>
   .bg { fill: #ffffff; }
   text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
@@ -46,7 +46,7 @@
     <path class="headp" d="M0,0 L10,5 L0,10 z"/>
   </marker>
 </defs>
-<rect class="bg" x="0" y="0" width="900" height="500" rx="10"/>
+<rect class="bg" x="0" y="0" width="960" height="500" rx="10"/>
 <text x="20" y="30" class="h" text-anchor="start">Repository</text>
 <rect x="20" y="42" width="190" height="300" rx="10" class="group"/>
 <rect x="32" y="56" width="166" height="56" rx="8" class="box"/>
@@ -93,15 +93,23 @@
 <text x="556" y="318" class="m" text-anchor="middle">write</text>
 <rect x="720" y="160" width="160" height="74" rx="8" class="a3"/>
 <text x="800.0" y="184.5" class="t" text-anchor="middle">codegraph-mcp</text>
-<text x="800.0" y="201.5" class="m" text-anchor="middle">35 read-only tools</text>
+<text x="800.0" y="201.5" class="m" text-anchor="middle">35 tools (direct mode)</text>
 <text x="800.0" y="218.5" class="m" text-anchor="middle">graph held in memory</text>
+<rect x="720" y="272" width="160" height="74" rx="8" class="a3"/>
+<text x="800.0" y="296.5" class="t" text-anchor="middle">codegraph CLI</text>
+<text x="800.0" y="313.5" class="m" text-anchor="middle">or a C# script, through</text>
+<text x="800.0" y="330.5" class="m" text-anchor="middle">CodeGraphClient (read-only)</text>
 <rect x="720" y="44" width="160" height="60" rx="8" class="box"/>
 <text x="800.0" y="70.0" class="t" text-anchor="middle">Claude Code</text>
 <text x="800.0" y="87.0" class="m" text-anchor="middle">or another MCP client</text>
-<path d="M686 205 H718" class="line" marker-end="url(#arrow)"/>
-<text x="702" y="196" class="m" text-anchor="middle">read</text>
+<path d="M686 197 H718" class="line" marker-end="url(#arrow)"/>
+<text x="702" y="188" class="m" text-anchor="middle">read</text>
+<path d="M686 252 C702 252 702 309 718 309" class="line" marker-end="url(#arrow)"/>
+<text x="700" y="296" class="m" text-anchor="end">read</text>
 <path d="M800 158 V106" class="line" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
 <text x="808" y="136" class="m" text-anchor="start">JSON-RPC</text>
+<path d="M882 74 H922 V309 H882" class="line" marker-end="url(#arrow)"/>
+<text x="930" y="190" class="m" text-anchor="middle" transform="rotate(90 930 190)">shell (lite modes)</text>
 <text x="250" y="378" class="h" text-anchor="start">Live daemon: codegraph-index --watch</text>
 <rect x="250" y="390" width="290" height="94" rx="10" class="group"/>
 <rect x="264" y="404" width="128" height="66" rx="8" class="a4"/>
@@ -115,6 +123,6 @@
 <text x="214" y="380" class="m" text-anchor="middle">save</text>
 <path d="M540 420 C610 420 625 330 625 290" class="line" marker-end="url(#arrow)"/>
 <text x="598" y="372" class="m" text-anchor="middle">re-index</text>
-<path d="M540 460 H800 V236" class="dash" marker-end="url(#arrowp)" marker-start="url(#arrowp)"/>
-<text x="660" y="452" class="m" text-anchor="middle">local pipe: live tools, freshness</text>
+<path d="M540 460 H902 V214 H882" class="dash" marker-end="url(#arrowp)" marker-start="url(#arrowp)"/>
+<text x="720" y="452" class="m" text-anchor="middle">local pipe to codegraph-mcp: live tools, freshness</text>
 </svg>

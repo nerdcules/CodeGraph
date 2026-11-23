@@ -13,3 +13,15 @@ Both `dotnet run` rows run the script `callers-by-project.cs -- GuidExtensions.I
 The callers JSON with `--limit 0` is 418,051 bytes. Sizes: AOT `codegraph` 3,456,648 bytes plus `libduckdb.so`
 70,529,912 bytes. win-x64: not built or measured (Native AOT cannot cross-compile between operating systems).
 A compile error of 2 errors is 737 bytes of output, 205 tokens (claude-sonnet-5-5, overhead command).
+
+## The release archive's CLI (ReadyToRun)
+
+Measured 2026-11-23 on the same machine and Jellyfin graph file, with the `codegraph` from the v1.6.0
+`codegraph-linux-x64.tar.gz` (self-contained, ReadyToRun), installed by `install.sh --version v1.6.0`. One warm-up
+run, then 20 runs each, timed from Python's `subprocess.run`. The load average was 5.02 when the runs ended (8
+cores), and the rows above were measured on another day, so compare them with care.
+
+| what | runs | median | min–max |
+|---|---:|---:|---|
+| `codegraph status`, ReadyToRun (v1.6.0 archive) | 20 | 82.5 ms | 79.5–84.6 ms |
+| `codegraph callers GuidExtensions.IsEmpty --depth 2 --limit 0`, ReadyToRun | 20 | 245.1 ms | 236.3–273.1 ms |

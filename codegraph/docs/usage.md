@@ -19,6 +19,7 @@
 - [The tools](#the-tools)
 - [Read an answer](#read-an-answer)
 - [Import and export a graph](#import-and-export-a-graph)
+- [The codegraph CLI](#the-codegraph-cli)
 - [See what the graph did for you](#see-what-the-graph-did-for-you)
 - [Measure it with and without](#measure-it-with-and-without)
 - [Command reference](#command-reference)
@@ -266,6 +267,51 @@ codegraph-index export --language typescript --out graph.ndjson
 Give `--dead-code` to add the dead-code candidates to the export.
 [EXTRACTORS.md](../EXTRACTORS.md#the-record-contract) gives the record format.
 
+## The codegraph CLI
+
+`codegraph` asks the graph from the shell and prints the answer as JSON.
+It is in the install folder from release 1.6.0, next to `codegraph-index` and `codegraph-mcp`.
+Run it in the repository, or give `--db <path>`.
+
+```bash
+codegraph impact GraphStore.Replace | jq -c '{dependents: .dependents.total, tests: .tests.total}'
+codegraph callers GraphStore.Replace --depth 2 --limit 0 | jq -r '.hits.items[].symbol.project' | sort | uniq -c
+```
+
+On this repository's graph (indexed 19 November 2026 at 2a361ca), release 1.6.0 printed:
+
+```
+{"dependents":12,"tests":45}
+     48 CodeGraph.Tests
+      5 CodeGraph.Indexer
+```
+
+The commands are `find`, `outline`, `snippet`, `callers`, `callees`, `impact`, `tests`, `query`, `schema`,
+`status`, `questions` and `hook`. `codegraph --help` gives the options and the JSON of each answer.
+Each list has the first 25 items. Give `--limit 0` for all.
+`codegraph` only reads the graph. It does not mark stale rows, so use `codegraph-index status` to see if the graph is current.
+
+### Let the assistant use the CLI
+
+Set `CODEGRAPH_MODE=lite-cli` in the `env` of the server in `.mcp.json`.
+The server then offers no tools, and the assistant needs instructions for the CLI.
+The [lite benchmark](../bench/README.md) gives the instructions it used, in `bench/profiles/lite-cli/CLAUDE.md`,
+and the permissions, in `bench/profiles/lite-cli/.claude/settings.json`.
+[Measured results](measured-results.md#code-mode-lite) gives what this mode cost compared with the tools.
+
+### Log the shape of each question
+
+The question log records, for each question in Claude Code, how many graph steps it took and how large the answers were.
+It is off until you add the `codegraph hook` hooks to `.claude/settings.json`.
+[MCP-SERVER.md](../MCP-SERVER.md#question-log-opt-in-claude-code) gives the hooks.
+To read the log, with the tokens of each question, run this in the repository:
+
+```bash
+codegraph questions
+```
+
+The log is `.codegraph/questions.jsonl`. It holds your prompts and stays on your machine.
+
 ## See what the graph did for you
 
 The server writes one line per tool call to `.codegraph/telemetry.jsonl`.
@@ -403,6 +449,8 @@ codegraph-index stop [--db <path>]
 codegraph-index compare <prompt> [--runs <n>] [--model <name>] [--effort <level>] [--prompt-file <file>]
                 [--allow <rule>] [--out <folder>] [--timeout <seconds>] [--claude <path>] [--yes]
 codegraph-mcp [<graph.db>] [--root <folder>] [--web <port>]
+codegraph <find|outline|snippet|callers|callees|impact|tests|query|schema|status|questions> [arguments] [--limit <n>] [--db <path>]
+codegraph hook
 ```
 
 | Option | Function |
@@ -417,16 +465,18 @@ codegraph-mcp [<graph.db>] [--root <folder>] [--web <port>]
 | `--root <folder>` | Find the graph from this folder, not from the working folder of the server. |
 | `--web <port>` | Serve the graph viewer on this local port. |
 | `--json` | With `status`, print the report as JSON, for tools such as the VS Code extension. |
+| `--limit <n>` | With `codegraph`, the number of items in each list. The default is 25. `0` gives all. |
 
 ## Environment variables
 
 | Variable | Function |
 |---|---|
-| `CODEGRAPH_DB` | The graph file for the server. A path argument has priority. |
-| `CODEGRAPH_ROOT` | The folder from which the server finds the graph. `--root` has priority. |
+| `CODEGRAPH_DB` | The graph file for the server and for `codegraph`. A path argument has priority. |
+| `CODEGRAPH_ROOT` | The folder from which the server and `codegraph` find the graph. For the server, `--root` has priority. |
+| `CODEGRAPH_MODE` | `direct` (the default): the server offers its tools. `lite` or `lite-cli`: it offers no tools, for an assistant that uses C# scripts or `codegraph`. See [Three ways to ask](architecture.md#three-ways-to-ask). |
 | `CODEGRAPH_DAEMON=auto` | The server starts the live daemon on its first tool call. |
 | `CODEGRAPH_INDEXER` | The path of `codegraph-index`, for the server to start the live daemon. Use it when the indexer is not next to the server. |
-| `CODEGRAPH_TELEMETRY=off` | The server keeps the tool calls in memory only. It does not write `.codegraph/telemetry.jsonl`. |
+| `CODEGRAPH_TELEMETRY=off` | The server keeps the tool calls in memory only. It does not write `.codegraph/telemetry.jsonl`. `codegraph hook` writes no question log. |
 | `CODEGRAPH_SNAPSHOT=off` | The server answers with SQL on the graph file, not from its copy in memory. |
 | `CODEGRAPH_LSP` | The language server command for the live tools, for example `jdtls -data /tmp/ws`. |
 | `CODEGRAPH_TS` | The path of the TypeScript extractor `cli.mjs`. |

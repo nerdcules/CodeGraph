@@ -30,6 +30,10 @@ round 10 also indexed on Node 20); Java, Go, Rust and Python need their SCIP ind
 
 The server shows in `/mcp` as `plugin:codegraph:codegraph`; its tools are `mcp__plugin_codegraph_codegraph__<tool>`.
 
+From release 1.6.0, `~/.codegraph/bin` also holds the `codegraph` CLI (see [Usage](../docs/usage.md#the-codegraph-cli)).
+The launcher installs a release only when `codegraph-mcp` is missing, so an earlier install keeps its version:
+run the install command again to upgrade it ([Upgrade](../docs/installation.md#upgrade)).
+
 ## Windows
 
 A plugin's MCP command is a shell script, so on Windows install CodeGraph with `install.ps1` first and

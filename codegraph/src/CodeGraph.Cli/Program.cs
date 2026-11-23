@@ -7,7 +7,7 @@ using CodeGraph.Client;
 using CodeGraph.Contracts;
 
 // codegraph <command> [arguments] [options]: one ICodeGraph call, its result as JSON on stdout. Errors go to stderr
-// with exit code 1 (2 for a usage error). Hand-rolled parsing: ten commands and a few options need no library, and
+// with exit code 1 (2 for a usage error). Hand-rolled parsing: twelve commands and a few options need no library, and
 // nothing here uses reflection, so the Native AOT publish stays warning-free.
 return await CodeGraphCli.RunAsync(args, Console.Out, Console.Error, Console.In);
 

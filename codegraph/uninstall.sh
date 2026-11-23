@@ -131,7 +131,7 @@ PY
         fi
     done
 
-    if [ -d "$dir/.codegraph" ] && confirm "Delete the graph and telemetry in $dir/.codegraph?"; then
+    if [ -d "$dir/.codegraph" ] && confirm "Delete the graph, telemetry and question log in $dir/.codegraph?"; then
         rm -rf "$dir/.codegraph"
         echo "deleted $dir/.codegraph"
     fi

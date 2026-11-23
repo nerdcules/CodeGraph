@@ -605,6 +605,10 @@ try {
             dotnet publish (Join-Path $root $project) -c Release -r $sourceRid --self-contained false -p:PublishReadyToRun=true -o $releaseDir --nologo
             if ($LASTEXITCODE -ne 0) { throw "publish of $project failed" }
         }
+        # The codegraph CLI is a Native AOT project; here it is published ReadyToRun like the release archives carry it,
+        # so a source install needs no C++ build tools.
+        dotnet publish (Join-Path $root 'src/CodeGraph.Cli') -c Release -r $sourceRid --self-contained false -p:PublishAot=false -p:PublishReadyToRun=true -o $releaseDir --nologo
+        if ($LASTEXITCODE -ne 0) { throw 'publish of src/CodeGraph.Cli failed' }
 
         if ($hasNode) {
             # codegraph-index looks for extractors/typescript/cli.mjs beside itself.

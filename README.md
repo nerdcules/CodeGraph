@@ -24,7 +24,10 @@ what it finds as a graph, and serves that graph to your assistant as MCP tools. 
 assistant answered with four codegraph calls in 42 seconds; without CodeGraph it ran eight shell commands, took
 87 seconds and estimated "about 40" tests. On four public repositories in Go, Python, TypeScript and C#, Claude
 Code answered sooner with CodeGraph on all four, in fewer model calls, at a higher token cost
-([measured](codegraph/docs/measured-results.md#four-public-repositories)).
+([measured](codegraph/docs/measured-results.md#four-public-repositories)). From release 1.6.0 a `codegraph` command-line
+tool reads the same graph from the shell; with it in place of the MCP tools, Claude Code used fewer tokens on single
+lookups (−24%) and analytical questions (−61%) in one benchmark of one repository
+([measured](codegraph/docs/measured-results.md#code-mode-lite)).
 
 ## Install
 
@@ -49,6 +52,9 @@ graph's state. Release 1.3.0 is the first full release that carries it.
 To skip the questions, give the answers and `--yes` (`-Yes`):
 `curl ... | bash -s -- ~/dev/YourApp --add-to-path --yes`.
 [Installation](codegraph/docs/installation.md) has every option, upgrade and removal.
+
+To update, run the install command again, or use [`nerdcules-update`](https://github.com/nerdcules/nerdcules#updates):
+`nerdcules-update apply codegraph`, and `nerdcules-update rollback codegraph` to go back.
 
 The project lives in [codegraph/](codegraph/). Its [README](codegraph/README.md) shows the first five
 minutes, the questions you can ask, and where to go next depending on who you are; the

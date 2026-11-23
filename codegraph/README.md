@@ -7,7 +7,7 @@
 **CodeGraph gives your AI coding assistant the compiler's answers: who calls this, what breaks if I
 change it, which tests guard it.**
 
-It is an MCP server, so it works with any assistant that speaks MCP. `codegraph-index init` writes the
+It is an MCP server, so it works with any assistant that speaks MCP, and a `codegraph` command-line tool for the shell and for scripts. `codegraph-index init` writes the
 config for Claude Code, GitHub Copilot (CLI, VS Code, Visual Studio, JetBrains), Codex, Cursor, the Gemini
 CLI, and the Roo Code, Kilo Code and Continue extensions. [Tested with](docs/installation.md#tested-with)
 Claude Code, the Copilot CLI, Copilot in VS Code, Codex and Cursor, with real tool calls.
@@ -27,12 +27,15 @@ were not, and Cursor's runs varied too much to call
 Python, TypeScript, C#) on 19 November, Claude Code with it answered sooner on all four (median 5.5 to 20.0
 seconds sooner), made fewer model calls in all 12 rounds, and gave a test total in all 12 answers, where the
 answers without it gave none on three of the four. The trade is tokens: the tool definitions add 8,681 tokens to
-each session's start, so input tokens and cost were higher on all four. The total is the tests that can reach the
+each session's start, so input tokens and cost were higher on all four. In a lite benchmark on 23 November (one model,
+one repository, 135 runs), Claude Code with the `codegraph` CLI and no MCP tools used 24% fewer tokens than with the
+tools on single lookups and 61% fewer on analytical questions; on questions of several steps the ranges overlapped
+([measured](docs/measured-results.md#code-mode-lite)). The total is the tests that can reach the
 method, which can run above the tests that execute it: on Python's HTTPX, 225 listed where 46 run it
 ([measured](docs/measured-results.md#four-public-repositories)).
 
 - Precision and recall of 100% on generated codebases in eight languages, on current toolchains and on 2023-era ones, bar one old rust-analyzer at 87% call recall ([benchmarks](BENCHMARKS.md))
-- 461 tests: in a local Linux run on 19 November 2026, 459 passed and 2 skipped (tests of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
+- 559 tests: in a local Linux run on 23 November 2026 (release 1.6.0 plus these doc changes), 557 passed and 2 skipped (tests of Windows drive letters). [CI](https://github.com/nerdcules/CodeGraph/actions/workflows/ci.yml) runs them on Linux, macOS and Windows for every push to main and every pull request; each run's log has its counts
 - Prebuilt for six platforms, nothing to compile ([releases](https://github.com/nerdcules/CodeGraph/releases/latest))
 
 Languages: C# through Roslyn; TypeScript, JavaScript and Angular through the TypeScript compiler; Java,
@@ -66,6 +69,19 @@ Windows (PowerShell):
 
 To skip the questions, give the answers and `--yes`: `... | bash -s -- ~/dev/YourApp --add-to-path --yes`.
 [Installation](docs/installation.md) has every option, the Claude Code plugin, upgrade and removal.
+
+### Updating
+
+Run the install command again, or let [`nerdcules-update`](https://github.com/nerdcules/nerdcules#updates)
+do it. It runs this repository's `install.sh` at a release tag and goes back:
+
+```bash
+nerdcules-update apply codegraph       # the newest release on CodeGraph's channel
+nerdcules-update rollback codegraph    # back to the version before
+nerdcules-update channel codegraph prerelease   # also offer pre-releases such as v1.6.0-beta.1
+```
+
+Close the assistant sessions that run `codegraph-mcp` first: the install script stops while one runs.
 
 ## Your first five minutes
 
@@ -149,7 +165,7 @@ applies a save in about 1 to 1.5 seconds (BENCHMARKS rounds 12 and 13), and answ
 | You are | Read |
 |---|---|
 | A developer who uses an AI coding assistant | [Installation](docs/installation.md), [Usage](docs/usage.md), [Prompts that use the graph](PROMPTS.md), [Use cases](docs/use-cases.md) |
-| Deciding whether to trust it | [Measured results](docs/measured-results.md), [How it works](docs/how-it-works.md), [Performance](docs/performance.md), [Benchmarks](BENCHMARKS.md), [Trust and privacy](#trust-and-privacy) |
+| Deciding whether to trust it | [Measured results](docs/measured-results.md), [How it works](docs/how-it-works.md), [Performance](docs/performance.md), [Benchmarks](BENCHMARKS.md), [The lite benchmark](bench/README.md), [Trust and privacy](#trust-and-privacy) |
 | Adding a language, or hacking on it | [Contributing](docs/contributing.md), [Architecture](docs/architecture.md), [The extractor contract](EXTRACTORS.md), [Language versions](docs/language-versions.md), [Every tool](MCP-SERVER.md) |
 | Curious where this came from | [The story](docs/story.md): a developer, Claude Code, and the thought that the compiler already knew the answer |
 | Wondering what is still missing | [What is missing](docs/roadmap.md), in order of what would matter most |
@@ -164,7 +180,9 @@ applies a save in about 1 to 1.5 seconds (BENCHMARKS rounds 12 and 13), and answ
 - **Read-only on the graph.** The server only reads the graph file. What it writes itself is telemetry:
   one JSON line per call in `.codegraph/telemetry.jsonl` beside the graph (`CODEGRAPH_TELEMETRY=off`
   keeps it in memory). A live daemon it starts when asked (`live_status start=true`, or
-  `CODEGRAPH_DAEMON=auto`) is the indexer, which writes the graph and `daemon.log`.
+  `CODEGRAPH_DAEMON=auto`) is the indexer, which writes the graph and `daemon.log`. The `codegraph` CLI only
+  reads the graph; its opt-in Claude Code hook writes your prompts and each question's shape to
+  `.codegraph/questions.jsonl` ([question log](MCP-SERVER.md#question-log-opt-in-claude-code)).
 - **Honest about staleness.** Every answer compares the graph with the working tree first.
 - **The repo's MCP config is repo content.** Claude Code asks before starting a project's
   servers, Cursor lists a new one as Disabled until you enable it,
