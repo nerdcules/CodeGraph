@@ -1,0 +1,53 @@
+{
+  "where-defined": {
+    "Items": [
+      "Emby.Server.Implementations/EntryPoints/LibraryChangedNotifier.cs"
+    ],
+    "Counts": null,
+    "How": "file of T:Emby.Server.Implementations.EntryPoints.LibraryChangedNotifier"
+  },
+  "impact-tests": {
+    "Items": [
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_NonStubItemPopulatedProviderRemote_DownloadsIfNecessary(MediaBrowser.Model.Entities.ImageType, int, bool)",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolderWithMixedExtras_FindsCorrectExtras()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolderWithMixedExtras_FindsOnlyExtrasInMovieFolder()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolderWithParts_FindsCorrectExtras()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolder_CleanExtraNames()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeparateMovieFolder_FindsCorrectExtras()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_SeriesWithTrailers_FindsCorrectExtras()",
+      "Jellyfin.Server.Implementations.Tests.Library.LibraryManager.FindExtrasTests.FindExtras_WrongExtensions_FindsNoExtras()",
+      "Jellyfin.MediaEncoding.Subtitles.Tests.SubtitleEncoderTests.GetReadableFile_Valid_Success(MediaBrowser.Model.Dto.MediaSourceInfo, MediaBrowser.Model.Entities.MediaStream, MediaBrowser.MediaEncoding.Subtitles.SubtitleEncoder.SubtitleInfo)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_EmptyItemPopulatedProviderDynamic_AddsImages(MediaBrowser.Model.Entities.ImageType, int, bool, MediaBrowser.Model.MediaInfo.MediaProtocol)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_EmptyItemPopulatedProviderRemoteExtras_LimitsImages(MediaBrowser.Model.Entities.ImageType, int)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_PopulatedItemEmptyProviderRemoteFullRefresh_DoesntClearImages(MediaBrowser.Model.Entities.ImageType, int)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_PopulatedItemPopulatedProviderDynamic_UpdatesImagesIfForced(MediaBrowser.Model.Entities.ImageType, int, bool)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_PopulatedItemPopulatedProviderRemote_UpdatesImagesIfForced(MediaBrowser.Model.Entities.ImageType, int, bool)",
+      "Jellyfin.Providers.Tests.Manager.ItemImageProviderTests.RefreshImages_ProviderRemote_FiltersByWidth(int?, bool)",
+      "Jellyfin.Providers.Tests.MediaInfo.EmbeddedImageProviderTests.GetImage_Attachment_ReturnsCorrectSelection(string, string?, int, MediaBrowser.Model.Entities.ImageType, MediaBrowser.Model.Drawing.ImageFormat?)",
+      "Jellyfin.Providers.Tests.MediaInfo.EmbeddedImageProviderTests.GetImage_Embedded_ReturnsCorrectSelection(string?, string?, int, MediaBrowser.Model.Entities.ImageType, MediaBrowser.Model.Drawing.ImageFormat?)",
+      "Jellyfin.Providers.Tests.MediaInfo.VideoImageProviderTests.GetImage_DefaultVideoStreams_ReturnsCorrectStreamImage(int, int)",
+      "Jellyfin.Providers.Tests.MediaInfo.VideoImageProviderTests.GetImage_TimeSpan_SelectsCorrectTime(int?, long)",
+      "Jellyfin.Providers.Tests.Manager.ProviderManagerTests.RefreshSingleItem_ServiceOrdering_FollowsPriority(Moq.Mock\u003CMediaBrowser.Controller.Providers.IMetadataService\u003E[], int)"
+    ],
+    "Counts": null,
+    "How": "ImpactAsync(M:MediaBrowser.Model.IO.IFileSystem.GetFileInfo(System.String), depth 5).Tests; 136 dependents"
+  },
+  "dead-code": {
+    "Items": [
+      "Jellyfin.LiveTv.DefaultLiveTvService.OnTimerManagerTimerFired(object, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerInfo\u003E)",
+      "Jellyfin.LiveTv.IO.EncodedRecorder.Stop()",
+      "Jellyfin.LiveTv.LiveTvManager.GetServiceInfo(MediaBrowser.Controller.LiveTv.ILiveTvService)",
+      "Jellyfin.LiveTv.LiveTvManager.IsLiveTvEnabled(Jellyfin.Database.Implementations.Entities.User)",
+      "Jellyfin.LiveTv.LiveTvManager.OnEmbyTvTimerCancelled(object, Jellyfin.Data.Events.GenericEventArgs\u003Cstring\u003E)",
+      "Jellyfin.LiveTv.LiveTvManager.OnEmbyTvTimerCreated(object, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingNotifier.OnLiveTvManagerSeriesTimerCancelled(object?, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerEventInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingNotifier.OnLiveTvManagerSeriesTimerCreated(object?, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerEventInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingNotifier.OnLiveTvManagerTimerCancelled(object?, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerEventInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingNotifier.OnLiveTvManagerTimerCreated(object?, Jellyfin.Data.Events.GenericEventArgs\u003CMediaBrowser.Controller.LiveTv.TimerEventInfo\u003E)",
+      "Jellyfin.LiveTv.Recordings.RecordingsManager.OnNamedConfigurationUpdated(object?, MediaBrowser.Common.Configuration.ConfigurationUpdateEventArgs)",
+      "Jellyfin.LiveTv.Timers.TimerManager.TimerCallback(object?)"
+    ],
+    "Counts": null,
+    "How": "reference SQL in tasks.json"
+  }
+}

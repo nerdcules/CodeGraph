@@ -151,7 +151,8 @@ latest is older. To try the packaging locally:
 CODEGRAPH_VERSION=v1.2.0 tools/release/package.sh linux-x64     # → dist/codegraph-linux-x64.tar.gz
 ```
 
-A release archive holds the two executables with their own .NET runtime (ReadyToRun, self-contained), the
+A release archive holds the three executables (`codegraph-index`, `codegraph-mcp` and the `codegraph` CLI) with their own
+.NET runtime (ReadyToRun, self-contained; the CLI is built Native AOT only from source), the
 TypeScript extractor with its packages, `LICENSE` and `VERSION`. C# indexing still needs the .NET SDK on
 the machine, because MSBuild loads the projects.
 

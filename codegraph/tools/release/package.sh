@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Publishes codegraph-index and codegraph-mcp self-contained for each runtime identifier given, bundles the
+# Publishes codegraph-index, codegraph-mcp and the codegraph CLI self-contained for each runtime identifier given, bundles the
 # TypeScript extractor with them, and writes one archive per platform into dist/:
 #
 #   tools/release/package.sh linux-x64 linux-arm64        → dist/codegraph-linux-x64.tar.gz, ...
 #   CODEGRAPH_VERSION=v1.2.0 tools/release/package.sh win-x64   → dist/codegraph-win-x64.zip
 #
-# The archive holds the two executables, their runtime (no .NET install needed to run them; C# indexing still
+# The archive holds the three executables, their runtime (no .NET install needed to run them; C# indexing still
 # needs the .NET SDK for MSBuild) and extractors/typescript with its packages (Node.js needed at run time).
 # Cross-architecture publishing works on the same OS, so CI runs this once per OS. Release workflow and
 # install scripts rely on the names above.
@@ -36,6 +36,10 @@ for rid in "$@"; do
         dotnet publish "$root/$project" -c Release -r "$rid" --self-contained true -p:PublishReadyToRun=true \
             ${version:+-p:Version="$version"} -o "$out" --nologo -v quiet
     done
+    # The codegraph CLI is a Native AOT project, but Native AOT cannot cross-compile between architectures without a
+    # cross toolchain (linux-arm64 on an x64 runner), so the archive ships it ReadyToRun like the other two.
+    dotnet publish "$root/src/CodeGraph.Cli" -c Release -r "$rid" --self-contained true -p:PublishAot=false \
+        -p:PublishReadyToRun=true ${version:+-p:Version="$version"} -o "$out" --nologo -v quiet
 
     if [ -d "$extractor/node_modules" ]; then
         mkdir -p "$out/extractors/typescript"
@@ -52,7 +56,7 @@ for rid in "$@"; do
             ;;
         *)
             archive="$dist/codegraph-$rid.tar.gz"
-            chmod +x "$out/codegraph-index" "$out/codegraph-mcp"
+            chmod +x "$out/codegraph-index" "$out/codegraph-mcp" "$out/codegraph"
             tar -czf "$archive" -C "$out" .
             ;;
     esac

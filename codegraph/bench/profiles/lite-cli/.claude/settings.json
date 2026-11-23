@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": ["Bash(codegraph *)", "Bash(jq *)", "Bash(grep *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(cut *)", "Bash(tr *)", "Read(/{{RUN_DIR}}/**)", "ToolSearch"],
+    "deny": ["Edit", "Write", "WebFetch", "WebSearch"],
+    "defaultMode": "dontAsk"
+  },
+  "autoMemoryEnabled": false,
+  "env": {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+    "CODEGRAPH_DB": "{{DB}}"
+  }
+}

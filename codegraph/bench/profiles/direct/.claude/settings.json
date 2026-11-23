@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": ["mcp__codegraph__*", "ToolSearch"],
+    "deny": ["Bash", "Edit", "Write", "WebFetch", "WebSearch"],
+    "defaultMode": "dontAsk"
+  },
+  "autoMemoryEnabled": false,
+  "env": { "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1" }
+}

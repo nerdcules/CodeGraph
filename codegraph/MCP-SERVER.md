@@ -109,6 +109,7 @@ codegraph-mcp [path-to-graph.db] [--root DIR] [--web PORT]
 | `CODEGRAPH_EMBEDDINGS_URL`, `CODEGRAPH_EMBEDDINGS_MODEL`, `CODEGRAPH_EMBEDDINGS_KEY` | an OpenAI-compatible embeddings endpoint for semantic search; set the same values for `codegraph-index`. See [Semantic search](#semantic-search) |
 | `CODEGRAPH_DAEMON=auto` | start the live daemon on the first tool call when none runs; it stops itself after 120 min unused |
 | `CODEGRAPH_SNAPSHOT=off` | answer every graph read with SQL on the file instead of from the in-memory graph; see [Concurrency](#concurrency) |
+| `CODEGRAPH_MODE` | `direct` (the default): the tools and instructions as described here. `lite` or `lite-cli`: no tools and no instructions, for an agent that reaches the graph through C# scripts or the `codegraph` CLI instead ([bench/README.md](bench/README.md)). Any other value stops the server with exit code 1 |
 
 ### What clients show for the server
 
@@ -313,6 +314,33 @@ Each call is appended as one JSON line to `.codegraph/telemetry.jsonl` beside th
 answer names, each counted once per call. It is a size, not what a session without the graph would have read;
 that is not recorded. `usage_stats` turns the file into per-tool totals. The file
 never leaves the machine; `CODEGRAPH_TELEMETRY=off` disables it.
+
+### Question log (opt-in, Claude Code)
+
+The telemetry above has one line per tool call and no question. To see which questions take one graph call and
+which take several (issue #18), register the `codegraph` CLI as a Claude Code hook. It writes one line per question
+to `.codegraph/questions.jsonl` beside the graph. Add this to the project's `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "codegraph hook" }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "codegraph hook" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "codegraph hook" }] }]
+  }
+}
+```
+
+Each line holds the prompt, `CODEGRAPH_MODE` as the session saw it, the graph steps (codegraph MCP tool calls,
+`codegraph` CLI invocations and `dotnet run` scripts), the largest and total result size in characters, whether a
+later step reused an id or name from an earlier result (a heuristic), and the tool calls by name. Tool results are
+kept in `.codegraph/questions-pending/` only until the question ends. `codegraph questions` prints the log with
+each question's tokens, read from the session transcript, and a median per mode and number of graph steps. In a
+test session the tokens it read (9,047) equalled the usage Claude Code reported for that session.
+
+The log stays on the machine and holds your prompts. The hook prints nothing and always exits 0, so it cannot
+change a session; it writes nothing when `CODEGRAPH_TELEMETRY=off` or when no graph is found from the session's
+folder. Tested with Claude Code 2.1.330 on Linux only.
 
 ## Semantic search
 

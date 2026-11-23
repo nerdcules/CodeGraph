@@ -1,3 +1,4 @@
+using CodeGraph.Contracts;
 using CodeGraph.Core;
 using CodeGraph.Core.Live;
 using CodeGraph.Mcp;
@@ -51,6 +52,21 @@ for (var i = 0; i < args.Length; i++)
 
 dbPath ??= Environment.GetEnvironmentVariable("CODEGRAPH_DB");
 
+// CODEGRAPH_MODE=lite or lite-cli: the agent reaches the graph through scripts or the codegraph CLI, so the server
+// advertises no tools and no instructions. Anything but direct, lite or lite-cli stops the server.
+string mode;
+try
+{
+    mode = CodeGraphMode.FromEnvironment();
+}
+catch (ArgumentException e)
+{
+    Console.Error.WriteLine($"codegraph: {e.Message}");
+    return 1;
+}
+
+var advertiseTools = mode == CodeGraphMode.Direct;
+
 // No explicit path: use this worktree's graph, found from the project folder. Claude Code, Codex, the Copilot CLI
 // and the Cursor CLI start MCP servers in the project; an IDE passes it as --root ${workspaceFolder} (or
 // CODEGRAPH_ROOT). One config then serves every worktree of a repo.
@@ -72,6 +88,11 @@ if (!discovered && !File.Exists(dbPath))
     Console.Error.WriteLine("       --web PORT  also serve the graph visualiser on http://localhost:PORT");
     Console.Error.WriteLine("       set CODEGRAPH_DB as an alternative to the positional argument");
     return 1;
+}
+
+if (!advertiseTools)
+{
+    Console.Error.WriteLine($"codegraph: {CodeGraphMode.Variable}={mode}: no tools and no instructions; agents use the C# client or the codegraph CLI");
 }
 
 Console.Error.WriteLine(File.Exists(dbPath)
@@ -134,10 +155,10 @@ void AddGraph(IServiceCollection services)
                 WebsiteUrl = "https://github.com/nerdcules/CodeGraph",
                 Icons = [new Icon { Source = LogoDataUri(), MimeType = "image/svg+xml", Sizes = ["any"] }],
             };
-            options.ServerInstructions = ServerInstructions.Text;
+            options.ServerInstructions = advertiseTools ? ServerInstructions.Text : null;
         })
         .WithStdioServerTransport()
-        .WithToolsFromAssembly()
+        .WithToolsWhen(advertiseTools)
         .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
         {
             if (!File.Exists(dbPath))
@@ -257,6 +278,7 @@ else
 return 0;
 
 // ── Web API routes ────────────────────────────────────────────
+
 static void MapWebApi(WebApplication app)
 {
     var html = ReadEmbeddedHtml();

@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text;
+using CodeGraph.Client;
+using CodeGraph.Contracts;
 using CodeGraph.Core;
 using CodeGraph.Core.Live;
 using ModelContextProtocol.Server;
@@ -16,6 +18,13 @@ namespace CodeGraph.Mcp;
 [McpServerToolType]
 public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, Telemetry telemetry, LiveClient live, SemanticSearch semantic, GraphSnapshotCache snapshots, AnswerPaths paths)
 {
+    /// <summary>
+    /// The ICodeGraph implementation that scripts and the codegraph CLI call, over this call's store. find_symbol,
+    /// outline, callers_of, callees_of, impact_of, tests_for and snippet take their data from it and only format
+    /// here, so the three surfaces cannot disagree. Its methods finish synchronously (see <see cref="Now{T}"/>).
+    /// </summary>
+    private readonly CodeGraphClient graph = new(store, freshness.DbPath);
+
     // ── Live tools: answered by codegraph-index --watch, not by the graph: the Roslyn solution for C#, a language
     // server (typescript-language-server, jdtls, pyright, gopls, rust-analyzer) for the other languages ─────────
 
@@ -437,10 +446,22 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             memberKindFilter = parsedMk;
         }
 
-        var results = store.FindSymbol(
-            query, kindFilter, Math.Clamp(limit, 1, 100),
-            typeKindFilter, accessibilityFilter, isStatic, isAbstract, isVirtual, isAsync, isOverride, memberKindFilter,
-            nameMatch, Math.Max(0, offset), language?.ToLowerInvariant());
+        var results = Now(graph.FindAsync(new SymbolQuery(query)
+        {
+            Kind = kindFilter?.ToString(),
+            Limit = Math.Clamp(limit, 1, 100),
+            TypeKind = typeKindFilter?.ToString(),
+            Accessibility = accessibilityFilter?.ToString(),
+            IsStatic = isStatic,
+            IsAbstract = isAbstract,
+            IsVirtual = isVirtual,
+            IsAsync = isAsync,
+            IsOverride = isOverride,
+            MemberKind = memberKindFilter?.ToString(),
+            Match = nameMatch,
+            Offset = Math.Max(0, offset),
+            Language = language,
+        })).Items;
         return results.Count == 0
             ? $"no symbols match '{query}'. Try a shorter substring or check the index is up to date."
             : Format(results.Select(n => (n, n.Signature)));
@@ -490,13 +511,15 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [Description("List the direct children of a node without bodies: members of a type, types in a file, files in a project. Cheap way to see structure before reading source.")]
     public string Outline([Description("Node id from find_symbol")] string id)
     {
-        var node = store.GetNode(id);
-        if (node is null)
+        // An id only, as before: the tool does not resolve names.
+        if (Now(graph.GetAsync(id)) is null)
         {
             return NotFound(id);
         }
 
-        var children = store.Children(id);
+        var outline = Now(graph.OutlineAsync(id, int.MaxValue));
+        var node = outline.Target;
+        var children = outline.Children.Items;
         var header = $"{node.Kind} {node.FullName}";
         return children.Count == 0
             ? $"{header}\n(no children)"
@@ -508,7 +531,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     public string CallersOf(
         [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("How many hops to follow, 1-20, default 1")] int depth = 1) =>
-        Target(id, out var answer) is { } node ? Traversal(node.Id, store.Callers(node.Id, Math.Clamp(depth, 1, 20)), "callers") : answer!;
+        Resolved(() => Traversal(Now(graph.CallersAsync(id, depth, int.MaxValue)), "callers"));
 
     [McpServerTool(Name = "callees_of", ReadOnly = true, Idempotent = true)]
     [Description("What this member calls. depth 1 = direct callees. Framework and NuGet members it calls are left out unless includeExternal is true.")]
@@ -516,7 +539,8 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         [Description("Node id from find_symbol")] string id,
         [Description("How many hops to follow, 1-20, default 1")] int depth = 1,
         [Description("Also list framework and NuGet members it calls or constructs, default false")] bool includeExternal = false) =>
-        Traversal(id, store.Callees(id, Math.Clamp(depth, 1, 20), includeExternal), "callees");
+        // An id only, as before: the tool does not resolve names.
+        Now(graph.GetAsync(id)) is null ? NotFound(id) : Traversal(Now(graph.CalleesAsync(id, depth, includeExternal, int.MaxValue)), "callees");
 
     [McpServerTool(Name = "impact_of", ReadOnly = true, Idempotent = true)]
     [Description("Everything that could break if this changes: transitive callers, overriders, implementers, subclasses, and for a type every member that references it — and which tests guard it (tests that reach it through calls; a run may execute it in fewer). Call this before editing a shared member or type.")]
@@ -524,14 +548,19 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         [Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id,
         [Description("Max hops, 1-20, default 5")] int depth = 5)
     {
-        if (Target(id, out var answer) is not { } node)
+        Impact impact;
+        try
         {
-            return answer!;
+            impact = Now(graph.ImpactAsync(id, depth, int.MaxValue));
+        }
+        catch (Exception e) when (Unresolved(e) is { } answer)
+        {
+            return answer;
         }
 
-        var hits = store.Impact(node.Id, Math.Clamp(depth, 1, 20));
-        var tests = hits.Where(h => h.Node.IsTest).ToList();
-        var others = hits.Where(h => !h.Node.IsTest).ToList();
+        var node = impact.Target;
+        var tests = impact.Tests.Items;
+        var others = impact.Dependents.Items;
 
         var sb = new StringBuilder();
         sb.AppendLine($"impact of {node.FullName}: {others.Count} dependents, {tests.Count} guarding tests");
@@ -543,7 +572,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         if (others.Count > 0)
         {
             sb.AppendLine(others.Count > MaxRows ? $"dependents (nearest {MaxRows} of {others.Count}):" : "dependents:");
-            sb.Append(Format(others.Take(MaxRows).Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
+            sb.Append(Format(others.Take(MaxRows).Select(h => (h.Symbol, (string?)$"depth {h.Depth}"))));
         }
 
         if (tests.Count > 0)
@@ -551,7 +580,7 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
             sb.AppendLine(tests.Count > MaxTestRows
                 ? $"tests (nearest {MaxTestRows} of {tests.Count}; the rest by depth: {ByDepth(tests.Skip(MaxTestRows))}):"
                 : "tests:");
-            sb.Append(Format(tests.Take(MaxTestRows).Select(h => (h.Node, (string?)$"depth {h.Depth}"))));
+            sb.Append(Format(tests.Take(MaxTestRows).Select(h => (h.Symbol, (string?)$"depth {h.Depth}"))));
         }
         else
         {
@@ -606,12 +635,17 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     [Description("Test methods that call or read this member directly, including through an interface or base member it implements or overrides.")]
     public string TestsFor([Description("Node id or handle from find_symbol, or an exact name (Member, or Type.Member) that one symbol has")] string id)
     {
-        if (Target(id, out var answer) is not { } node)
+        TestList list;
+        try
         {
-            return answer!;
+            list = Now(graph.TestsAsync(id, int.MaxValue));
+        }
+        catch (Exception e) when (Unresolved(e) is { } answer)
+        {
+            return answer;
         }
 
-        var tests = store.DirectTests(node.Id);
+        var tests = list.Tests.Items;
         return tests.Count == 0
             ? "no test calls this member directly (try impact_of for transitive coverage)"
             : Format(tests.Select(t => (t, t.Signature)));
@@ -624,27 +658,27 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
         [Description("Extra lines of context above and below, default 0")] int context = 0,
         CancellationToken cancellationToken = default)
     {
-        if (Target(id, out var answer) is not { } node)
+        Snippet snippet;
+        try
         {
-            return answer!;
+            snippet = await graph.SnippetAsync(id, context, cancellationToken);
+        }
+        catch (Exception e) when (Unresolved(e) is { } answer)
+        {
+            return answer;
         }
 
-        if (node.FilePath is null || !File.Exists(node.FilePath))
+        if (snippet.Lines is null)
         {
-            return $"{node.FullName} has no readable source location ({node.FilePath ?? "no path"})";
+            return $"{snippet.Target.FullName} has no readable source location ({snippet.File ?? "no path"})";
         }
 
-        Telemetry.Current?.AddSourceFile(node.FilePath);
-        var lines = await File.ReadAllLinesAsync(node.FilePath, cancellationToken);
-        var pad = Math.Clamp(context, 0, 50);
-        var start = Math.Max(1, node.StartLine - pad);
-        var end = Math.Min(lines.Length, node.EndLine + pad);
-
+        Telemetry.Current?.AddSourceFile(snippet.File);
         var sb = new StringBuilder();
-        sb.AppendLine($"// {paths.Relative(node.FilePath)}:{start}-{end}");
-        for (var line = start; line <= end; line++)
+        sb.AppendLine($"// {paths.Relative(snippet.File)}:{snippet.StartLine}-{snippet.EndLine}");
+        for (var i = 0; i < snippet.Lines.Count; i++)
         {
-            sb.Append(line).Append(": ").AppendLine(lines[line - 1]);
+            sb.Append(snippet.StartLine + i).Append(": ").AppendLine(snippet.Lines[i]);
         }
 
         return sb.ToString();
@@ -985,6 +1019,73 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
                + "lower the depth, or use path_between for one route, to see the rest\n";
     }
 
+    /// <summary>A client walk formatted as <see cref="Traversal(string, IReadOnlyList{GraphHit}, string)"/> formats a store walk.</summary>
+    private string Traversal(Traversal walk, string label)
+    {
+        var node = walk.Target;
+        var hits = walk.Hits.Items;
+        if (hits.Count == 0)
+        {
+            return $"{node.FullName}: no {label} in the indexed source";
+        }
+
+        if (hits.Count <= MaxRows)
+        {
+            return $"{label} of {node.FullName}:\n{Format(hits.Select(h => (h.Symbol, (string?)$"depth {h.Depth}")))}";
+        }
+
+        return $"{hits.Count} {label} of {node.FullName}; by depth: {ByDepth(hits)}\nnearest {MaxRows}:\n"
+               + Format(hits.Take(MaxRows).Select(h => (h.Symbol, (string?)$"depth {h.Depth}")))
+               + "lower the depth, or use path_between for one route, to see the rest\n";
+    }
+
+    private static string ByDepth(IEnumerable<Hit> hits) =>
+        string.Join(", ", hits.GroupBy(h => h.Depth).OrderBy(g => g.Key).Select(g => $"{g.Key}: {g.Count()}"));
+
+    /// <summary>
+    /// The client's methods run synchronously over the store and return completed tasks; the sync tools take their
+    /// results without blocking a thread.
+    /// </summary>
+    private static T Now<T>(Task<T> task) => task.GetAwaiter().GetResult();
+
+    private string Resolved(Func<string> answer)
+    {
+        try
+        {
+            return answer();
+        }
+        catch (Exception e) when (Unresolved(e) is { } explained)
+        {
+            return explained;
+        }
+    }
+
+    /// <summary>
+    /// What the tool says when its id argument names no node, or a name several symbols have: the candidates with
+    /// their ids, so the next call can pick one. In the 19 November 2026 sessions find_symbol ran 17 times in 12
+    /// sessions only to turn a name the model already had into an id.
+    /// </summary>
+    private string? Unresolved(Exception error) => error switch
+    {
+        SymbolNotFoundException { Query: var idOrName } when NodeHandles.LooksLikeHandle(idOrName) =>
+            $"'{idOrName}' is not a handle that this server knows: the node is gone, or the server loads a new graph now. Pass the name, or try again.",
+        SymbolNotFoundException { Query: var idOrName } =>
+            $"no node has the id '{idOrName}' and no symbol has that exact name. A re-index retires the id of a removed member; "
+            + "use find_symbol with a partial name. Ids look like M:Namespace.Type.Method(System.String)",
+        AmbiguousSymbolException { Query: var idOrName, Candidates: var matches } when matches.Count > 20 =>
+            $"more than 20 symbols are named {idOrName}; pass the id of one, or use find_symbol with nameMatch Exact and offset to see the rest:\n"
+            + Format(matches.Take(20).Select(n => (n, n.Signature))),
+        AmbiguousSymbolException { Query: var idOrName, Candidates: var matches } =>
+            $"{matches.Count.ToString(CultureInfo.InvariantCulture)} symbols are named {idOrName}; pass the id of one:\n"
+            + Format(matches.Select(n => (n, n.Signature))),
+        _ => null,
+    };
+
+    /// <summary>Client rows in the one row format: the symbol's absolute path is what freshness and telemetry know.</summary>
+    private string Format(IEnumerable<(Symbol Symbol, string? Extra)> rows) =>
+        Format(rows.Select(row => (new GraphNode(row.Symbol.Id, Enum.Parse<NodeKind>(row.Symbol.Kind), row.Symbol.Name, row.Symbol.FullName,
+            row.Symbol.Signature, row.Symbol.File, row.Symbol.StartLine, row.Symbol.EndLine, row.Symbol.IsTest), row.Extra)));
+
     /// <summary>Rows a traversal answer lists before it summarises; enough to act on, small enough to read.</summary>
     private const int MaxRows = 200;
 
@@ -1033,29 +1134,15 @@ public sealed class CodeGraphTools(GraphStore store, IndexFreshness freshness, T
     private GraphNode? Target(string idOrName, out string? answer)
     {
         answer = null;
-        if (store.GetNode(idOrName) is { } node)
+        try
         {
-            return node;
+            return graph.Resolve(idOrName);
         }
-
-        var matches = store.FindSymbol(idOrName, null, 21, null, null, null, null, null, null, null, null, "Exact", 0, null);
-        if (matches.Count == 1)
+        catch (Exception e) when (Unresolved(e) is { } explained)
         {
-            return matches[0];
+            answer = explained;
+            return null;
         }
-
-        answer = matches.Count switch
-        {
-            0 when NodeHandles.LooksLikeHandle(idOrName) =>
-                $"'{idOrName}' is not a handle that this server knows: the node is gone, or the server loads a new graph now. Pass the name, or try again.",
-            0 => $"no node has the id '{idOrName}' and no symbol has that exact name. A re-index retires the id of a removed member; "
-                 + "use find_symbol with a partial name. Ids look like M:Namespace.Type.Method(System.String)",
-            > 20 => $"more than 20 symbols are named {idOrName}; pass the id of one, or use find_symbol with nameMatch Exact and offset to see the rest:\n"
-                    + Format(matches.Take(20).Select(n => (n, n.Signature))),
-            _ => $"{matches.Count.ToString(CultureInfo.InvariantCulture)} symbols are named {idOrName}; pass the id of one:\n"
-                 + Format(matches.Select(n => (n, n.Signature))),
-        };
-        return null;
     }
 
     private string Format(IEnumerable<(GraphNode Node, string? Extra)> rows)

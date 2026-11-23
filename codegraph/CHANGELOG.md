@@ -5,6 +5,49 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased
+
+- **The full lite benchmark** ([bench/results/20261123-085549](bench/results/20261123-085549/report.md)): 135
+  runs, none failed. Against the MCP tools, the CLI used fewer tokens on single lookups (−24%) and analytical
+  questions (−61%), C# scripts more on single lookups (+98%) and fewer on analytical ones (−53%), each with
+  non-overlapping min–max ranges; multi-hop ranges overlap.
+
+- **Question shape in the lite benchmark** (issue #18, Part 1): each run records its graph steps (MCP tool calls,
+  `codegraph` invocations, `dotnet run` scripts), the largest and total result size, and whether a later step
+  reused a name or id from an earlier result (a heuristic). `report.md` gains a question-shape section;
+  `modebench reshape <dir>` back-fills older results from their transcripts; `plan.json` records the CodeGraph
+  commit the run used.
+- **`codegraph hook` and `codegraph questions`** (Part 2): an opt-in Claude Code hook that logs each question's
+  shape to `.codegraph/questions.jsonl`, and a command that reads it back with tokens from the session transcript.
+  See [MCP-SERVER.md, Question log](MCP-SERVER.md#question-log-opt-in-claude-code). The shape logic moved to
+  `CodeGraph.Client` (`QuestionShape`) so the harness and the hook share it.
+- **lite-cli without `codegraph --help`** (Part 0): the lite-cli snippet carries a command reference instead.
+  Measured in [bench/results/part0-lite-cli.md](bench/results/part0-lite-cli.md).
+
+## 1.6.0-beta.1
+
+A pre-release of a prototype, from branch `code-mode-lite`: does "code mode lite" (an agent writes a C# script or
+calls a CLI, and prints only a summary) use fewer tokens than the MCP tools? See [bench/README.md](bench/README.md).
+Only a pilot has run (one task per category, 2 repetitions); the full benchmark has not, so no saving is claimed.
+
+- **`ICodeGraph` and `CodeGraphClient`.** `CodeGraph.Contracts` holds the typed API (records and one interface, one
+  method per operation); `CodeGraph.Client` implements it over `GraphStore`. find_symbol, outline, callers_of,
+  callees_of, impact_of, tests_for and snippet take their data from it and format it as before: their answers on
+  29 inputs over the Jellyfin graph are byte-identical before and after, with the in-memory graph and with SQL.
+- **`GraphStore` reads through any ADO.NET connection.** `GraphStore.OpenWith` takes a connection factory; the
+  client passes a read-only `[LibraryImport]` binding to the DuckDB C library, because DuckDB.NET.Data's reader
+  raises trim and AOT warnings. Writes still need DuckDB.NET.
+- **`QueryAsync`** runs one read-only SELECT (DuckDB's parser decides) on a connection with external access off,
+  a row cap and a timeout.
+- **`codegraph`, a Native AOT CLI** (`src/CodeGraph.Cli`): find, outline, snippet, callers, callees, impact, tests,
+  query, schema, status. It pins ILCompiler and the NativeAOT runtime pack to 10.0.15: the 10.0.13 packs of the
+  10.0.113 SDK are listed as vulnerable by GHSA-p3jp-9v83-76w9. The release archives carry it as `codegraph`,
+  published ReadyToRun like the other two executables, not Native AOT (linux-arm64 Native AOT on the x64 runner needs
+  a cross toolchain the workflow does not install); its start-up in that form is not measured. Native AOT was built and measured for linux-x64 only,
+  from source.
+- **`CODEGRAPH_MODE=lite|lite-cli`** makes the MCP server advertise no tools and no instructions.
+- **`AnswerPaths` moved to CodeGraph.Core** so the client prints paths relative to the same root as the server.
+
 ## 1.5.3
 
 Plain JavaScript projects (a `package.json` with no `tsconfig.json`) and `jsconfig.json` projects are indexed, and the VS Code

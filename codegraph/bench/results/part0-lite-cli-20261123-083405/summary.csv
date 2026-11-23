@@ -1,0 +1,5 @@
+category,mode,runs,finished,counted,cheaper_but_worse,tokens_median,tokens_min,tokens_max,cost_median,cost_min,cost_max,turns_median,turns_min,turns_max,wall_median,wall_min,wall_max,score_median,score_min,score_max,scripts,cli_invocations,compile_failures,s_in_scripts_or_cli
+analytical,lite-cli,2,2,2,0,26662,22633,30691,0.0329582,0.030923799999999998,0.0349926,3.5,3,4,10.684999999999999,9.02,12.35,1,1,1,0,7,0,0.5
+multi,lite-cli,2,2,2,0,46716.5,35691,57742,0.058924149999999995,0.0423382,0.0755101,5.5,5,6,16.560000000000002,15.91,17.21,1,1,1,0,9,0,3.0
+single,lite-cli,2,2,2,0,11786.5,11780,11793,0.0105653,0.0104793,0.0106513,2,2,2,3.495,3.4,3.59,1,1,1,0,2,0,0.2
+baseline,lite-cli,2,2,2,0,5609,5609,5609,0.0066766,0.0066766,0.0066766,1,1,1,2.05,2.05,2.05,,,,0,0,0,0.0

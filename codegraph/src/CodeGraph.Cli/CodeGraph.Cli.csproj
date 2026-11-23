@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    codegraph: the graph from the shell, JSON on stdout. A Native AOT binary over CodeGraph.Client (no Roslyn), so
+    an agent's command starts without a JIT or a compile step. Publish: dotnet publish src/CodeGraph.Cli -c Release -r linux-x64
+    Every trim and AOT warning fails the publish.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>codegraph</AssemblyName>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2057;IL2067;IL2070;IL2072;IL2075;IL2087;IL2091;IL2093;IL2104;IL3050;IL3051;IL3053;IL3058</WarningsAsErrors>
+    <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
+    <StripSymbols>true</StripSymbols>
+  </PropertyGroup>
+  <!--
+    The distro SDK 10.0.113 compiles Native AOT with ILCompiler and runtime pack 10.0.13, which GHSA-p3jp-9v83-76w9
+    (CVE-2026-111497, Brotli decoder out-of-bounds write) lists as vulnerable below 10.0.14. An AOT binary carries
+    the runtime it was compiled with, so the CLI pins the patched 10.0.15 packs whatever the SDK bundles.
+  -->
+  <PropertyGroup>
+    <CodeGraphAotRuntimeVersion>10.0.15</CodeGraphAotRuntimeVersion>
+    <RuntimeFrameworkVersion Condition="'$(PublishAot)' == 'true'">$(CodeGraphAotRuntimeVersion)</RuntimeFrameworkVersion>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <PublishDocumentationFiles>false</PublishDocumentationFiles>
+  </PropertyGroup>
+  <Target Name="PinPatchedAotCompiler" BeforeTargets="ProcessFrameworkReferences">
+    <ItemGroup>
+      <KnownILCompilerPack Condition="'%(Identity)' == 'Microsoft.DotNet.ILCompiler' and '%(TargetFramework)' == 'net10.0'" ILCompilerPackVersion="$(CodeGraphAotRuntimeVersion)" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <!-- Contracts and Core directly, not only through Client: a transitive reference skips Directory.Build.targets
+         and builds in Debug when the solution is opened through a symlink (tests/install-through-symlink.sh). -->
+    <ProjectReference Include="../CodeGraph.Client/CodeGraph.Client.csproj" />
+    <ProjectReference Include="../CodeGraph.Contracts/CodeGraph.Contracts.csproj" />
+    <ProjectReference Include="../CodeGraph.Core/CodeGraph.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CodeGraph.Tests" />
+  </ItemGroup>
+</Project>

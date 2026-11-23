@@ -1,0 +1,72 @@
+{
+  "answerFormat": "Finish your reply with a line containing only ANSWER, then the answer items, one per line, and nothing after them. Write NONE as the only item if there are none.",
+  "tasks": [
+    {
+      "id": "where-defined",
+      "category": "single",
+      "prompt": "Where is the class LibraryChangedNotifier defined? Give the file path relative to the repository root.",
+      "items": "one item: the file path",
+      "truth": { "kind": "file", "symbol": "T:Emby.Server.Implementations.EntryPoints.LibraryChangedNotifier" },
+      "match": "file"
+    },
+    {
+      "id": "signature",
+      "category": "single",
+      "prompt": "What is the declared signature of the method EncodingHelper.GetVideoBitrateParamValue (modifiers, return type, name and parameters)?",
+      "items": "one item: the signature exactly as declared, without a body",
+      "truth": { "kind": "signature", "symbol": "M:MediaBrowser.Controller.MediaEncoding.EncodingHelper.GetVideoBitrateParamValue(MediaBrowser.Controller.MediaEncoding.BaseEncodingJobOptions,MediaBrowser.Model.Entities.MediaStream,System.String)" },
+      "match": "signature"
+    },
+    {
+      "id": "impact-tests",
+      "category": "multi",
+      "prompt": "If the method MediaBrowser.Model.IO.IFileSystem.GetFileInfo(string) changes, which test methods could break? Follow call chains of up to 5 hops, counting a call to an interface member as a call to its implementations. Say how many non-test members depend on it, and list every test method that reaches it.",
+      "items": "one test method per line, as Namespace.Type.Method without parameters",
+      "truth": { "kind": "impactTests", "symbol": "M:MediaBrowser.Model.IO.IFileSystem.GetFileInfo(System.String)", "depth": 5 },
+      "match": "name"
+    },
+    {
+      "id": "callers-by-project",
+      "category": "multi",
+      "prompt": "Find every caller of MediaBrowser.Common.Configuration.IConfigurationManager.GetConfiguration(string) up to 3 hops away (callers, their callers, and theirs). Group them by the project that declares them: how many callers are in each project?",
+      "items": "one project per line, as ProjectName: number of callers",
+      "truth": { "kind": "callerProjects", "symbol": "M:MediaBrowser.Common.Configuration.IConfigurationManager.GetConfiguration(System.String)", "depth": 3 },
+      "match": "project"
+    },
+    {
+      "id": "only-test-callers",
+      "category": "multi",
+      "prompt": "In the project Emby.Server.Implementations, which public methods (not constructors) are called only by test methods? A method counts if it has at least one direct caller and every direct caller is a test method; a call through an interface or base member counts as a call to the implementation.",
+      "items": "one method per line, as Namespace.Type.Method without parameters",
+      "truth": { "kind": "onlyTestCallers", "project": "Emby.Server.Implementations" },
+      "match": "name"
+    },
+    {
+      "id": "interface-callers",
+      "category": "multi",
+      "prompt": "Which methods call the interface member MediaBrowser.Controller.Library.IUserDataManager.GetUserData(User, BaseItem) directly, and in which projects are they? List the calling methods.",
+      "items": "one calling method per line, as Namespace.Type.Method without parameters",
+      "truth": { "kind": "callers", "symbol": "M:MediaBrowser.Controller.Library.IUserDataManager.GetUserData(Jellyfin.Database.Implementations.Entities.User,MediaBrowser.Controller.Entities.BaseItem)", "depth": 1 },
+      "match": "name"
+    },
+    {
+      "id": "dead-code",
+      "category": "analytical",
+      "prompt": "List the dead-code candidates in the project Jellyfin.LiveTv according to the code graph: private methods (not constructors or operators) with no incoming call, reference or framework-invocation edge in the graph, that neither implement an interface member nor override a base member. Answer from the graph; do not read source files to second-guess it.",
+      "items": "one method per line, as Namespace.Type.Method without parameters",
+      "truth": {
+        "kind": "sql",
+        "sql": "WITH po AS (SELECT f.file_path, p.name AS project FROM edges e JOIN nodes p ON p.id = e.from_id AND p.kind = 'Project' JOIN nodes f ON f.id = e.to_id AND f.kind = 'File' WHERE e.kind = 'Contains') SELECT m.full_name FROM nodes m JOIN po ON po.file_path = m.file_path WHERE po.project = 'Jellyfin.LiveTv' AND m.kind = 'Method' AND m.accessibility = 'Private' AND m.member_kind = 'Ordinary' AND NOT m.is_test AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.to_id = m.id AND e.kind IN ('Calls', 'References', 'InvokedByFramework')) AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.from_id = m.id AND e.kind IN ('Overrides', 'Implements')) ORDER BY 1"
+      },
+      "match": "name"
+    },
+    {
+      "id": "project-cycles",
+      "category": "analytical",
+      "prompt": "Are there circular dependencies between the projects of this solution (project A references B, directly or through other projects, and B references A)? List every project that is part of a cycle.",
+      "items": "one project per line",
+      "truth": { "kind": "projectCycles" },
+      "match": "project"
+    }
+  ]
+}

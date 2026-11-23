@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The direct / lite / lite-cli benchmark: renders a profile per mode, runs headless Claude Code once per
+    task x mode x repetition, scores answers against ground truth computed from the index, and writes reports.
+    Named ModeBench because tools/CodeGraph.Bench (codegraph-bench) is the server and indexer benchmark.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>codegraph-modebench</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Contracts and Core directly, not only through Client: a transitive reference skips Directory.Build.targets
+         and builds in Debug when the solution is opened through a symlink (tests/install-through-symlink.sh). -->
+    <ProjectReference Include="../../src/CodeGraph.Client/CodeGraph.Client.csproj" />
+    <ProjectReference Include="../../src/CodeGraph.Contracts/CodeGraph.Contracts.csproj" />
+    <ProjectReference Include="../../src/CodeGraph.Core/CodeGraph.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CodeGraph.Tests" />
+  </ItemGroup>
+</Project>

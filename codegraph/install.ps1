@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Installs codegraph-index and codegraph-mcp from the latest GitHub release, sets up repos to use them, and can
+    Installs codegraph-index and codegraph-mcp (and, from 1.6.0-beta.1, the codegraph CLI) from the latest GitHub release, sets up repos to use them, and can
     add the VS Code extension.
 
 .DESCRIPTION
