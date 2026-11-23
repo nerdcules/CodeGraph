@@ -109,6 +109,7 @@ codegraph-mcp [path-to-graph.db] [--root DIR] [--web PORT]
 | `CODEGRAPH_EMBEDDINGS_URL`, `CODEGRAPH_EMBEDDINGS_MODEL`, `CODEGRAPH_EMBEDDINGS_KEY` | an OpenAI-compatible embeddings endpoint for semantic search; set the same values for `codegraph-index`. See [Semantic search](#semantic-search) |
 | `CODEGRAPH_DAEMON=auto` | start the live daemon on the first tool call when none runs; it stops itself after 120 min unused |
 | `CODEGRAPH_SNAPSHOT=off` | answer every graph read with SQL on the file instead of from the in-memory graph; see [Concurrency](#concurrency) |
+| `CODEGRAPH_MODE` | `direct` (the default): the tools and instructions as described here. `lite` or `lite-cli`: no tools and no instructions, for an agent that reaches the graph through C# scripts or the `codegraph` CLI instead ([bench/README.md](bench/README.md)). Any other value stops the server with exit code 1 |
 
 ### What clients show for the server
 

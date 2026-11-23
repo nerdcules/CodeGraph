@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    ICodeGraph over a read-only graph. No Roslyn: the indexer keeps it. Trim- and AOT-safe so the Native AOT CLI
+    (CodeGraph.Cli) reuses it; DuckDB is reached through the [LibraryImport] binding in Native/.
+  -->
+  <PropertyGroup>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../CodeGraph.Contracts/CodeGraph.Contracts.csproj" />
+    <ProjectReference Include="../CodeGraph.Core/CodeGraph.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CodeGraph.Tests" />
+  </ItemGroup>
+</Project>

@@ -41,7 +41,10 @@
 |---|---|
 | `src/CodeGraph.Core` | The model, the DuckDB store, the in-memory graph and its walks, the full-text and vector search, freshness, telemetry and the live protocol. |
 | `src/CodeGraph.Indexer` | `codegraph-index`: the Roslyn extractor, the record and SCIP import, the export, the LSP bridge and the live daemon. |
-| `src/CodeGraph.Mcp` | `codegraph-mcp`: the MCP server and its tools. |
+| `src/CodeGraph.Contracts` | `ICodeGraph` and its records: the typed API that the MCP server, C# scripts and the `codegraph` CLI share. No dependencies. |
+| `src/CodeGraph.Client` | `CodeGraphClient`, the one `ICodeGraph` implementation, over `GraphStore`. `Open()` reads the graph through a read-only `[LibraryImport]` binding to the DuckDB C library. No Roslyn; trim- and AOT-safe. |
+| `src/CodeGraph.Cli` | `codegraph`: a Native AOT command-line tool over the client, JSON on stdout. A prototype for [the lite benchmark](../bench/README.md). |
+| `src/CodeGraph.Mcp` | `codegraph-mcp`: the MCP server and its tools. find_symbol, outline, callers_of, callees_of, impact_of, tests_for and snippet take their data from `CodeGraphClient`. |
 | `src/CodeGraph.Web` | The graph viewer for `codegraph-mcp --web`. |
 | `extractors/typescript` | `codegraph-ts`: the TypeScript and Angular extractor, with typescript-language-server. |
 | `obsidian-plugin` | The Obsidian plugin (retired; kept in the repo). Plain CommonJS with no dependencies, bundled into `main.js`. |

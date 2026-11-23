@@ -1,3 +1,4 @@
+using System.Data.Common;
 using DuckDB.NET.Data;
 
 namespace CodeGraph.Core;
@@ -43,8 +44,8 @@ public sealed class GraphStore : IDisposable
 
     private readonly string _dbPath;
     private readonly GraphSnapshot? _snapshot;
-    private readonly Func<DuckDBConnection>? _connect;
-    private DuckDBConnection? _db;
+    private readonly Func<DbConnection>? _connect;
+    private DbConnection? _db;
     private IDisposable? _lease;
 
     public GraphStore(string dbPath, bool readOnly = false)
@@ -74,6 +75,19 @@ public sealed class GraphStore : IDisposable
         };
     }
 
+    private GraphStore(string dbPath, Func<DbConnection> connect)
+    {
+        _dbPath = Path.GetFullPath(dbPath);
+        _connect = connect;
+    }
+
+    /// <summary>
+    /// A read-only store whose reads go through <paramref name="connect"/>'s connection instead of DuckDB.NET's: the
+    /// Native AOT CLI passes its own binding over the DuckDB C library, because DuckDB.NET.Data's reader is not
+    /// trim-safe. Every graph read runs the same SQL as any other store without a snapshot; writes need DuckDB.NET.
+    /// </summary>
+    public static GraphStore OpenWith(string dbPath, Func<DbConnection> connect) => new(dbPath, connect);
+
     /// <summary>
     /// The in-memory graph this store answers graph reads from, or null when every read goes to DuckDB. A store with
     /// a snapshot opens its database connection only for what the snapshot does not hold (full-text search, vectors,
@@ -85,7 +99,11 @@ public sealed class GraphStore : IDisposable
     public bool IsConnected => _db is not null;
 
     // Opened on first use for a reader with a snapshot; every other store opens it in the constructor.
-    private DuckDBConnection Connection => _db ??= _connect?.Invoke() ?? throw new ObjectDisposedException(nameof(GraphStore));
+    private DbConnection Connection => _db ??= _connect?.Invoke() ?? throw new ObjectDisposedException(nameof(GraphStore));
+
+    // Writes use DuckDB.NET's transactions and appenders; only a store opened on a file for writing has them.
+    private DuckDBConnection Writable => Connection as DuckDBConnection
+        ?? throw new InvalidOperationException("This store reads through another connection and cannot write.");
 
     public void Dispose()
     {
@@ -266,7 +284,7 @@ public sealed class GraphStore : IDisposable
 
     public void Write(IEnumerable<GraphNode> nodes, IEnumerable<GraphEdge> edges)
     {
-        using var transaction = Connection.BeginTransaction();
+        using var transaction = Writable.BeginTransaction();
         StageGraph(transaction, nodes, edges, []);
         MergeStagedGraph(transaction);
         transaction.Commit();
@@ -292,7 +310,7 @@ public sealed class GraphStore : IDisposable
         string language = Languages.CSharp)
     {
         var current = ReadMeta();
-        using var transaction = Connection.BeginTransaction();
+        using var transaction = Writable.BeginTransaction();
 
         if (full)
         {
@@ -327,8 +345,8 @@ public sealed class GraphStore : IDisposable
             foreach (var (key, value) in meta.Where(m => current.GetValueOrDefault(m.Key) != m.Value))
             {
                 command.Parameters.Clear();
-                command.Parameters.Add(P("key", key));
-                command.Parameters.Add(P("value", value));
+                command.Bind("key", key);
+                command.Bind("value", value);
                 command.ExecuteNonQuery();
             }
         }
@@ -508,7 +526,7 @@ public sealed class GraphStore : IDisposable
 
         using var command = Connection.CreateCommand();
         command.CommandText = "SELECT path, hash, size, mtime_ticks FROM files WHERE $language IS NULL OR language = $language;";
-        command.Parameters.Add(P("language", language));
+        command.Bind("language", language);
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -524,7 +542,7 @@ public sealed class GraphStore : IDisposable
     {
         using var command = Connection.CreateCommand();
         command.CommandText = "SELECT DISTINCT file_path FROM nodes WHERE kind = 'Project' AND file_path IS NOT NULL AND ($language IS NULL OR language = $language);";
-        command.Parameters.Add(P("language", language));
+        command.Bind("language", language);
         var paths = new List<string>();
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -548,7 +566,7 @@ public sealed class GraphStore : IDisposable
             SELECT path FROM files WHERE language = $language
             UNION SELECT file_path FROM nodes WHERE language = $language AND file_path IS NOT NULL;
             """;
-        command.Parameters.Add(P("language", language));
+        command.Bind("language", language);
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -598,7 +616,7 @@ public sealed class GraphStore : IDisposable
                 }
             }
 
-            using var transaction = Connection.BeginTransaction();
+            using var transaction = Writable.BeginTransaction();
             // The languages being rewritten, as a list DuckDB can test membership in.
             var rewritten = string.Join("\n", exceptLanguages);
             void Run(string sql)
@@ -606,7 +624,7 @@ public sealed class GraphStore : IDisposable
                 using var command = Connection.CreateCommand();
                 command.Transaction = transaction;
                 command.CommandText = sql;
-                command.Parameters.Add(P("languages", rewritten));
+                command.Bind("languages", rewritten);
                 command.ExecuteNonQuery();
             }
 
@@ -638,7 +656,7 @@ public sealed class GraphStore : IDisposable
             {
                 count.Transaction = transaction;
                 count.CommandText = $"SELECT COUNT(*) FROM nodes WHERE language {Kept};";
-                count.Parameters.Add(P("languages", rewritten));
+                count.Bind("languages", rewritten);
                 copied = Convert.ToInt32(count.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
             }
 
@@ -671,7 +689,7 @@ public sealed class GraphStore : IDisposable
              JOIN nodes n ON n.id = o.to_id OR n.id = o.from_id
              WHERE n.file_path IN ({PathList}) AND n.kind != 'Project';
              """;
-        command.Parameters.Add(P("paths", Lines(paths)));
+        command.Bind("paths", Lines(paths));
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -832,7 +850,7 @@ public sealed class GraphStore : IDisposable
         Execute($"DELETE FROM {table};", transaction);
     }
 
-    private DuckDBAppender StageAppender(string table) => Connection.CreateAppender("temp", "main", table);
+    private DuckDBAppender StageAppender(string table) => Writable.CreateAppender("temp", "main", table);
 
     private void WriteSearch(DuckDBTransaction transaction, IEnumerable<SearchDocument> documents)
     {
@@ -849,7 +867,7 @@ public sealed class GraphStore : IDisposable
 
         // Term rows run to hundreds of thousands per solution; one statement per row takes minutes in DuckDB,
         // the appender takes a second. It appends within the connection's open transaction.
-        using (var appender = Connection.CreateAppender("search_docs"))
+        using (var appender = Writable.CreateAppender("search_docs"))
         {
             foreach (var document in list)
             {
@@ -857,7 +875,7 @@ public sealed class GraphStore : IDisposable
             }
         }
 
-        using (var appender = Connection.CreateAppender("search_terms"))
+        using (var appender = Writable.CreateAppender("search_terms"))
         {
             foreach (var document in list)
             {
@@ -878,7 +896,7 @@ public sealed class GraphStore : IDisposable
         }
 
         Execute($"DELETE FROM embeddings WHERE node_id IN ({PathList});", transaction, Lines(list.Select(e => e.NodeId)));
-        using var appender = Connection.CreateAppender("embeddings");
+        using var appender = Writable.CreateAppender("embeddings");
         foreach (var embedding in list.DistinctBy(e => e.NodeId))
         {
             appender.CreateRow().AppendValue(embedding.NodeId).AppendValue(embedding.TextHash).AppendValue(embedding.Vector.ToBytes()).EndRow();
@@ -978,7 +996,7 @@ public sealed class GraphStore : IDisposable
         }
         using var command = Connection.CreateCommand();
         command.CommandText = $"SELECT {NodeColumns} FROM nodes WHERE id IN ({PathList});";
-        command.Parameters.Add(P("paths", Lines(ids)));
+        command.Bind("paths", Lines(ids));
         return ReadNodes(command).ToDictionary(n => n.Id, StringComparer.Ordinal);
     }
 
@@ -1049,11 +1067,11 @@ public sealed class GraphStore : IDisposable
              ORDER BY sc.matched DESC, sc.score DESC, n.full_name, n.id
              LIMIT $limit;
              """;
-        command.Parameters.Add(P("paths", Lines(terms)));
-        command.Parameters.Add(P("kind", kind?.ToString()));
-        command.Parameters.Add(P("file", filePattern is null ? null : $"%{filePattern}%"));
-        command.Parameters.Add(P("limit", Math.Clamp(limit, 1, 200)));
-        command.Parameters.Add(P("language", language));
+        command.Bind("paths", Lines(terms));
+        command.Bind("kind", kind?.ToString());
+        command.Bind("file", filePattern is null ? null : $"%{filePattern}%");
+        command.Bind("limit", Math.Clamp(limit, 1, 200));
+        command.Bind("language", language);
 
         var hits = new List<SearchHit>();
         using var reader = command.ExecuteReader();
@@ -1129,7 +1147,7 @@ public sealed class GraphStore : IDisposable
         }
         using var command = Connection.CreateCommand();
         command.CommandText = $"SELECT {NodeColumns} FROM nodes WHERE id = $id;";
-        command.Parameters.Add(P("id", id));
+        command.Bind("id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadNode(reader) : null;
     }
@@ -1195,25 +1213,25 @@ public sealed class GraphStore : IDisposable
                id
              LIMIT $limit OFFSET $offset;
              """;
-        command.Parameters.Add(P("pattern", pattern));
-        command.Parameters.Add(P("qualified", nameMatch.Equals("exact", StringComparison.OrdinalIgnoreCase)));
-        command.Parameters.Add(P("tail", $"%.{literal}"));
+        command.Bind("pattern", pattern);
+        command.Bind("qualified", nameMatch.Equals("exact", StringComparison.OrdinalIgnoreCase));
+        command.Bind("tail", $"%.{literal}");
         // Go and Python full names put the package path before the type with '/', TypeScript's with ':'.
-        command.Parameters.Add(P("path_tail", $"%/{literal}"));
-        command.Parameters.Add(P("module_tail", $"%:{literal}"));
-        command.Parameters.Add(P("exact", query));
-        command.Parameters.Add(P("offset", Math.Max(0, offset)));
-        command.Parameters.Add(P("kind", kind?.ToString()));
-        command.Parameters.Add(P("limit", limit));
-        command.Parameters.Add(P("type_kind", typeKind?.ToString()));
-        command.Parameters.Add(P("accessibility", accessibility?.ToString()));
-        command.Parameters.Add(P("is_static", isStatic.HasValue ? (object?)isStatic.Value : null));
-        command.Parameters.Add(P("is_abstract", isAbstract.HasValue ? (object?)isAbstract.Value : null));
-        command.Parameters.Add(P("is_virtual", isVirtual.HasValue ? (object?)isVirtual.Value : null));
-        command.Parameters.Add(P("is_async", isAsync.HasValue ? (object?)isAsync.Value : null));
-        command.Parameters.Add(P("is_override", isOverride.HasValue ? (object?)isOverride.Value : null));
-        command.Parameters.Add(P("member_kind", memberKind?.ToString()));
-        command.Parameters.Add(P("language", language));
+        command.Bind("path_tail", $"%/{literal}");
+        command.Bind("module_tail", $"%:{literal}");
+        command.Bind("exact", query);
+        command.Bind("offset", Math.Max(0, offset));
+        command.Bind("kind", kind?.ToString());
+        command.Bind("limit", limit);
+        command.Bind("type_kind", typeKind?.ToString());
+        command.Bind("accessibility", accessibility?.ToString());
+        command.Bind("is_static", isStatic.HasValue ? (object?)isStatic.Value : null);
+        command.Bind("is_abstract", isAbstract.HasValue ? (object?)isAbstract.Value : null);
+        command.Bind("is_virtual", isVirtual.HasValue ? (object?)isVirtual.Value : null);
+        command.Bind("is_async", isAsync.HasValue ? (object?)isAsync.Value : null);
+        command.Bind("is_override", isOverride.HasValue ? (object?)isOverride.Value : null);
+        command.Bind("member_kind", memberKind?.ToString());
+        command.Bind("language", language);
         return ReadNodes(command);
     }
 
@@ -1235,8 +1253,8 @@ public sealed class GraphStore : IDisposable
              ORDER BY end_line - start_line, start_line DESC, id
              LIMIT 1;
              """;
-        command.Parameters.Add(P("file", file));
-        command.Parameters.Add(P("line", line));
+        command.Bind("file", file);
+        command.Bind("line", line);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadNode(reader) : null;
     }
@@ -1256,7 +1274,7 @@ public sealed class GraphStore : IDisposable
              WHERE e.from_id = $id AND e.kind = 'Contains'
              ORDER BY n.start_line, n.name, n.id;
              """;
-        command.Parameters.Add(P("id", id));
+        command.Bind("id", id);
         return ReadNodes(command);
     }
 
@@ -1294,16 +1312,16 @@ public sealed class GraphStore : IDisposable
              ORDER BY n.start_line, n.name, n.id
              LIMIT $limit OFFSET $offset;
              """;
-        command.Parameters.Add(P("id", typeId));
-        command.Parameters.Add(P("kind", kind?.ToString()));
-        command.Parameters.Add(P("accessibility", accessibility?.ToString()));
-        command.Parameters.Add(P("is_static", isStatic.HasValue ? (object?)isStatic.Value : null));
-        command.Parameters.Add(P("is_abstract", isAbstract.HasValue ? (object?)isAbstract.Value : null));
-        command.Parameters.Add(P("is_async", isAsync.HasValue ? (object?)isAsync.Value : null));
-        command.Parameters.Add(P("is_virtual", isVirtual.HasValue ? (object?)isVirtual.Value : null));
-        command.Parameters.Add(P("is_override", isOverride.HasValue ? (object?)isOverride.Value : null));
-        command.Parameters.Add(P("limit", Math.Max(1, limit)));
-        command.Parameters.Add(P("offset", Math.Max(0, offset)));
+        command.Bind("id", typeId);
+        command.Bind("kind", kind?.ToString());
+        command.Bind("accessibility", accessibility?.ToString());
+        command.Bind("is_static", isStatic.HasValue ? (object?)isStatic.Value : null);
+        command.Bind("is_abstract", isAbstract.HasValue ? (object?)isAbstract.Value : null);
+        command.Bind("is_async", isAsync.HasValue ? (object?)isAsync.Value : null);
+        command.Bind("is_virtual", isVirtual.HasValue ? (object?)isVirtual.Value : null);
+        command.Bind("is_override", isOverride.HasValue ? (object?)isOverride.Value : null);
+        command.Bind("limit", Math.Max(1, limit));
+        command.Bind("offset", Math.Max(0, offset));
         return ReadNodes(command);
     }
 
@@ -1333,6 +1351,54 @@ public sealed class GraphStore : IDisposable
     public IReadOnlyList<GraphHit> Impact(string id, int maxDepth = 5) =>
         _snapshot?.Impact(id, maxDepth) ?? Walk(id, maxDepth, inbound: true, ImpactEdgeKinds, dispatch: true);
 
+    /// <summary>
+    /// The project that declares each file, by file path, from the Project → File containment edges. A file that
+    /// several projects include (a linked file) goes to the project whose name sorts first (ordinal).
+    /// </summary>
+    public IReadOnlyDictionary<string, string> FileProjects()
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        void Keep(string path, string project)
+        {
+            if (!map.TryGetValue(path, out var held) || string.CompareOrdinal(project, held) < 0)
+            {
+                map[path] = project;
+            }
+        }
+
+        if (_snapshot is not null)
+        {
+            foreach (var project in AllNodes(NodeKind.Project))
+            {
+                foreach (var file in Children(project.Id))
+                {
+                    if (file.Kind == NodeKind.File && file.FilePath is { } path)
+                    {
+                        Keep(path, project.Name);
+                    }
+                }
+            }
+
+            return map;
+        }
+
+        using var command = Connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT f.file_path, p.name FROM edges e
+            JOIN nodes p ON p.id = e.from_id AND p.kind = 'Project'
+            JOIN nodes f ON f.id = e.to_id AND f.kind = 'File'
+            WHERE e.kind = 'Contains' AND f.file_path IS NOT NULL;
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            Keep(reader.GetString(0), reader.GetString(1));
+        }
+
+        return map;
+    }
+
     /// <summary>All nodes, optionally filtered to one kind. Use sparingly - may return thousands of rows.</summary>
     public IReadOnlyList<GraphNode> AllNodes(NodeKind? kind = null)
     {
@@ -1348,7 +1414,7 @@ public sealed class GraphStore : IDisposable
         else
         {
             command.CommandText = $"SELECT {NodeColumns} FROM nodes WHERE kind = $kind ORDER BY full_name, id;";
-            command.Parameters.Add(P("kind", kind.ToString()));
+            command.Bind("kind", kind.ToString());
         }
         return ReadNodes(command);
     }
@@ -1383,7 +1449,7 @@ public sealed class GraphStore : IDisposable
              WHERE e.from_id = $id
              ORDER BY e.kind, n.full_name, n.id;
              """;
-        command.Parameters.Add(P("id", id));
+        command.Bind("id", id);
         return ReadEdgeNodes(command);
     }
 
@@ -1407,8 +1473,8 @@ public sealed class GraphStore : IDisposable
              ORDER BY n.file_path, n.start_line, n.full_name, n.id
              LIMIT $limit;
              """;
-        command.Parameters.Add(P("id", id));
-        command.Parameters.Add(P("limit", Math.Max(1, limit)));
+        command.Bind("id", id);
+        command.Bind("limit", Math.Max(1, limit));
 
         var nodes = new List<GraphNode>();
         var total = 0;
@@ -1437,7 +1503,7 @@ public sealed class GraphStore : IDisposable
              WHERE e.to_id = $id
              ORDER BY e.kind, n.full_name, n.id;
              """;
-        command.Parameters.Add(P("id", id));
+        command.Bind("id", id);
         return ReadEdgeNodes(command);
     }
 
@@ -1468,7 +1534,7 @@ public sealed class GraphStore : IDisposable
              WHERE e.from_id IN (SELECT id FROM up) AND e.kind = 'TestedBy'
              ORDER BY n.full_name, n.id;
              """;
-        command.Parameters.Add(P("id", id));
+        command.Bind("id", id);
         return ReadNodes(command);
     }
 
@@ -1531,11 +1597,11 @@ public sealed class GraphStore : IDisposable
              ORDER BY caller_count DESC, n.full_name, n.id
              LIMIT $limit OFFSET $offset;
              """;
-        command.Parameters.Add(P("min_callers", minCallers));
-        command.Parameters.Add(P("name", nameFilter is null ? null : $"%{EscapeLike(nameFilter)}%"));
-        command.Parameters.Add(P("language", language));
-        command.Parameters.Add(P("limit", Math.Clamp(limit, 1, 100)));
-        command.Parameters.Add(P("offset", Math.Max(0, offset)));
+        command.Bind("min_callers", minCallers);
+        command.Bind("name", nameFilter is null ? null : $"%{EscapeLike(nameFilter)}%");
+        command.Bind("language", language);
+        command.Bind("limit", Math.Clamp(limit, 1, 100));
+        command.Bind("offset", Math.Max(0, offset));
         var results = new List<(GraphNode, int)>();
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -1574,10 +1640,10 @@ public sealed class GraphStore : IDisposable
              ORDER BY full_name, id
              LIMIT $limit OFFSET $offset;
              """;
-        command.Parameters.Add(P("limit", limit));
-        command.Parameters.Add(P("offset", Math.Max(0, offset)));
+        command.Bind("limit", limit);
+        command.Bind("offset", Math.Max(0, offset));
         if (filePattern is not null)
-            command.Parameters.Add(P("file", $"%{filePattern}%"));
+            command.Bind("file", $"%{filePattern}%");
         return ReadNodes(command);
     }
 
@@ -1609,8 +1675,8 @@ public sealed class GraphStore : IDisposable
              GROUP BY {GroupByNodeColumns}
              ORDER BY depth, n.full_name, n.id;
              """;
-        command.Parameters.Add(P("id", id));
-        command.Parameters.Add(P("max", maxDepth));
+        command.Bind("id", id);
+        command.Bind("max", maxDepth);
         var hits = new List<GraphHit>();
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -1711,8 +1777,8 @@ public sealed class GraphStore : IDisposable
              ORDER BY n.accessibility, n.file_path, n.start_line, n.id
              LIMIT $limit OFFSET $offset;
              """;
-        candidatesCommand.Parameters.Add(P("limit", Math.Clamp(limit, 1, 500)));
-        candidatesCommand.Parameters.Add(P("offset", Math.Max(0, offset)));
+        candidatesCommand.Bind("limit", Math.Clamp(limit, 1, 500));
+        candidatesCommand.Bind("offset", Math.Max(0, offset));
 
         var candidates = new List<DeadCodeCandidate>();
         using (var reader = candidatesCommand.ExecuteReader())
@@ -1747,7 +1813,7 @@ public sealed class GraphStore : IDisposable
              ORDER BY n.full_name, n.id
              LIMIT $limit;
              """;
-        command.Parameters.Add(P("limit", Math.Clamp(limit, 1, 500)));
+        command.Bind("limit", Math.Clamp(limit, 1, 500));
         return ReadNodes(command);
     }
 
@@ -1785,8 +1851,8 @@ public sealed class GraphStore : IDisposable
     {
         using var command = Connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM edges WHERE to_id = $id AND kind = $kind;";
-        command.Parameters.Add(P("id", id));
-        command.Parameters.Add(P("kind", kind));
+        command.Bind("id", id);
+        command.Bind("kind", kind);
         var value = command.ExecuteScalar();
         return value is null or DBNull ? 0 : Convert.ToInt32(value);
     }
@@ -1818,7 +1884,7 @@ public sealed class GraphStore : IDisposable
              ORDER BY up.depth, n.full_name
              LIMIT 1;
              """;
-        command.Parameters.Add(P("id", memberId));
+        command.Bind("id", memberId);
         using var reader = command.ExecuteReader();
         return reader.Read() ? (reader.GetString(0), reader.GetInt32(1)) : null;
     }
@@ -1858,11 +1924,11 @@ public sealed class GraphStore : IDisposable
              GROUP BY {GroupByNodeColumns}
              ORDER BY depth, n.full_name, n.id;
              """;
-        command.Parameters.Add(P("id", id));
-        command.Parameters.Add(P("max", maxDepth));
+        command.Bind("id", id);
+        command.Bind("max", maxDepth);
         for (var i = 0; i < edgeKinds.Length; i++)
         {
-            command.Parameters.Add(P($"k{i}", edgeKinds[i]));
+            command.Bind($"k{i}", edgeKinds[i]);
         }
 
         var hits = new List<GraphHit>();
@@ -1902,10 +1968,10 @@ public sealed class GraphStore : IDisposable
         {
             using var command = Connection.CreateCommand();
             command.CommandText = $"SELECT from_id, to_id FROM edges WHERE kind IN ({kindList}) AND from_id IN ({PathList});";
-            command.Parameters.Add(P("paths", Lines(frontier)));
+            command.Bind("paths", Lines(frontier));
             for (var i = 0; i < edgeKinds.Length; i++)
             {
-                command.Parameters.Add(P($"k{i}", edgeKinds[i]));
+                command.Bind($"k{i}", edgeKinds[i]);
             }
 
             var level = new Dictionary<string, List<string>>(StringComparer.Ordinal);
@@ -2013,9 +2079,9 @@ public sealed class GraphStore : IDisposable
              """;
 
         for (var i = 0; i < nodeIds.Count; i++)
-            command.Parameters.Add(P($"n{i}", nodeIds[i]));
+            command.Bind($"n{i}", nodeIds[i]);
         for (var i = 0; i < edgeKinds.Length; i++)
-            command.Parameters.Add(P($"ek{i}", edgeKinds[i]));
+            command.Bind($"ek{i}", edgeKinds[i]);
 
         var edges = new List<SubGraphEdge>();
         using var reader = command.ExecuteReader();
@@ -2039,7 +2105,7 @@ public sealed class GraphStore : IDisposable
         "n.id, n.kind, n.name, n.full_name, n.signature, n.file_path, n.start_line, n.end_line, n.is_test, " +
         "n.type_kind, n.accessibility, n.is_static, n.is_abstract, n.is_virtual, n.is_sealed, n.is_async, n.is_override, n.member_kind, n.language";
 
-    private static IReadOnlyList<GraphNode> ReadNodes(DuckDBCommand command)
+    private static IReadOnlyList<GraphNode> ReadNodes(DbCommand command)
     {
         var nodes = new List<GraphNode>();
         using var reader = command.ExecuteReader();
@@ -2051,7 +2117,7 @@ public sealed class GraphStore : IDisposable
         return nodes;
     }
 
-    private static IReadOnlyList<(EdgeKind Kind, GraphNode Node)> ReadEdgeNodes(DuckDBCommand command)
+    private static IReadOnlyList<(EdgeKind Kind, GraphNode Node)> ReadEdgeNodes(DbCommand command)
     {
         var results = new List<(EdgeKind, GraphNode)>();
         using var reader = command.ExecuteReader();
@@ -2197,12 +2263,12 @@ public sealed class GraphStore : IDisposable
         command.CommandText = sql;
         if (paths is not null)
         {
-            command.Parameters.Add(P("paths", paths));
+            command.Bind("paths", paths);
         }
 
         if (language is not null)
         {
-            command.Parameters.Add(P("language", language));
+            command.Bind("language", language);
         }
 
         command.ExecuteNonQuery();
@@ -2212,7 +2278,7 @@ public sealed class GraphStore : IDisposable
     {
         using var command = Connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM duckdb_tables() WHERE table_name = $table;";
-        command.Parameters.Add(P("table", table));
+        command.Bind("table", table);
         return Convert.ToInt32(command.ExecuteScalar()) > 0;
     }
 
@@ -2264,6 +2330,16 @@ public sealed class GraphStore : IDisposable
             .Replace("%", "\\%", StringComparison.Ordinal)
             .Replace("_", "\\_", StringComparison.Ordinal);
 
-    private static DuckDBParameter P(string name, object? value) =>
-        new() { ParameterName = name, Value = value };
+}
+
+internal static class CommandParameters
+{
+    /// <summary>Adds a named parameter made by the command's own connection, so any ADO.NET provider can run the SQL.</summary>
+    public static void Bind(this DbCommand command, string name, object? value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
 }

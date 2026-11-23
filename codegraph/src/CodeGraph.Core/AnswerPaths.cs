@@ -1,7 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
-using CodeGraph.Core;
 
-namespace CodeGraph.Mcp;
+namespace CodeGraph.Core;
 
 /// <summary>
 /// File paths in answers, relative to the repository root. The indexer stores absolute paths; an answer with twenty

@@ -1,0 +1,16 @@
+{
+  "model": "claude-sonnet-5-5",
+  "repoPath": "~/Projects/gh/jellyfin",
+  "commit": "1fbd8739292cce610231be93daf43368733edf63",
+  "db": "~/Projects/gh/jellyfin/.codegraph/graph.db",
+  "repetitions": 5,
+  "maxTurns": 30,
+  "timeoutSeconds": 600,
+  "claude": "claude",
+  "dotnet": "/usr/bin/dotnet",
+  "mcpDotnet": "~/.local/share/mise/installs/dotnet/10.0.403/dotnet",
+  "mcpServer": ".out/mcp/codegraph-mcp.dll",
+  "cliDir": ".out/cli",
+  "clientProject": "../src/CodeGraph.Client/CodeGraph.Client.csproj",
+  "workRoot": null
+}

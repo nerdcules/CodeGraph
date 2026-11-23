@@ -5,6 +5,26 @@
 Each release is a tag `v<version>`, built and published by the [release workflow](../.github/workflows/release.yml).
 The executables report their version with `--version`; the MCP server shows it to its client.
 
+## Unreleased (branch code-mode-lite)
+
+A prototype to measure whether "code mode lite" (an agent writes a C# script or calls a CLI, and prints only a
+summary) uses fewer tokens than the MCP tools. See [bench/README.md](bench/README.md).
+
+- **`ICodeGraph` and `CodeGraphClient`.** `CodeGraph.Contracts` holds the typed API (records and one interface, one
+  method per operation); `CodeGraph.Client` implements it over `GraphStore`. find_symbol, outline, callers_of,
+  callees_of, impact_of, tests_for and snippet take their data from it and format it as before: their answers on
+  29 inputs over the Jellyfin graph are byte-identical before and after, with the in-memory graph and with SQL.
+- **`GraphStore` reads through any ADO.NET connection.** `GraphStore.OpenWith` takes a connection factory; the
+  client passes a read-only `[LibraryImport]` binding to the DuckDB C library, because DuckDB.NET.Data's reader
+  raises trim and AOT warnings. Writes still need DuckDB.NET.
+- **`QueryAsync`** runs one read-only SELECT (DuckDB's parser decides) on a connection with external access off,
+  a row cap and a timeout.
+- **`codegraph`, a Native AOT CLI** (`src/CodeGraph.Cli`): find, outline, snippet, callers, callees, impact, tests,
+  query, schema, status. It pins ILCompiler and the NativeAOT runtime pack to 10.0.15: the 10.0.13 packs of the
+  10.0.113 SDK are listed as vulnerable by GHSA-p3jp-9v83-76w9.
+- **`CODEGRAPH_MODE=lite|lite-cli`** makes the MCP server advertise no tools and no instructions.
+- **`AnswerPaths` moved to CodeGraph.Core** so the client prints paths relative to the same root as the server.
+
 ## 1.5.3
 
 Plain JavaScript projects (a `package.json` with no `tsconfig.json`) and `jsconfig.json` projects are indexed, and the VS Code

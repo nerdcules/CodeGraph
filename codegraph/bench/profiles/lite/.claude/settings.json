@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": ["Bash(dotnet run {{SCRATCH}}/*)", "Bash(dotnet run scratch/*)", "Bash(dotnet run ./scratch/*)", "Edit(/{{SCRATCH}}/**)", "Read(/{{RUN_DIR}}/**)", "ToolSearch"],
+    "deny": ["Bash(dotnet run *..*)", "Edit(/{{TARGET_REPO}}/**)", "WebFetch", "WebSearch"],
+    "defaultMode": "dontAsk"
+  },
+  "autoMemoryEnabled": false,
+  "env": {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+    "CODEGRAPH_DB": "{{DB}}",
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_NOLOGO": "1"
+  }
+}

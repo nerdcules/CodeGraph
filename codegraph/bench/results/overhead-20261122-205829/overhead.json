@@ -1,0 +1,84 @@
+{
+  "model": "claude-sonnet-5-5",
+  "measuredAt": "2026-11-22T20:59:09.8783798Z",
+  "rows": [
+    {
+      "Mode": "direct",
+      "Part": "first context, whole profile",
+      "Tokens": 4431,
+      "How": "tools ToolSearch"
+    },
+    {
+      "Mode": "direct",
+      "Part": "MCP server (codegraph)",
+      "Tokens": 2034,
+      "How": "with minus without the server"
+    },
+    {
+      "Mode": "direct",
+      "Part": "CLAUDE.md snippet",
+      "Tokens": 202,
+      "How": "with minus without CLAUDE.md"
+    },
+    {
+      "Mode": "lite",
+      "Part": "first context, whole profile",
+      "Tokens": 6020,
+      "How": "tools Bash,Read,Write,Edit,ToolSearch"
+    },
+    {
+      "Mode": "lite",
+      "Part": "MCP server (codegraph)",
+      "Tokens": -30,
+      "How": "with minus without the server"
+    },
+    {
+      "Mode": "lite",
+      "Part": "CLAUDE.md snippet",
+      "Tokens": 580,
+      "How": "with minus without CLAUDE.md"
+    },
+    {
+      "Mode": "lite-cli",
+      "Part": "first context, whole profile",
+      "Tokens": 5301,
+      "How": "tools Bash,Read,ToolSearch"
+    },
+    {
+      "Mode": "lite-cli",
+      "Part": "MCP server (codegraph)",
+      "Tokens": -4,
+      "How": "with minus without the server"
+    },
+    {
+      "Mode": "lite-cli",
+      "Part": "CLAUDE.md snippet",
+      "Tokens": 416,
+      "How": "with minus without CLAUDE.md"
+    },
+    {
+      "Mode": "direct",
+      "Part": "MCP tool schemas loaded up front",
+      "Tokens": 9406,
+      "How": "no ToolSearch: with minus without the server"
+    },
+    {
+      "Mode": "lite",
+      "Part": "codegraph-lite.md (text)",
+      "Tokens": 1512,
+      "How": "text in a prompt; a Read result adds line numbers"
+    },
+    {
+      "Mode": "lite-cli",
+      "Part": "codegraph --help (text)",
+      "Tokens": 830,
+      "How": "text in a prompt"
+    },
+    {
+      "Mode": "lite",
+      "Part": "compile error output (compile-error-output.txt)",
+      "Tokens": 200,
+      "How": "text in a prompt"
+    }
+  ]
+}

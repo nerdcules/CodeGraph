@@ -1,0 +1,1 @@
+Full matrix: 8 tasks + baseline, 3 modes, 5 repetitions = 135 runs. Estimated from the pilot's medians per category and mode (each pilot cell is one task, so other tasks in a category may cost more or less): about 4,416,385 total tokens, $6.82, 0.5 h of sequential wall time.

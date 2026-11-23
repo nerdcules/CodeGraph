@@ -1,0 +1,4 @@
+/run/scratch/broken.cs(8,40): error CS1061: 'Page<Hit>' does not contain a definition for 'Count' and no accessible extension method 'Count' accepting a first argument of type 'Page<Hit>' could be found (are you missing a using directive or an assembly reference?)
+/run/scratch/broken.cs(9,19): error CS1579: foreach statement cannot operate on variables of type 'Page<Hit>' because 'Page<Hit>' does not contain a public instance or extension definition for 'GetEnumerator'
+
+The build failed. Fix the build errors and run again.
