@@ -126,14 +126,15 @@ public sealed class ClientTests(ShopFixture shop)
             Directory.CreateDirectory(deep);
             Directory.CreateDirectory(Path.Combine(repo, ".git"));
 
+            var env = Path.GetFullPath("/env.db"); // D:\env.db on Windows
             Assert.Equal(Path.GetFullPath("x.db"), CodeGraphClient.Locate("x.db", "/env.db", null, deep));
-            Assert.Equal("/env.db", CodeGraphClient.Locate(null, "/env.db", null, deep));
+            Assert.Equal(env, CodeGraphClient.Locate(null, "/env.db", null, deep));
             Assert.Equal(Worktree.DefaultDbPath(deep), CodeGraphClient.Locate(null, null, null, deep));
 
             File.WriteAllText(Path.Combine(repo, CodeGraphClient.ConfigFileName),
                 JsonSerializer.Serialize(new ClientConfig("graphs/g.db"), ContractsJson.Default.ClientConfig));
             Assert.Equal(Path.Combine(repo, "graphs", "g.db"), CodeGraphClient.Locate(null, null, null, deep));
-            Assert.Equal("/env.db", CodeGraphClient.Locate(null, "/env.db", null, deep));
+            Assert.Equal(env, CodeGraphClient.Locate(null, "/env.db", null, deep));
         }
         finally
         {

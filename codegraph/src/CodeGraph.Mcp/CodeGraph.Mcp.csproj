@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="../CodeGraph.Core/CodeGraph.Core.csproj" />
     <ProjectReference Include="../CodeGraph.Client/CodeGraph.Client.csproj" />
+    <ProjectReference Include="../CodeGraph.Contracts/CodeGraph.Contracts.csproj" />
     <!-- The visualiser's API routes are shared with codegraph-web as a linked source file, not an assembly. -->
     <Compile Include="../CodeGraph.Web/WebApi.cs" Link="WebApi.cs" />
   </ItemGroup>

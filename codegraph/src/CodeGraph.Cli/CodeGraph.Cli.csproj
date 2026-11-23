@@ -31,7 +31,11 @@
     </ItemGroup>
   </Target>
   <ItemGroup>
+    <!-- Contracts and Core directly, not only through Client: a transitive reference skips Directory.Build.targets
+         and builds in Debug when the solution is opened through a symlink (tests/install-through-symlink.sh). -->
     <ProjectReference Include="../CodeGraph.Client/CodeGraph.Client.csproj" />
+    <ProjectReference Include="../CodeGraph.Contracts/CodeGraph.Contracts.csproj" />
+    <ProjectReference Include="../CodeGraph.Core/CodeGraph.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CodeGraph.Tests" />

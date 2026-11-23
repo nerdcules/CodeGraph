@@ -168,7 +168,8 @@ public sealed class ClientParityTests(ShopFixture shop)
             Assert.NotNull(snippet.Lines);
             var expected = new[] { $"// {new AnswerPaths(shop.Root).Relative(snippet.File)}:{snippet.StartLine}-{snippet.EndLine}" }
                 .Concat(snippet.Lines.Select((line, i) => $"{snippet.StartLine + i}: {line}"));
-            Assert.Equal(expected, answer.TrimEnd('\n').Split('\n'));
+            // The tool's text ends its lines with the platform's newline (\r\n on Windows).
+            Assert.Equal(expected, answer.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n'));
         }
     }
 

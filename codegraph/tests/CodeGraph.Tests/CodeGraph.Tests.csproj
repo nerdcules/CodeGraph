@@ -14,6 +14,7 @@
     <ProjectReference Include="../../src/CodeGraph.Indexer/CodeGraph.Indexer.csproj" />
     <ProjectReference Include="../../src/CodeGraph.Mcp/CodeGraph.Mcp.csproj" />
     <ProjectReference Include="../../src/CodeGraph.Client/CodeGraph.Client.csproj" />
+    <ProjectReference Include="../../src/CodeGraph.Contracts/CodeGraph.Contracts.csproj" />
     <ProjectReference Include="../../bench/CodeGraph.ModeBench/CodeGraph.ModeBench.csproj" />
     <ProjectReference Include="../../src/CodeGraph.Cli/CodeGraph.Cli.csproj" />
   </ItemGroup>

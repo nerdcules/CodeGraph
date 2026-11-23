@@ -36,7 +36,7 @@ internal static class Profiles
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.WriteAllText(target, Fill(text, values));
+            File.WriteAllText(target, Fill(text, values, json: relative.EndsWith(".json", StringComparison.Ordinal)));
             written.Add(relative);
         }
 
@@ -106,7 +106,7 @@ internal static class Profiles
             ["DB"] = config.Db,
             ["CLIENT_PROJECT"] = config.ClientProject,
             ["CLI_DIR"] = config.CliDir,
-            ["MCP_COMMAND"] = JsonEncodedText.Encode(Path.GetFullPath(config.McpDotnet)).ToString(),
+            ["MCP_COMMAND"] = Path.GetFullPath(config.McpDotnet),
             ["MCP_ARGS"] = JsonSerializer.Serialize(new[] { config.McpServer, config.Db }),
             ["MCP_ENV_DIRECT"] = ServerEnv(CodeGraphMode.Direct),
             ["MCP_ENV_LITE"] = ServerEnv(CodeGraphMode.Lite),
@@ -115,11 +115,19 @@ internal static class Profiles
         };
     }
 
-    public static string Fill(string text, IReadOnlyDictionary<string, string> values)
+    /// <summary>The values that are JSON already (an array or object), filled into a JSON file as they are.</summary>
+    private static readonly HashSet<string> JsonFragments = ["MCP_ARGS", "MCP_ENV_DIRECT", "MCP_ENV_LITE", "MCP_ENV_LITE_CLI"];
+
+    /// <summary>Replaces each {{KEY}}. In a JSON file every other value lands inside a string and is JSON-escaped: a
+    /// Windows path's backslashes would otherwise break it.</summary>
+    public static string Fill(string text, IReadOnlyDictionary<string, string> values, bool json = false)
     {
         foreach (var (key, value) in values)
         {
-            text = text.Replace("{{" + key + "}}", value, StringComparison.Ordinal);
+            var filled = json && !JsonFragments.Contains(key)
+                ? JsonEncodedText.Encode(value, System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping).Value
+                : value;
+            text = text.Replace("{{" + key + "}}", filled, StringComparison.Ordinal);
         }
 
         var left = text.IndexOf("{{", StringComparison.Ordinal);

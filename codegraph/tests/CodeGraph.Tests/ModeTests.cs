@@ -64,4 +64,13 @@ public sealed class ModeTests
         var config = BenchConfig.Load();
         Assert.InRange(File.ReadAllLines(config.LiteDoc).Length, 1, 40);
     }
+
+    [Fact]
+    public void A_windows_path_in_a_json_profile_file_stays_valid_json()
+    {
+        var values = new Dictionary<string, string> { ["SCRATCH"] = @"C:\Users\runner\scratch" };
+        var json = Profiles.Fill("""{ "allow": ["Edit(/{{SCRATCH}}/**)"] }""", values, json: true);
+        Assert.Equal(@"Edit(/C:\Users\runner\scratch/**)", JsonNode.Parse(json)!["allow"]![0]!.GetValue<string>());
+        Assert.Equal(@"see C:\Users\runner\scratch", Profiles.Fill("see {{SCRATCH}}", values));
+    }
 }
